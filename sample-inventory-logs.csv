@@ -1,0 +1,5 @@
+Date,Type,SKU,Barcode,Product,Employee,Location,Opening,Change,Closing,Notes
+"2024-01-15","Sale","SKU001","1234567890123","Blue Dream 1g","John Doe","Store A",10,-2,8,"Customer purchase"
+"2024-01-15","Restock","SKU001","1234567890123","Blue Dream 1g","Jane Smith","Store A",8,5,13,"Weekly restock"
+"2024-01-15","Adjustment","SKU002","1234567890124","OG Kush 1g","Mike Johnson","Store B",12,-1,11,"Inventory correction"
+"2024-01-16","Sale","SKU003","1234567890125","Chocolate Bar 100mg","Sarah Wilson","Store C",15,-3,12,"Multiple customer purchases"

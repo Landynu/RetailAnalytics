@@ -1,0 +1,121 @@
+datasource db {
+  provider = "sqlite"
+  // Wasp requires that the url is set to the DATABASE_URL environment variable.
+  url      = env("DATABASE_URL")
+}
+
+// Wasp requires the `prisma-client-js` generator to be present.
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+    id          Int     @id @default(autoincrement())
+    role        String  @default("ANALYST") // ADMIN, ANALYST
+    permissions String? // JSON string for granular permissions
+    stores      Store[]
+}
+
+model Store {
+    id            Int     @id @default(autoincrement())
+    name          String
+    location      String
+    logoUrl       String?
+    primaryColor  String? @default("#10b981") // emerald-500
+    secondaryColor String? @default("#059669") // emerald-600
+    theme         String  @default("LIGHT") // LIGHT, DARK
+    fontFamily    String?
+    user          User    @relation(fields: [userId], references: [id])
+    userId        Int
+    snapshots     InventorySnapshot[]
+    stockLevels   StockLevel[]
+    movements     InventoryMovement[]
+    inventories Inventory[] // Legacy relation
+}
+
+model ProductCatalog {
+    id          Int      @id @default(autoincrement())
+    gtin        String   @unique
+    name        String
+    brand       String?
+    category    String?
+    subcategory String?
+    format      String?
+    size        String?
+    weight      Float?
+    thc         Float?
+    cbd         Float?
+    description String?
+    imageUrl    String?
+    lastSeen    DateTime @default(now())
+    stockLevels StockLevel[]
+    movements   InventoryMovement[]
+}
+
+model Category {
+    id           Int        @id @default(autoincrement())
+    name         String
+    parentId   Int?
+    parent       Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+    children     Category[] @relation("CategoryHierarchy")
+    hierarchy    String     // e.g., "Edibles > Chocolate > Dark"
+    displayOrder Int        @default(0)
+}
+
+model InventorySnapshot {
+    id          Int      @id @default(autoincrement())
+    storeId     Int
+    store       Store    @relation(fields: [storeId], references: [id])
+    snapshotDate DateTime @default(now())
+    fileType    String   // EXPORT, LOG
+    rawData     String
+    uploadedAt  DateTime @default(now())
+    stockLevels StockLevel[]
+}
+
+model StockLevel {
+    id         Int             @id @default(autoincrement())
+    storeId    Int
+    store      Store           @relation(fields: [storeId], references: [id])
+    productId  Int
+    product    ProductCatalog  @relation(fields: [productId], references: [id])
+    quantity   Int             @default(0)
+    lastUpdated DateTime        @default(now())
+    snapshotId Int?
+    snapshot   InventorySnapshot? @relation(fields: [snapshotId], references: [id])
+    
+    @@unique([storeId, productId])
+}
+
+model InventoryMovement {
+    id          Int            @id @default(autoincrement())
+    storeId     Int
+    store       Store          @relation(fields: [storeId], references: [id])
+    productId   Int
+    product     ProductCatalog @relation(fields: [productId], references: [id])
+    date        DateTime
+    type        String         // sale, restock, adjustment, etc.
+    employee    String?
+    openingQty  Int
+    changeQty   Int
+    closingQty  Int
+    notes       String?
+}
+
+// Legacy models for backward compatibility
+model Inventory {
+    id       Int       @id @default(autoincrement())
+    csvData  String
+    store    Store     @relation(fields: [storeId], references: [id])
+    storeId  Int
+    products Product[]
+}
+
+model Product {
+    id          Int       @id @default(autoincrement())
+    name        String
+    gtin        String
+    price       Float
+    inventory   Inventory @relation(fields: [inventoryId], references: [id])
+    inventoryId Int
+}
