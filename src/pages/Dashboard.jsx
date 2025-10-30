@@ -5,6 +5,7 @@ import { Link } from 'wasp/client/router';
 import { CreateStoreModal } from '../components/CreateStoreModal';
 import LocationSelector from '../components/LocationSelector';
 import FilterDropdown from '../components/FilterDropdown';
+import DateRangeFilter from '../components/DateRangeFilter';
 import KPICard from '../components/KPICard';
 import GlobalAnalyticsDashboard from '../components/GlobalAnalyticsDashboard';
 import SalesAnalyticsDashboard from '../components/SalesAnalyticsDashboard';
@@ -224,8 +225,13 @@ const DashboardPage = () => {
           icon={Leaf}
         />
 
+        <DateRangeFilter
+          dateRange={filters.dateRange}
+          onChange={(range) => setFilters({ ...filters, dateRange: range })}
+        />
+
         {(filters.categories.length > 0 || filters.subcategories.length > 0 || 
-          filters.brands.length > 0 || filters.strainTypes.length > 0) && (
+          filters.brands.length > 0 || filters.strainTypes.length > 0 || filters.dateRange) && (
           <Button
             variant="ghost"
             size="sm"

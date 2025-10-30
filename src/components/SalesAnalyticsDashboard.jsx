@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
 import { TrendingUp, DollarSign } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -10,6 +11,16 @@ const STRAIN_COLORS = {
 };
 
 const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
+  const [showTopProductsBy, setShowTopProductsBy] = useState('revenue');
+  const [showTopProductsView, setShowTopProductsView] = useState('total');
+  const [showCategoryBy, setShowCategoryBy] = useState('revenue');
+  const [showCategoryView, setShowCategoryView] = useState('total');
+  const [showBrandsBy, setShowBrandsBy] = useState('revenue');
+  const [showBrandsView, setShowBrandsView] = useState('total');
+  const [showStoresBy, setShowStoresBy] = useState('revenue');
+  const [showTrendsBy, setShowTrendsBy] = useState('revenue');
+  const [showTrendsView, setShowTrendsView] = useState('total');
+
   if (loading) {
     return (
       <div className="grid gap-6 md:grid-cols-2">
@@ -42,24 +53,79 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
     );
   }
 
-  // Prepare chart data
-  const topProductsChartData = (salesData.topProductsByRevenue || []).slice(0, 10).map(p => ({
-    name: p.name.length > 20 ? p.name.substring(0, 20) + '...' : p.name,
-    revenue: p.revenue,
-    units: p.unitsSold
-  }));
+  // Custom tooltip with sum total
+  const CustomTooltip = ({ active, payload, label, showBy }) => {
+    if (!active || !payload || !payload.length) return null;
+    
+    const total = payload.reduce((sum, item) => sum + (item.value || 0), 0);
+    const isRevenue = showBy === 'revenue';
+    
+    return (
+      <div className="bg-background border rounded-lg shadow-lg p-3">
+        <p className="font-semibold mb-2">{label}</p>
+        {payload.map((item, idx) => (
+          <p key={idx} className="text-sm" style={{ color: item.color }}>
+            {item.name}: {isRevenue 
+              ? `$${(item.value || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+              : `${item.value || 0} units`}
+          </p>
+        ))}
+        {payload.length > 1 && (
+          <p className="text-sm font-semibold mt-2 pt-2 border-t">
+            Total: {isRevenue
+              ? `$${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+              : `${total} units`}
+          </p>
+        )}
+      </div>
+    );
+  };
 
-  const categoryChartData = (salesData.categoryPerformance || []).map(c => ({
-    name: c.category.length > 15 ? c.category.substring(0, 15) + '...' : c.category,
-    revenue: c.revenue,
-    units: c.unitsSold
-  }));
+  // Prepare chart data with byStore flattened
+  const topProductsChartData = (salesData.topProductsByRevenue || []).slice(0, 10).map(p => {
+    const baseData = {
+      name: p.name.length > 20 ? p.name.substring(0, 20) + '...' : p.name,
+      revenue: p.revenue,
+      units: p.unitsSold
+    };
+    if (p.byStore) {
+      Object.keys(p.byStore).forEach(storeName => {
+        baseData[`${storeName}_revenue`] = p.byStore[storeName].revenue;
+        baseData[`${storeName}_units`] = p.byStore[storeName].units;
+      });
+    }
+    return baseData;
+  });
 
-  const topBrandsChartData = (salesData.topBrands || []).map(b => ({
-    name: b.brand.length > 15 ? b.brand.substring(0, 15) + '...' : b.brand,
-    revenue: b.revenue,
-    units: b.unitsSold
-  }));
+  const categoryChartData = (salesData.categoryPerformance || []).map(c => {
+    const baseData = {
+      name: c.category.length > 15 ? c.category.substring(0, 15) + '...' : c.category,
+      revenue: c.revenue,
+      units: c.unitsSold
+    };
+    if (c.byStore) {
+      Object.keys(c.byStore).forEach(storeName => {
+        baseData[`${storeName}_revenue`] = c.byStore[storeName].revenue;
+        baseData[`${storeName}_units`] = c.byStore[storeName].units;
+      });
+    }
+    return baseData;
+  });
+
+  const topBrandsChartData = (salesData.topBrands || []).map(b => {
+    const baseData = {
+      name: b.brand.length > 15 ? b.brand.substring(0, 15) + '...' : b.brand,
+      revenue: b.revenue,
+      units: b.unitsSold
+    };
+    if (b.byStore) {
+      Object.keys(b.byStore).forEach(storeName => {
+        baseData[`${storeName}_revenue`] = b.byStore[storeName].revenue;
+        baseData[`${storeName}_units`] = b.byStore[storeName].units;
+      });
+    }
+    return baseData;
+  });
 
   const storeComparisonData = (salesData.storePerformance || []).map(s => ({
     name: s.name.length > 12 ? s.name.substring(0, 12) + '...' : s.name,
@@ -70,11 +136,27 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
   // Sales trends - limit to last 30 days for readability
   const salesTrendsData = (salesData.salesTrends || [])
     .slice(-30)
-    .map(t => ({
-      date: new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      revenue: t.revenue,
-      units: t.unitsSold
-    }));
+    .map(t => {
+      const baseData = {
+        date: new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        revenue: t.netRevenue || 0,
+        units: t.unitsSold || 0
+      };
+      
+      // Flatten byStore data into individual dataKeys
+      if (t.byStore) {
+        Object.keys(t.byStore).forEach(storeName => {
+          baseData[`${storeName}_revenue`] = t.byStore[storeName].revenue || 0;
+          baseData[`${storeName}_units`] = t.byStore[storeName].units || 0;
+        });
+      }
+      
+      return baseData;
+    });
+
+  // Get unique store names for multi-line/stacked chart
+  const storeNames = salesData.storePerformance?.map(s => s.name.substring(0, 12)) || [];
+  const STORE_COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899'];
 
   // Strain sales pie chart
   const strainSalesData = Object.keys(salesData.strainSales || {})
@@ -90,36 +172,107 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
       {salesTrendsData.length > 0 && (
         <Card className="md:col-span-2">
           <CardHeader>
-            <CardTitle>Sales Trends (Last 30 Days)</CardTitle>
-            <CardDescription>Daily revenue and units sold</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Sales Trends (Last 30 Days)</CardTitle>
+                <CardDescription>
+                  {showTrendsView === 'total' ? 'Total' : 'By location'} - {showTrendsBy === 'revenue' ? 'revenue' : 'units sold'}
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowTrendsView(showTrendsView === 'total' ? 'by-location' : 'total')}
+                >
+                  {showTrendsView === 'total' ? 'By Location' : 'Show Total'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowTrendsBy(showTrendsBy === 'revenue' ? 'units' : 'revenue')}
+                >
+                  {showTrendsBy === 'revenue' ? 'Show Units' : 'Show Revenue'}
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={salesTrendsData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} fontSize={11} />
-                <YAxis yAxisId="left" />
-                <YAxis yAxisId="right" orientation="right" />
-                <Tooltip 
-                  formatter={(value, name) => {
-                    if (name === 'revenue') return [`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Revenue'];
-                    if (name === 'units') return [`${value} units`, 'Units Sold'];
-                    return [value, name];
-                  }}
-                />
-                <Line yAxisId="left" type="monotone" dataKey="revenue" stroke="#10b981" name="Revenue" strokeWidth={2} />
-                <Line yAxisId="right" type="monotone" dataKey="units" stroke="#3b82f6" name="Units" strokeWidth={2} />
-              </LineChart>
+              {showTrendsView === 'total' ? (
+                <LineChart data={salesTrendsData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} fontSize={11} />
+                  <YAxis />
+                  <Tooltip 
+                    formatter={(value) => showTrendsBy === 'revenue'
+                      ? `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                      : `${value} units`}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey={showTrendsBy} 
+                    stroke="#10b981" 
+                    name={showTrendsBy === 'revenue' ? 'Revenue' : 'Units'} 
+                    strokeWidth={2} 
+                  />
+                </LineChart>
+              ) : (
+                <BarChart data={salesTrendsData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} fontSize={11} />
+                  <YAxis />
+                  <Tooltip 
+                    formatter={(value, name) => {
+                      const isRevenue = showTrendsBy === 'revenue';
+                      return isRevenue
+                        ? [`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, name]
+                        : [`${value} units`, name];
+                    }}
+                  />
+                  {storeNames.map((storeName, index) => (
+                    <Bar 
+                      key={storeName}
+                      dataKey={`${storeName}_${showTrendsBy}`}
+                      stackId="a"
+                      fill={STORE_COLORS[index % STORE_COLORS.length]}
+                      name={storeName}
+                    />
+                  ))}
+                </BarChart>
+              )}
             </ResponsiveContainer>
           </CardContent>
         </Card>
       )}
 
-      {/* Top Products by Revenue */}
+      {/* Top Products */}
       <Card>
         <CardHeader>
-          <CardTitle>Top 10 Products by Revenue</CardTitle>
-          <CardDescription>Best selling products</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Top 10 Products</CardTitle>
+              <CardDescription>
+                {showTopProductsView === 'total' ? 'Total' : 'By location'} - {showTopProductsBy === 'revenue' ? 'revenue' : 'units sold'}
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowTopProductsView(showTopProductsView === 'total' ? 'by-location' : 'total')}
+              >
+                {showTopProductsView === 'total' ? 'By Location' : 'Show Total'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowTopProductsBy(showTopProductsBy === 'revenue' ? 'units' : 'revenue')}
+              >
+                {showTopProductsBy === 'revenue' ? 'Show Units' : 'Show Revenue'}
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -127,14 +280,27 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis type="number" />
               <YAxis dataKey="name" type="category" width={150} fontSize={11} />
-              <Tooltip 
-                formatter={(value, name) => {
-                  if (name === 'revenue') return [`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Revenue'];
-                  if (name === 'units') return [`${value} units`, 'Units Sold'];
+              <Tooltip content={showTopProductsView === 'by-location' ? <CustomTooltip showBy={showTopProductsBy} /> : undefined} 
+                formatter={showTopProductsView === 'total' ? (value, name) => {
+                  if (name === 'revenue' || name === showTopProductsBy) return showTopProductsBy === 'revenue' 
+                    ? [`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Revenue']
+                    : [`${value} units`, 'Units'];
                   return [value, name];
-                }}
+                } : undefined}
               />
-              <Bar dataKey="revenue" fill="#10b981" name="Revenue" />
+              {showTopProductsView === 'total' ? (
+                <Bar dataKey={showTopProductsBy} fill="#10b981" name={showTopProductsBy === 'revenue' ? 'Revenue' : 'Units'} />
+              ) : (
+                storeNames.map((storeName, index) => (
+                  <Bar 
+                    key={storeName}
+                    dataKey={`${storeName}_${showTopProductsBy}`}
+                    stackId="a"
+                    fill={STORE_COLORS[index % STORE_COLORS.length]}
+                    name={storeName}
+                  />
+                ))
+              )}
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -143,8 +309,30 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
       {/* Sales by Category */}
       <Card>
         <CardHeader>
-          <CardTitle>Sales by Category</CardTitle>
-          <CardDescription>Revenue by product category</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Sales by Category</CardTitle>
+              <CardDescription>
+                {showCategoryView === 'total' ? 'Total' : 'By location'} - {showCategoryBy === 'revenue' ? 'revenue' : 'units sold'}
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCategoryView(showCategoryView === 'total' ? 'by-location' : 'total')}
+              >
+                {showCategoryView === 'total' ? 'By Location' : 'Show Total'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCategoryBy(showCategoryBy === 'revenue' ? 'units' : 'revenue')}
+              >
+                {showCategoryBy === 'revenue' ? 'Show Units' : 'Show Revenue'}
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -152,8 +340,23 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} fontSize={11} />
               <YAxis />
-              <Tooltip formatter={(value) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} />
-              <Bar dataKey="revenue" fill="#3b82f6" />
+              <Tooltip content={showCategoryView === 'by-location' ? <CustomTooltip showBy={showCategoryBy} /> : undefined}
+                formatter={showCategoryView === 'total' ? (value) => showCategoryBy === 'revenue' 
+                  ? `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` 
+                  : `${value} units` : undefined} />
+              {showCategoryView === 'total' ? (
+                <Bar dataKey={showCategoryBy} fill="#3b82f6" />
+              ) : (
+                storeNames.map((storeName, index) => (
+                  <Bar 
+                    key={storeName}
+                    dataKey={`${storeName}_${showCategoryBy}`}
+                    stackId="a"
+                    fill={STORE_COLORS[index % STORE_COLORS.length]}
+                    name={storeName}
+                  />
+                ))
+              )}
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -162,8 +365,30 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
       {/* Sales by Brand */}
       <Card>
         <CardHeader>
-          <CardTitle>Top Brands by Sales</CardTitle>
-          <CardDescription>Revenue by brand</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Top Brands by Sales</CardTitle>
+              <CardDescription>
+                {showBrandsView === 'total' ? 'Total' : 'By location'} - {showBrandsBy === 'revenue' ? 'revenue' : 'units sold'}
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowBrandsView(showBrandsView === 'total' ? 'by-location' : 'total')}
+              >
+                {showBrandsView === 'total' ? 'By Location' : 'Show Total'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowBrandsBy(showBrandsBy === 'revenue' ? 'units' : 'revenue')}
+              >
+                {showBrandsBy === 'revenue' ? 'Show Units' : 'Show Revenue'}
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -171,8 +396,23 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} fontSize={11} />
               <YAxis />
-              <Tooltip formatter={(value) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} />
-              <Bar dataKey="revenue" fill="#8b5cf6" />
+              <Tooltip content={showBrandsView === 'by-location' ? <CustomTooltip showBy={showBrandsBy} /> : undefined}
+                formatter={showBrandsView === 'total' ? (value) => showBrandsBy === 'revenue'
+                  ? `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                  : `${value} units` : undefined} />
+              {showBrandsView === 'total' ? (
+                <Bar dataKey={showBrandsBy} fill="#8b5cf6" />
+              ) : (
+                storeNames.map((storeName, index) => (
+                  <Bar 
+                    key={storeName}
+                    dataKey={`${storeName}_${showBrandsBy}`}
+                    stackId="a"
+                    fill={STORE_COLORS[index % STORE_COLORS.length]}
+                    name={storeName}
+                  />
+                ))
+              )}
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -213,23 +453,37 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
       {storeComparisonData.length > 1 && (
         <Card className="md:col-span-2">
           <CardHeader>
-            <CardTitle>Store Sales Comparison</CardTitle>
-            <CardDescription>Revenue across selected locations</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Store Sales Comparison</CardTitle>
+                <CardDescription>By {showStoresBy === 'revenue' ? 'revenue' : 'units sold'}</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowStoresBy(showStoresBy === 'revenue' ? 'units' : 'revenue')}
+              >
+                {showStoresBy === 'revenue' ? 'Show Units' : 'Show Revenue'}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={storeComparisonData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
-                <YAxis tickFormatter={(value) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} />
+                <YAxis tickFormatter={(value) => showStoresBy === 'revenue'
+                  ? `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                  : value.toString()} />
                 <Tooltip 
                   formatter={(value, name) => {
-                    if (name === 'revenue') return [`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Revenue'];
-                    if (name === 'units') return [`${value} units`, 'Units Sold'];
+                    if (name === 'revenue' || name === showStoresBy) return showStoresBy === 'revenue'
+                      ? [`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Revenue']
+                      : [`${value} units`, 'Units Sold'];
                     return [value, name];
                   }}
                 />
-                <Bar dataKey="revenue" fill="#06b6d4" name="Revenue" />
+                <Bar dataKey={showStoresBy} fill="#06b6d4" name={showStoresBy === 'revenue' ? 'Revenue' : 'Units'} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

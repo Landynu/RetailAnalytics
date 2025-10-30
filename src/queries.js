@@ -729,13 +729,30 @@ export const getGlobalSalesAnalytics = async ({
       storeSales[storeId].unitsSold += unitsSold;
     }
 
-    // Daily sales for trends
+    // Daily sales for trends (total and by store)
     const dateKey = movement.date.toISOString().split('T')[0];
     if (!dailySales[dateKey]) {
-      dailySales[dateKey] = { date: dateKey, grossSales: 0, refunds: 0, netRevenue: 0, unitsSold: 0 };
+      dailySales[dateKey] = { 
+        date: dateKey, 
+        grossSales: 0, 
+        refunds: 0, 
+        netRevenue: 0, 
+        unitsSold: 0,
+        byStore: {}
+      };
     }
     dailySales[dateKey].grossSales += revenue;
     dailySales[dateKey].unitsSold += unitsSold;
+
+    // Track per-store daily sales
+    if (movement.store) {
+      const storeName = movement.store.name.substring(0, 12);
+      if (!dailySales[dateKey].byStore[storeName]) {
+        dailySales[dateKey].byStore[storeName] = { revenue: 0, units: 0 };
+      }
+      dailySales[dateKey].byStore[storeName].revenue += revenue;
+      dailySales[dateKey].byStore[storeName].units += unitsSold;
+    }
 
     // Strain sales
     const strain = movement.product.strainType;
@@ -773,6 +790,61 @@ export const getGlobalSalesAnalytics = async ({
   const netRevenue = grossSales - refundAmount;
   const netUnits = grossUnits - refundUnits;
 
+  // Prepare per-store breakdowns for products, categories, and brands
+  const productsByStore = {};
+  const categoriesByStore = {};
+  const brandsByStore = {};
+
+  salesMovements.forEach(movement => {
+    if (!movement.store) return;
+    
+    const storeName = movement.store.name.substring(0, 12);
+    const unitsSold = Math.abs(movement.changeQty);
+    const revenue = unitsSold * (movement.product.retailPrice || 0);
+
+    // Products by store
+    const productKey = `${movement.product.id}_${storeName}`;
+    if (!productsByStore[productKey]) {
+      productsByStore[productKey] = {
+        productId: movement.product.id,
+        productName: movement.product.name,
+        storeName,
+        revenue: 0,
+        units: 0
+      };
+    }
+    productsByStore[productKey].revenue += revenue;
+    productsByStore[productKey].units += unitsSold;
+
+    // Categories by store
+    const category = movement.product.parentCategory || 'Uncategorized';
+    const catKey = `${category}_${storeName}`;
+    if (!categoriesByStore[catKey]) {
+      categoriesByStore[catKey] = {
+        category,
+        storeName,
+        revenue: 0,
+        units: 0
+      };
+    }
+    categoriesByStore[catKey].revenue += revenue;
+    categoriesByStore[catKey].units += unitsSold;
+
+    // Brands by store
+    const brand = movement.product.brand || 'Unknown';
+    const brandKey = `${brand}_${storeName}`;
+    if (!brandsByStore[brandKey]) {
+      brandsByStore[brandKey] = {
+        brand,
+        storeName,
+        revenue: 0,
+        units: 0
+      };
+    }
+    brandsByStore[brandKey].revenue += revenue;
+    brandsByStore[brandKey].units += unitsSold;
+  });
+
   // Top products by net revenue
   const topProductsByRevenue = Object.values(productSales)
     .map(item => ({
@@ -788,7 +860,13 @@ export const getGlobalSalesAnalytics = async ({
       unitsSold: item.unitsSold,
       revenue: item.netRevenue,
       strainType: item.product.strainType,
-      lastSale: item.lastSale.toISOString()
+      lastSale: item.lastSale.toISOString(),
+      byStore: Object.values(productsByStore)
+        .filter(p => p.productId === item.product.id)
+        .reduce((acc, p) => {
+          acc[p.storeName] = { revenue: p.revenue, units: p.units };
+          return acc;
+        }, {})
     }));
 
   const topProductsByUnits = Object.values(productSales)
@@ -804,22 +882,34 @@ export const getGlobalSalesAnalytics = async ({
       lastSale: item.lastSale.toISOString()
     }));
 
-  // Top brands
+  // Top brands with per-store breakdown
   const topBrands = Object.keys(brandSales)
     .map(brand => ({
       brand,
       revenue: brandSales[brand].revenue,
-      unitsSold: brandSales[brand].unitsSold
+      unitsSold: brandSales[brand].unitsSold,
+      byStore: Object.values(brandsByStore)
+        .filter(b => b.brand === brand)
+        .reduce((acc, b) => {
+          acc[b.storeName] = { revenue: b.revenue, units: b.units };
+          return acc;
+        }, {})
     }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
 
-  // Category performance
+  // Category performance with per-store breakdown
   const categoryPerformance = Object.keys(categorySales)
     .map(category => ({
       category,
       revenue: categorySales[category].revenue,
-      unitsSold: categorySales[category].unitsSold
+      unitsSold: categorySales[category].unitsSold,
+      byStore: Object.values(categoriesByStore)
+        .filter(c => c.category === category)
+        .reduce((acc, c) => {
+          acc[c.storeName] = { revenue: c.revenue, units: c.units };
+          return acc;
+        }, {})
     }))
     .sort((a, b) => b.revenue - a.revenue);
 
