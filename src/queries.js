@@ -3,23 +3,70 @@ import { HttpError } from 'wasp/server'
 export const getSalesTrends = async ({ storeId }, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  const inventories = await context.entities.Inventory.findMany({
-    where: { storeId: storeId },
-    include: { products: true }
-  });
+  try {
+    // Get stock levels with products for this store
+    // Exclude description and imageUrl to avoid corrupt data issues
+    const stockLevels = await context.entities.StockLevel.findMany({
+      where: { 
+        storeId: parseInt(storeId),
+        quantity: { gt: 0 }
+      },
+      include: { 
+        product: {
+          select: {
+            id: true,
+            name: true,
+            gtin: true,
+            brand: true,
+            category: true,
+            retailPrice: true,
+            wholesaleCost: true,
+            format: true
+          }
+        },
+        snapshot: {
+          select: {
+            id: true,
+            uploadedAt: true
+          }
+        }
+      },
+      orderBy: { lastUpdated: 'desc' }
+    });
 
-  const salesTrends = inventories.map(inventory => {
-    return {
-      inventoryId: inventory.id,
-      products: inventory.products.map(product => ({
-        name: product.name,
-        gtin: product.gtin,
-        price: product.price
-      }))
-    };
-  });
+    // Group by snapshot if available, otherwise group all together
+    const snapshotGroups = new Map();
+    
+    stockLevels.forEach(stock => {
+      const snapshotId = stock.snapshotId || 'current';
+      if (!snapshotGroups.has(snapshotId)) {
+        snapshotGroups.set(snapshotId, {
+          inventoryId: snapshotId,
+          snapshotDate: stock.snapshot?.uploadedAt || stock.lastUpdated,
+          products: []
+        });
+      }
+      
+      snapshotGroups.get(snapshotId).products.push({
+        name: stock.product.name || 'Unknown Product',
+        gtin: stock.product.gtin || 'N/A',
+        price: stock.product.retailPrice || 0,
+        quantity: stock.quantity,
+        brand: stock.product.brand || 'N/A',
+        category: stock.product.category || 'Uncategorized'
+      });
+    });
 
-  return salesTrends;
+    // Convert to array and sort by date
+    const salesTrends = Array.from(snapshotGroups.values())
+      .sort((a, b) => new Date(b.snapshotDate) - new Date(a.snapshotDate));
+
+    return salesTrends;
+  } catch (error) {
+    console.error('Error in getSalesTrends:', error);
+    // Return empty array on error to prevent complete failure
+    return [];
+  }
 }
 
 export const getUserStores = async (args, context) => {
@@ -269,4 +316,219 @@ export const getMenuData = async ({ storeId }, context) => {
     })),
     totalProducts: stockLevels.length
   };
+};
+
+// Analytics Queries
+
+export const getStoreAnalytics = async ({ storeId }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  const store = await context.entities.Store.findUnique({
+    where: { id: parseInt(storeId) }
+  });
+
+  if (!store || store.userId !== context.user.id) {
+    throw new HttpError(404);
+  }
+
+  // Get all stock levels with products
+  const stockLevels = await context.entities.StockLevel.findMany({
+    where: { storeId: parseInt(storeId) },
+    include: { 
+      product: {
+        select: {
+          id: true,
+          name: true,
+          gtin: true,
+          brand: true,
+          category: true,
+          parentCategory: true,
+          strainType: true,
+          retailPrice: true,
+          format: true
+        }
+      }
+    }
+  });
+
+  // Strain type breakdown
+  const strainBreakdown = {
+    Sativa: 0,
+    Hybrid: 0,
+    Indica: 0,
+    'N/A': 0
+  };
+  
+  stockLevels.forEach(stock => {
+    const strain = stock.product.strainType || 'N/A';
+    if (strainBreakdown[strain] !== undefined) {
+      strainBreakdown[strain] += stock.quantity;
+    }
+  });
+
+  // Top brands by inventory value
+  const brandStats = {};
+  stockLevels.forEach(stock => {
+    const brand = stock.product.brand || 'Unknown';
+    if (!brandStats[brand]) {
+      brandStats[brand] = { value: 0, quantity: 0, products: 0 };
+    }
+    brandStats[brand].value += stock.quantity * (stock.product.retailPrice || 0);
+    brandStats[brand].quantity += stock.quantity;
+    brandStats[brand].products += 1;
+  });
+
+  const topBrands = Object.keys(brandStats)
+    .map(brand => ({
+      brand,
+      value: brandStats[brand].value,
+      quantity: brandStats[brand].quantity,
+      products: brandStats[brand].products
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10);
+
+  // Get sales data from inventory movements
+  const movements = await context.entities.InventoryMovement.findMany({
+    where: { 
+      storeId: parseInt(storeId),
+      changeQty: { lt: 0 } // Negative change = sale
+    },
+    include: {
+      product: {
+        select: {
+          id: true,
+          name: true,
+          gtin: true,
+          brand: true,
+          retailPrice: true,
+          strainType: true
+        }
+      }
+    }
+  });
+
+  // Top 10 products by sales
+  const productSales = {};
+  movements.forEach(movement => {
+    const productId = movement.product.id;
+    if (!productSales[productId]) {
+      productSales[productId] = {
+        product: movement.product,
+        unitsSold: 0,
+        revenue: 0
+      };
+    }
+    const unitsSold = Math.abs(movement.changeQty);
+    productSales[productId].unitsSold += unitsSold;
+    productSales[productId].revenue += unitsSold * (movement.product.retailPrice || 0);
+  });
+
+  const topProducts = Object.values(productSales)
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10)
+    .map(item => ({
+      name: item.product.name,
+      gtin: item.product.gtin,
+      brand: item.product.brand,
+      unitsSold: item.unitsSold,
+      revenue: item.revenue,
+      strainType: item.product.strainType
+    }));
+
+  // Category performance
+  const categoryStats = {};
+  stockLevels.forEach(stock => {
+    const category = stock.product.parentCategory || 'Uncategorized';
+    if (!categoryStats[category]) {
+      categoryStats[category] = { value: 0, quantity: 0, products: 0 };
+    }
+    categoryStats[category].value += stock.quantity * (stock.product.retailPrice || 0);
+    categoryStats[category].quantity += stock.quantity;
+    categoryStats[category].products += 1;
+  });
+
+  const categoryPerformance = Object.keys(categoryStats)
+    .map(category => ({
+      category,
+      value: categoryStats[category].value,
+      quantity: categoryStats[category].quantity,
+      products: categoryStats[category].products
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  return {
+    strainBreakdown,
+    topBrands,
+    topProducts,
+    categoryPerformance,
+    totalProducts: stockLevels.length,
+    totalValue: stockLevels.reduce((sum, stock) => sum + (stock.quantity * (stock.product.retailPrice || 0)), 0)
+  };
+};
+
+export const getGlobalAnalytics = async (args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  // Get all user's stores
+  const stores = await context.entities.Store.findMany({
+    where: { userId: context.user.id },
+    include: {
+      stockLevels: {
+        include: {
+          product: {
+            select: {
+              id: true,
+              name: true,
+              gtin: true,
+              brand: true,
+              category: true,
+              parentCategory: true,
+              strainType: true,
+              retailPrice: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Aggregate data across all stores
+  const globalStats = {
+    totalStores: stores.length,
+    totalProducts: 0,
+    totalValue: 0,
+    strainBreakdown: { Sativa: 0, Hybrid: 0, Indica: 0, 'N/A': 0 },
+    storePerformance: []
+  };
+
+  stores.forEach(store => {
+    let storeValue = 0;
+    let storeProducts = 0;
+
+    store.stockLevels.forEach(stock => {
+      storeProducts += 1;
+      const value = stock.quantity * (stock.product.retailPrice || 0);
+      storeValue += value;
+      globalStats.totalValue += value;
+      
+      const strain = stock.product.strainType || 'N/A';
+      if (globalStats.strainBreakdown[strain] !== undefined) {
+        globalStats.strainBreakdown[strain] += stock.quantity;
+      }
+    });
+
+    globalStats.totalProducts += storeProducts;
+    globalStats.storePerformance.push({
+      storeId: store.id,
+      name: store.name,
+      location: store.location,
+      products: storeProducts,
+      value: storeValue
+    });
+  });
+
+  globalStats.storePerformance.sort((a, b) => b.value - a.value);
+
+  return globalStats;
 };

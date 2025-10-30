@@ -1,0 +1,13 @@
+languages:
+  javascript: true
+  typescript: true
+
+ignore_patterns:
+  - node_modules
+  - .wasp
+  - bakes
+  - .git
+  - dist
+  - build
+
+framework: react

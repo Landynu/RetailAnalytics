@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useAction } from 'wasp/client/operations';
-import { uploadInventory, uploadInventoryExport, uploadInventoryLogs, analyzeInventoryExport } from 'wasp/client/operations';
+import { uploadInventory, uploadInventoryExport, uploadInventoryLogs, uploadProductCatalog, analyzeInventoryExport } from 'wasp/client/operations';
 import { useParams, Link } from 'react-router-dom';
 import { StoreNav } from '../components/StoreNav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -9,37 +9,47 @@ import { Badge } from '../components/ui/badge';
 import { Separator } from '../components/ui/separator';
 import { Upload, FileText, CheckCircle, AlertCircle, Database, TrendingUp, Store, File } from 'lucide-react';
 import CSVUploadConfirmation from '../components/CSVUploadConfirmation';
+import UploadProgressModal from '../components/UploadProgressModal';
 
 const InventoryUploadPage = () => {
   const { storeId } = useParams();
   const uploadInventoryFn = useAction(uploadInventory);
   const uploadInventoryExportFn = useAction(uploadInventoryExport);
   const uploadInventoryLogsFn = useAction(uploadInventoryLogs);
+  const uploadProductCatalogFn = useAction(uploadProductCatalog);
   const analyzeInventoryExportFn = useAction(analyzeInventoryExport);
   
   // State for both upload types
   const [exportData, setExportData] = useState('');
   const [logsData, setLogsData] = useState('');
+  const [catalogData, setCatalogData] = useState('');
   const [legacyData, setLegacyData] = useState('');
   
   // File upload states
   const [exportFile, setExportFile] = useState(null);
   const [logsFile, setLogsFile] = useState(null);
+  const [catalogFile, setCatalogFile] = useState(null);
   const [legacyFile, setLegacyFile] = useState(null);
   
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('export'); // export, logs, legacy
+  const [activeTab, setActiveTab] = useState('export'); // export, logs, catalog, legacy
   
   // Confirmation dialog state
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
   const [pendingUpload, setPendingUpload] = useState(null);
   
+  // Progress modal state
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [uploadType, setUploadType] = useState('');
+  const [currentFileSize, setCurrentFileSize] = useState(0);
+  
   // File input refs
   const exportFileRef = useRef(null);
   const logsFileRef = useRef(null);
+  const catalogFileRef = useRef(null);
   const legacyFileRef = useRef(null);
 
   // File handling functions
@@ -85,6 +95,11 @@ const InventoryUploadPage = () => {
   const handleLogsFileSelect = (e) => {
     const file = e.target.files[0];
     handleFileSelect(file, setLogsFile, setLogsData);
+  };
+
+  const handleCatalogFileSelect = (e) => {
+    const file = e.target.files[0];
+    handleFileSelect(file, setCatalogFile, setCatalogData);
   };
 
   const handleLegacyFileSelect = (e) => {
@@ -164,22 +179,26 @@ const InventoryUploadPage = () => {
     if (!pendingUpload) return;
 
     setIsLoading(true);
+    setShowConfirmDialog(false);
+    setShowProgressModal(true);
+    setUploadType('export');
+    setCurrentFileSize(exportFile ? exportFile.size / 1024 / 1024 : 0);
     setError('');
     setSuccess('');
 
     try {
       const result = await uploadInventoryExportFn(pendingUpload);
-      setSuccess(`Export processed successfully! ${result.newProducts} new products, ${result.updatedProducts} updated products, ${result.unchangedProducts} unchanged products.`);
+      setSuccess(`Export processed successfully! ${result.newProducts} new products, ${result.updatedProducts} updated products, ${result.unchangedProducts} unchanged products. ${result.storesCreated} stores created/updated across ${result.locations.length} locations.`);
       setExportData('');
       setExportFile(null);
       if (exportFileRef.current) exportFileRef.current.value = '';
-      setShowConfirmDialog(false);
       setConfirmData(null);
       setPendingUpload(null);
     } catch (err) {
       setError('Error uploading inventory export: ' + err.message);
     } finally {
       setIsLoading(false);
+      setShowProgressModal(false);
     }
   };
 
@@ -196,6 +215,9 @@ const InventoryUploadPage = () => {
     }
 
     setIsLoading(true);
+    setShowProgressModal(true);
+    setUploadType('logs');
+    setCurrentFileSize(logsFile ? logsFile.size / 1024 / 1024 : 0);
     setError('');
     setSuccess('');
 
@@ -213,7 +235,13 @@ const InventoryUploadPage = () => {
       }
 
       const result = await uploadInventoryLogsFn({ csvData });
-      setSuccess(`Logs processed successfully! ${result.movementsProcessed} movements processed from ${result.totalMovements} total records.`);
+      
+      const successMsg = `Logs processed successfully! ${result.movementsProcessed} movements processed from ${result.totalMovements} total records.`;
+      const detailsMsg = result.skippedRows > 0 
+        ? ` ${result.skippedRows} rows skipped (products not found in catalog - upload inventory export first).`
+        : '';
+      
+      setSuccess(successMsg + detailsMsg);
       setLogsData('');
       setLogsFile(null);
       if (logsFileRef.current) logsFileRef.current.value = '';
@@ -229,6 +257,55 @@ const InventoryUploadPage = () => {
       }
     } finally {
       setIsLoading(false);
+      setShowProgressModal(false);
+    }
+  };
+
+  const handleCatalogUpload = async () => {
+    if (!catalogData.trim() && !catalogFile) {
+      setError('Please select a CSV file or paste CSV data');
+      return;
+    }
+
+    setIsLoading(true);
+    setShowProgressModal(true);
+    setUploadType('export');
+    setCurrentFileSize(catalogFile ? catalogFile.size / 1024 / 1024 : 0);
+    setError('');
+    setSuccess('');
+
+    try {
+      let csvData = catalogData;
+      
+      // If we have a file but no data (large file), read the full file
+      if (catalogFile && !catalogData.trim()) {
+        csvData = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.readAsText(catalogFile);
+        });
+      }
+
+      const result = await uploadProductCatalogFn({ csvData });
+      
+      setSuccess(`Product catalog processed successfully! ${result.newProducts} products created, ${result.updatedProducts} products updated.`);
+      setCatalogData('');
+      setCatalogFile(null);
+      if (catalogFileRef.current) catalogFileRef.current.value = '';
+    } catch (err) {
+      if (err.message.includes('413') || err.message.includes('Request failed with status code 413')) {
+        setError('File is too large for the server to process. The server has been configured to handle larger files, but you may need to restart the development server for changes to take effect.');
+      } else if (err.message.includes('timeout') || err.message.includes('Processing timeout')) {
+        setError('Processing timeout: The file is too large or complex. Please try splitting your CSV into smaller files (max 50,000 rows).');
+      } else if (err.message.includes('File too large') || err.message.includes('More than')) {
+        setError(err.message + ' Use the CSV splitter utility to break large files into smaller chunks.');
+      } else {
+        setError('Error uploading product catalog: ' + err.message);
+      }
+    } finally {
+      setIsLoading(false);
+      setShowProgressModal(false);
     }
   };
 
@@ -309,6 +386,15 @@ const InventoryUploadPage = () => {
             >
               <TrendingUp className="h-4 w-4 mr-2" />
               Inventory Logs
+            </Button>
+            <Button
+              variant={activeTab === 'catalog' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('catalog')}
+              className="flex items-center"
+            >
+              <Store className="h-4 w-4 mr-2" />
+              Product Catalog
             </Button>
             <Button
               variant={activeTab === 'legacy' ? 'default' : 'ghost'}
@@ -528,6 +614,111 @@ const InventoryUploadPage = () => {
             </div>
           )}
 
+          {/* Catalog Tab */}
+          {activeTab === 'catalog' && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold mb-2">Product Catalog Upload</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Upload your product-catalog.csv file to bulk update product details like categories, prices, and margins.
+                </p>
+                
+                {/* File Upload Section */}
+                <div className="mb-4">
+                  <label className="text-sm font-medium mb-2 block">
+                    Upload CSV File
+                  </label>
+                  <div className="flex items-center space-x-4">
+                    <input
+                      ref={catalogFileRef}
+                      type="file"
+                      accept=".csv"
+                      onChange={handleCatalogFileSelect}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => catalogFileRef.current?.click()}
+                      className="flex items-center"
+                    >
+                      <File className="h-4 w-4 mr-2" />
+                      Choose CSV File
+                    </Button>
+                    {catalogFile && (
+                      <div className="flex items-center space-x-2">
+                        <FileText className="h-4 w-4 text-green-600" />
+                        <div className="flex flex-col">
+                          <span className="text-sm text-green-600">{catalogFile.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {(catalogFile.size / 1024 / 1024).toFixed(2)} MB
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setCatalogFile(null);
+                            setCatalogData('');
+                            if (catalogFileRef.current) catalogFileRef.current.value = '';
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">Or</span>
+                  </div>
+                </div>
+
+                <label className="text-sm font-medium mb-2 block">
+                  CSV Data Preview
+                </label>
+                <textarea
+                  className="w-full h-32 p-3 border border-input rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  placeholder="CSV data will appear here (preview only for large files)..."
+                  value={catalogData}
+                  onChange={(e) => setCatalogData(e.target.value)}
+                  readOnly={catalogFile && catalogFile.size > 5 * 1024 * 1024}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Expected columns: Product Name, Barcode, Category, Brand, Retail price, Wholesale cost, Description (optional), Image URL (optional)
+                </p>
+                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-xs text-blue-800">
+                    <strong>Bulk Product Updates:</strong> This upload updates existing products by GTIN/barcode. Products not in the database will be created. Categories are automatically split (e.g., "Edibles - Chocolate").
+                  </p>
+                </div>
+              </div>
+              <Button 
+                onClick={handleCatalogUpload} 
+                disabled={isLoading || (!catalogData.trim() && !catalogFile)}
+                className="flex items-center"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 mr-2 border-2 border-current border-t-transparent rounded-full" />
+                    Processing Catalog...
+                  </>
+                ) : (
+                  <>
+                    <Store className="h-4 w-4 mr-2" />
+                    Process Product Catalog
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+
           {/* Legacy Tab */}
           {activeTab === 'legacy' && (
             <div className="space-y-4">
@@ -668,6 +859,13 @@ const InventoryUploadPage = () => {
         onConfirm={handleConfirmUpload}
         confirmData={confirmData}
         isLoading={isLoading}
+      />
+
+      {/* Progress Modal */}
+      <UploadProgressModal
+        isOpen={showProgressModal}
+        uploadType={uploadType}
+        fileSize={currentFileSize}
       />
     </div>
   );

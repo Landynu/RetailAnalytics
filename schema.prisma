@@ -20,6 +20,8 @@ model Store {
     id            Int     @id @default(autoincrement())
     name          String
     location      String
+    reportName    String? // Name as it appears in CSV reports
+    friendlyName  String? // User-defined display name
     logoUrl       String?
     primaryColor  String? @default("#10b981") // emerald-500
     secondaryColor String? @default("#059669") // emerald-600
@@ -34,22 +36,27 @@ model Store {
 }
 
 model ProductCatalog {
-    id          Int      @id @default(autoincrement())
-    gtin        String   @unique
-    name        String
-    brand       String?
-    category    String?
-    subcategory String?
-    format      String?
-    size        String?
-    weight      Float?
-    thc         Float?
-    cbd         Float?
-    description String?
-    imageUrl    String?
-    lastSeen    DateTime @default(now())
-    stockLevels StockLevel[]
-    movements   InventoryMovement[]
+    id             Int      @id @default(autoincrement())
+    gtin           String   @unique
+    name           String
+    brand          String?
+    category       String?
+    parentCategory String?  // Split from category (e.g., "Edibles")
+    subcategory    String?  // Split from category (e.g., "Chocolate")
+    strainType     String?  // Sativa, Hybrid, Indica, or N/A
+    format         String?  // Extracted from product name (e.g., "1g", "100mg")
+    size           String?
+    weight         Float?
+    thc            Float?
+    cbd            Float?
+    retailPrice    Float?   // From CSV Retail price column
+    wholesaleCost  Float?   // From CSV Wholesale cost column
+    margin         Float?   // Calculated: (retail - wholesale) / retail
+    description    String?
+    imageUrl       String?
+    lastSeen       DateTime @default(now())
+    stockLevels    StockLevel[]
+    movements      InventoryMovement[]
 }
 
 model Category {

@@ -6,7 +6,7 @@ import { CreateStoreModal } from '../components/CreateStoreModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Plus, Upload, TrendingUp, Menu, MapPin, Store, File, Database, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Upload, TrendingUp, Menu, MapPin, Store, File, Database, AlertCircle, CheckCircle, Globe } from 'lucide-react';
 import CSVUploadConfirmation from '../components/CSVUploadConfirmation';
 
 const DashboardPage = () => {
@@ -161,13 +161,42 @@ const DashboardPage = () => {
             Manage your retail locations and inventory
           </p>
         </div>
-        <CreateStoreModal onStoreCreated={() => refetch()}>
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Store
-          </Button>
-        </CreateStoreModal>
+        <div className="flex gap-2">
+          <Link to="/upload">
+            <Button variant="outline">
+              <Globe className="h-4 w-4 mr-2" />
+              Global Upload
+            </Button>
+          </Link>
+          <CreateStoreModal onStoreCreated={() => refetch()}>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Store
+            </Button>
+          </CreateStoreModal>
+        </div>
       </div>
+
+      {/* Global Upload Info Card */}
+      <Card className="border-purple-200 bg-purple-50/50">
+        <CardHeader>
+          <CardTitle className="flex items-center text-purple-900">
+            <Globe className="h-5 w-5 mr-2" />
+            Multi-Store Data Upload
+          </CardTitle>
+          <CardDescription className="text-purple-700">
+            Upload inventory exports, transaction logs, and product catalogs for all stores at once
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link to="/upload">
+            <Button className="w-full">
+              <Database className="h-4 w-4 mr-2" />
+              Go to Global Upload
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
 
       {/* Quick Inventory Upload Section */}
       <Card className="border-blue-200 bg-blue-50/50">

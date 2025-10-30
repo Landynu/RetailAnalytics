@@ -255,6 +255,83 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   const csvSize = new Blob([csvData]).size;
   console.log(`Processing inventory export CSV: ${(csvSize / 1024 / 1024).toFixed(2)}MB`);
 
+  // Helper function to split category into parent and subcategory
+  const splitCategory = (category) => {
+    if (!category) return { parentCategory: null, subcategory: null };
+    
+    // Handle various delimiters: " - ", " > ", "-", ">"
+    const delimiters = [' - ', ' > ', '-', '>'];
+    for (const delimiter of delimiters) {
+      if (category.includes(delimiter)) {
+        const parts = category.split(delimiter);
+        return {
+          parentCategory: parts[0].trim(),
+          subcategory: parts.slice(1).join(delimiter).trim().replace(/^>+\s*/, '')
+        };
+      }
+    }
+    
+    // If no delimiter found, treat entire category as parent
+    return { parentCategory: category.trim(), subcategory: null };
+  };
+
+  // Helper function to extract format from product name
+  const extractFormat = (productName) => {
+    if (!productName) return null;
+    
+    // Extract format from last part after "-" or within parentheses
+    const lastDashPart = productName.split('-').pop().trim();
+    
+    // Look for patterns like "1g", "100mg", "0.5g", "10ml", etc.
+    const formatMatch = lastDashPart.match(/(\d+\.?\d*\s*(g|mg|ml|oz|ml|%))/i);
+    if (formatMatch) {
+      return formatMatch[0].trim();
+    }
+    
+    // Also check within parentheses
+    const parenMatch = productName.match(/\(([^)]*(?:g|mg|ml|oz|%))\)/i);
+    if (parenMatch) {
+      return parenMatch[1].trim();
+    }
+    
+    return null;
+  };
+
+  // Helper function to calculate margin
+  const calculateMargin = (retailPrice, wholesaleCost) => {
+    if (!retailPrice || retailPrice === 0) return 0;
+    return (retailPrice - wholesaleCost) / retailPrice;
+  };
+
+  // Helper function to extract strain type from category
+  const extractStrainType = (parentCategory, subcategory) => {
+    if (!parentCategory || !subcategory) return 'N/A';
+    
+    const parent = parentCategory.toLowerCase();
+    const sub = subcategory.toLowerCase();
+    
+    // Check if it's a flower or pre-roll product
+    if (parent.includes('flower') || parent.includes('pre-roll') || parent.includes('preroll')) {
+      // Check subcategory for strain type
+      if (sub.includes('sativa')) return 'Sativa';
+      if (sub.includes('hybrid')) return 'Hybrid';
+      if (sub.includes('indica')) return 'Indica';
+    }
+    
+    return 'N/A';
+  };
+
+  // Helper function to normalize location names
+  const normalizeLocationName = (locationName) => {
+    // Normalize common variations
+    const normalizations = {
+      'South Albert Regina': 'Albert',
+      'South Albert': 'Albert'
+    };
+    
+    return normalizations[locationName] || locationName;
+  };
+
   // Set a timeout for large file processing (5 minutes)
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => {
@@ -262,7 +339,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     }, 5 * 60 * 1000); // 5 minutes
   });
 
-  const products = [];
+  const productsMap = new Map(); // Use Map to handle duplicates by GTIN
   const locationColumns = [];
   const readable = Readable.from(csvData.split('\n'));
 
@@ -279,6 +356,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           reject(new Error(`File too large: More than ${maxRows} rows. Please split your CSV into smaller files.`));
           return;
         }
+        
         // Detect location columns (numeric values in columns)
         if (Object.keys(data).length > 0) {
           Object.keys(data).forEach(key => {
@@ -288,29 +366,61 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
                 key !== 'Description' && key !== 'Barcode' && key !== 'Net product weight' &&
                 key !== 'Compliance Weight' && key !== 'Volume' && key !== 'Created' && key !== 'Updated' &&
                 !isNaN(parseInt(data[key])) && parseInt(data[key]) >= 0) {
-              if (!locationColumns.includes(key)) {
-                locationColumns.push(key);
+              const normalizedName = normalizeLocationName(key);
+              if (!locationColumns.includes(normalizedName)) {
+                locationColumns.push(normalizedName);
               }
             }
           });
         }
 
-        // Extract product data
+        // Extract product data with data cleaning
         if (data['Product Name'] && data['Barcode']) {
-          products.push({
-            gtin: data['Barcode'],
-            name: data['Product Name'],
-            brand: data['Brand'],
-            category: data['Category'],
-            retailPrice: parseFloat(data['Retail price']?.replace('$', '') || 0),
-            wholesaleCost: parseFloat(data['Wholesale cost']?.replace('$', '') || 0),
-            description: data['Description'],
-            imageUrl: data['Image URL'],
-            stockLevels: locationColumns.map(location => ({
-              location,
-              quantity: parseInt(data[location]) || 0
-            }))
+          const gtin = data['Barcode'].trim();
+          const retailPrice = parseFloat(data['Retail price']?.replace(/[$,]/g, '') || 0);
+          const wholesaleCost = parseFloat(data['Wholesale cost']?.replace(/[$,]/g, '') || 0);
+          const { parentCategory, subcategory } = splitCategory(data['Category']);
+          const format = extractFormat(data['Product Name']);
+          const margin = calculateMargin(retailPrice, wholesaleCost);
+          const strainType = extractStrainType(parentCategory, subcategory);
+          const updated = data['Updated'] ? new Date(data['Updated']) : new Date();
+          
+          const productData = {
+            gtin,
+            name: data['Product Name'].trim(),
+            brand: data['Brand']?.trim() || null,
+            category: data['Category']?.trim() || null,
+            parentCategory,
+            subcategory,
+            strainType,
+            format,
+            retailPrice,
+            wholesaleCost,
+            margin,
+            description: data['Description']?.trim() || null,
+            imageUrl: data['Image URL']?.trim() || null,
+            updated,
+            stockLevels: []
+          };
+          
+          // Collect stock levels for all locations
+          Object.keys(data).forEach(key => {
+            const normalizedLocation = normalizeLocationName(key);
+            if (locationColumns.includes(normalizedLocation)) {
+              const quantity = parseInt(data[key]) || 0;
+              productData.stockLevels.push({
+                location: normalizedLocation,
+                originalLocation: key,
+                quantity
+              });
+            }
           });
+          
+          // Handle duplicates: keep the one with the most recent Updated date
+          const existing = productsMap.get(gtin);
+          if (!existing || productData.updated > existing.updated) {
+            productsMap.set(gtin, productData);
+          }
         }
       })
       .on('end', resolve)
@@ -319,6 +429,9 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
 
   // Race between processing and timeout
   await Promise.race([processingPromise, timeoutPromise]);
+
+  // Convert Map to array
+  const products = Array.from(productsMap.values());
 
   // Create/update stores if autoCreateStores is true
   const storeMap = {};
@@ -376,6 +489,13 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         name: product.name,
         brand: product.brand,
         category: product.category,
+        parentCategory: product.parentCategory,
+        subcategory: product.subcategory,
+        strainType: product.strainType,
+        format: product.format,
+        retailPrice: product.retailPrice,
+        wholesaleCost: product.wholesaleCost,
+        margin: product.margin,
         description: product.description,
         imageUrl: product.imageUrl
       });
@@ -385,6 +505,12 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         existing.name !== product.name ||
         existing.brand !== product.brand ||
         existing.category !== product.category ||
+        existing.parentCategory !== product.parentCategory ||
+        existing.subcategory !== product.subcategory ||
+        existing.strainType !== product.strainType ||
+        existing.format !== product.format ||
+        existing.retailPrice !== product.retailPrice ||
+        existing.wholesaleCost !== product.wholesaleCost ||
         existing.description !== product.description ||
         existing.imageUrl !== product.imageUrl;
 
@@ -394,6 +520,13 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           name: product.name,
           brand: product.brand,
           category: product.category,
+          parentCategory: product.parentCategory,
+          subcategory: product.subcategory,
+          strainType: product.strainType,
+          format: product.format,
+          retailPrice: product.retailPrice,
+          wholesaleCost: product.wholesaleCost,
+          margin: product.margin,
           description: product.description,
           imageUrl: product.imageUrl
         });
@@ -403,13 +536,41 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     }
   }
 
-  // Batch create new products (single query)
+  // Helper to truncate long text fields
+  const truncateField = (text, maxLength = 1000) => {
+    if (!text) return text;
+    return text.length > maxLength ? text.substring(0, maxLength) : text;
+  };
+
+  // Batch create new products in chunks of 100
   let createdProducts = [];
   if (newProducts.length > 0) {
-    await context.entities.ProductCatalog.createMany({
-      data: newProducts,
-      skipDuplicates: true
-    });
+    const chunkSize = 100;
+    for (let i = 0; i < newProducts.length; i += chunkSize) {
+      const chunk = newProducts.slice(i, i + chunkSize).map(p => ({
+        ...p,
+        description: truncateField(p.description, 1000),
+        imageUrl: truncateField(p.imageUrl, 500)
+      }));
+      
+      try {
+        await context.entities.ProductCatalog.createMany({
+          data: chunk
+        });
+      } catch (error) {
+        // If batch insert fails (e.g., due to duplicates), insert one by one
+        for (const product of chunk) {
+          try {
+            await context.entities.ProductCatalog.create({
+              data: product
+            });
+          } catch (err) {
+            // Skip duplicates silently
+            console.log(`Skipping duplicate product: ${product.gtin}`);
+          }
+        }
+      }
+    }
     
     // Fetch the created products to get their IDs
     createdProducts = await context.entities.ProductCatalog.findMany({
@@ -417,21 +578,32 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     });
   }
 
-  // Batch update existing products (fewer queries)
+  // Batch update existing products in chunks of 50
   if (existingProductsToUpdate.length > 0) {
-    await Promise.all(existingProductsToUpdate.map(product => 
-      context.entities.ProductCatalog.update({
-        where: { gtin: product.gtin },
-        data: {
-          name: product.name,
-          brand: product.brand,
-          category: product.category,
-          description: product.description,
-          imageUrl: product.imageUrl,
-          lastSeen: new Date()
-        }
-      })
-    ));
+    const chunkSize = 50;
+    for (let i = 0; i < existingProductsToUpdate.length; i += chunkSize) {
+      const chunk = existingProductsToUpdate.slice(i, i + chunkSize);
+      await Promise.all(chunk.map(product => 
+        context.entities.ProductCatalog.update({
+          where: { gtin: product.gtin },
+          data: {
+            name: product.name,
+            brand: product.brand,
+            category: product.category,
+            parentCategory: product.parentCategory,
+            subcategory: product.subcategory,
+            strainType: product.strainType,
+            format: product.format,
+            retailPrice: product.retailPrice,
+            wholesaleCost: product.wholesaleCost,
+            margin: product.margin,
+            description: truncateField(product.description, 1000),
+            imageUrl: truncateField(product.imageUrl, 500),
+            lastSeen: new Date()
+          }
+        })
+      ));
+    }
   }
 
   // Update lastSeen for unchanged products
@@ -470,29 +642,68 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     }
   }
 
-  // Batch upsert stock levels
+  // Batch upsert stock levels in smaller chunks to avoid SQLite timeouts
   if (stockLevelUpdates.length > 0) {
-    await Promise.all(stockLevelUpdates.map(stock => 
-      context.entities.StockLevel.upsert({
-        where: {
-          storeId_productId: {
-            storeId: stock.storeId,
-            productId: stock.productId
+    const chunkSize = 10; // Reduced for SQLite performance
+    console.log(`Upserting ${stockLevelUpdates.length} stock levels in chunks of ${chunkSize}...`);
+    
+    for (let i = 0; i < stockLevelUpdates.length; i += chunkSize) {
+      const chunk = stockLevelUpdates.slice(i, i + chunkSize);
+      
+      // Process chunk with retry logic
+      try {
+        await Promise.all(chunk.map(stock => 
+          context.entities.StockLevel.upsert({
+            where: {
+              storeId_productId: {
+                storeId: stock.storeId,
+                productId: stock.productId
+              }
+            },
+            update: {
+              quantity: stock.quantity,
+              lastUpdated: new Date(),
+              snapshotId: stock.snapshotId
+            },
+            create: {
+              storeId: stock.storeId,
+              productId: stock.productId,
+              quantity: stock.quantity,
+              snapshotId: stock.snapshotId
+            }
+          })
+        ));
+        console.log(`Stock levels: ${i + chunk.length}/${stockLevelUpdates.length} completed`);
+      } catch (error) {
+        console.error(`Error in stock level chunk ${Math.floor(i / chunkSize) + 1}:`, error.message);
+        // Try one by one for this chunk
+        for (const stock of chunk) {
+          try {
+            await context.entities.StockLevel.upsert({
+              where: {
+                storeId_productId: {
+                  storeId: stock.storeId,
+                  productId: stock.productId
+                }
+              },
+              update: {
+                quantity: stock.quantity,
+                lastUpdated: new Date(),
+                snapshotId: stock.snapshotId
+              },
+              create: {
+                storeId: stock.storeId,
+                productId: stock.productId,
+                quantity: stock.quantity,
+                snapshotId: stock.snapshotId
+              }
+            });
+          } catch (err) {
+            console.error(`Failed to upsert stock level for product ${stock.productId}:`, err.message);
           }
-        },
-        update: {
-          quantity: stock.quantity,
-          lastUpdated: new Date(),
-          snapshotId: stock.snapshotId
-        },
-        create: {
-          storeId: stock.storeId,
-          productId: stock.productId,
-          quantity: stock.quantity,
-          snapshotId: stock.snapshotId
         }
-      })
-    ));
+      }
+    }
   }
 
   const results = {
@@ -520,6 +731,24 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   const csvSize = new Blob([csvData]).size;
   console.log(`Processing inventory logs CSV: ${(csvSize / 1024 / 1024).toFixed(2)}MB`);
 
+  // Helper function to extract brand from product name (text in parentheses)
+  const extractBrand = (productName) => {
+    if (!productName) return null;
+    
+    const match = productName.match(/\(([^)]+)\)/);
+    return match ? match[1].trim() : null;
+  };
+
+  // Helper function to normalize location names
+  const normalizeLocationName = (locationName) => {
+    const normalizations = {
+      'South Albert Regina': 'Albert',
+      'South Albert': 'Albert'
+    };
+    
+    return normalizations[locationName] || locationName;
+  };
+
   // Set a timeout for large file processing (5 minutes)
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => {
@@ -542,19 +771,39 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
           reject(new Error(`File too large: More than ${maxRows} rows. Please split your CSV into smaller files.`));
           return;
         }
+        
         if (data.Product && data.Location && data.Date) {
+          const changeQty = parseInt(data.Change) || 0;
+          const unitsSold = Math.abs(changeQty); // Absolute value for units sold
+          const brand = extractBrand(data.Product);
+          const normalizedLocation = normalizeLocationName(data.Location);
+          
+          // Handle date validation - default to specific date if invalid
+          let parsedDate;
+          try {
+            parsedDate = new Date(data.Date);
+            if (isNaN(parsedDate.getTime())) {
+              parsedDate = new Date('2023-10-31'); // Default date for invalid entries
+            }
+          } catch (e) {
+            parsedDate = new Date('2023-10-31');
+          }
+          
           movements.push({
-            productName: data.Product,
-            sku: data.SKU,
-            barcode: data.Barcode,
-            location: data.Location,
-            date: new Date(data.Date),
-            type: data.Type,
-            employee: data.Employee,
+            productName: data.Product.trim(),
+            sku: data.SKU?.trim() || null,
+            barcode: data.Barcode?.trim() || null,
+            location: normalizedLocation,
+            originalLocation: data.Location,
+            brand,
+            date: parsedDate,
+            type: data.Type?.trim() || 'Unknown',
+            employee: data.Employee?.trim() || null,
             openingQty: parseInt(data.Opening) || 0,
-            changeQty: parseInt(data.Change) || 0,
+            changeQty,
+            unitsSold,
             closingQty: parseInt(data.Closing) || 0,
-            notes: data.Notes
+            notes: data.Notes?.trim() || null
           });
         }
       })
@@ -565,41 +814,67 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   // Race between processing and timeout
   await Promise.race([processingPromise, timeoutPromise]);
 
+  // Get user's first store for snapshot (if they have stores)
+  const userStores = await context.entities.Store.findMany({
+    where: { userId: context.user.id }
+  });
+  
+  if (userStores.length === 0) {
+    throw new HttpError(400, 'No stores found. Please create a store first.');
+  }
+
   // Create inventory snapshot
   const snapshot = await context.entities.InventorySnapshot.create({
     data: {
-      storeId: context.user.stores[0]?.id, // Default to first store
+      storeId: userStores[0].id,
       fileType: 'LOG',
       rawData: csvData
     }
   });
 
-  // Process movements
+  // Process movements with better error tracking
   const results = [];
+  const errors = [];
+  const skippedRows = [];
+  
   for (const movement of movements) {
-    // Find store by location name
-    const store = await context.entities.Store.findFirst({
-      where: { 
-        name: { contains: movement.location },
-        userId: context.user.id 
-      }
-    });
-
-    if (!store) continue;
-
-    // Find product by GTIN/SKU
-    let product = await context.entities.ProductCatalog.findUnique({
-      where: { gtin: movement.barcode }
-    });
-
-    if (!product && movement.sku) {
-      // Try to find by name if GTIN not found
-      product = await context.entities.ProductCatalog.findFirst({
-        where: { name: { contains: movement.productName } }
+    try {
+      // Find store by normalized location name
+      const store = await context.entities.Store.findFirst({
+        where: { 
+          OR: [
+            { name: movement.location },
+            { reportName: movement.location },
+            { reportName: movement.originalLocation }
+          ],
+          userId: context.user.id 
+        }
       });
-    }
 
-    if (product) {
+      if (!store) {
+        skippedRows.push({
+          row: movement.productName,
+          reason: `Store not found: ${movement.location}`
+        });
+        continue;
+      }
+
+      // Find product by GTIN (primary key in industry)
+      let product = null;
+      if (movement.barcode) {
+        product = await context.entities.ProductCatalog.findUnique({
+          where: { gtin: movement.barcode }
+        });
+      }
+
+      if (!product) {
+        skippedRows.push({
+          row: movement.productName,
+          reason: `Product not found by GTIN: ${movement.barcode || 'N/A'}`
+        });
+        continue;
+      }
+
       const inventoryMovement = await context.entities.InventoryMovement.create({
         data: {
           storeId: store.id,
@@ -614,7 +889,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
         }
       });
 
-      // Update stock level
+      // Update stock level to match closing quantity
       await context.entities.StockLevel.upsert({
         where: {
           storeId_productId: {
@@ -624,7 +899,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
         },
         update: {
           quantity: movement.closingQty,
-          lastUpdated: new Date()
+          lastUpdated: movement.date
         },
         create: {
           storeId: store.id,
@@ -634,13 +909,251 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       });
 
       results.push(inventoryMovement);
+    } catch (error) {
+      errors.push({
+        row: movement.productName,
+        error: error.message
+      });
     }
   }
 
   return {
     snapshot,
     movementsProcessed: results.length,
-    totalMovements: movements.length
+    totalMovements: movements.length,
+    skippedRows: skippedRows.length,
+    errors: errors.length,
+    skippedDetails: skippedRows.slice(0, 10), // First 10 for reporting
+    errorDetails: errors.slice(0, 10) // First 10 for reporting
+  };
+};
+
+export const uploadProductCatalog = async ({ csvData }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  // Log file size for monitoring
+  const csvSize = new Blob([csvData]).size;
+  console.log(`Processing product catalog CSV: ${(csvSize / 1024 / 1024).toFixed(2)}MB`);
+
+  // Helper functions (same as uploadInventoryExport)
+  const splitCategory = (category) => {
+    if (!category) return { parentCategory: null, subcategory: null };
+    const delimiters = [' - ', ' > ', '-', '>'];
+    for (const delimiter of delimiters) {
+      if (category.includes(delimiter)) {
+        const parts = category.split(delimiter);
+        return {
+          parentCategory: parts[0].trim(),
+          subcategory: parts.slice(1).join(delimiter).trim().replace(/^>+\s*/, '')
+        };
+      }
+    }
+    return { parentCategory: category.trim(), subcategory: null };
+  };
+
+  const extractFormat = (productName) => {
+    if (!productName) return null;
+    const lastDashPart = productName.split('-').pop().trim();
+    const formatMatch = lastDashPart.match(/(\d+\.?\d*\s*(g|mg|ml|oz|%))/i);
+    if (formatMatch) return formatMatch[0].trim();
+    const parenMatch = productName.match(/\(([^)]*(?:g|mg|ml|oz|%))\)/i);
+    if (parenMatch) return parenMatch[1].trim();
+    return null;
+  };
+
+  const calculateMargin = (retailPrice, wholesaleCost) => {
+    if (!retailPrice || retailPrice === 0) return 0;
+    return (retailPrice - wholesaleCost) / retailPrice;
+  };
+
+  const extractStrainType = (parentCategory, subcategory) => {
+    if (!parentCategory || !subcategory) return 'N/A';
+    const parent = parentCategory.toLowerCase();
+    const sub = subcategory.toLowerCase();
+    if (parent.includes('flower') || parent.includes('pre-roll') || parent.includes('preroll')) {
+      if (sub.includes('sativa')) return 'Sativa';
+      if (sub.includes('hybrid')) return 'Hybrid';
+      if (sub.includes('indica')) return 'Indica';
+    }
+    return 'N/A';
+  };
+
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => {
+      reject(new Error('Processing timeout: File is too large or complex.'));
+    }, 5 * 60 * 1000);
+  });
+
+  const productsMap = new Map();
+  const readable = Readable.from(csvData.split('\n'));
+
+  const processingPromise = new Promise((resolve, reject) => {
+    let rowCount = 0;
+    const maxRows = 50000;
+    
+    readable
+      .pipe(csvParser())
+      .on('data', (data) => {
+        rowCount++;
+        if (rowCount > maxRows) {
+          reject(new Error(`File too large: More than ${maxRows} rows.`));
+          return;
+        }
+
+        // Process product data
+        if (data['Product Name'] && data['Barcode']) {
+          const gtin = data['Barcode'].trim();
+          const retailPrice = parseFloat(data['Retail price']?.replace(/[$,]/g, '') || 0);
+          const wholesaleCost = parseFloat(data['Wholesale cost']?.replace(/[$,]/g, '') || 0);
+          const { parentCategory, subcategory } = splitCategory(data['Category']);
+          const format = extractFormat(data['Product Name']);
+          const margin = calculateMargin(retailPrice, wholesaleCost);
+          const strainType = extractStrainType(parentCategory, subcategory);
+          const updated = data['Updated'] ? new Date(data['Updated']) : new Date();
+          
+          const productData = {
+            gtin,
+            name: data['Product Name'].trim(),
+            brand: data['Brand']?.trim() || null,
+            category: data['Category']?.trim() || null,
+            parentCategory,
+            subcategory,
+            strainType,
+            format,
+            retailPrice,
+            wholesaleCost,
+            margin,
+            description: data['Description']?.trim() || null,
+            imageUrl: data['Image URL']?.trim() || null,
+            weight: parseFloat(data['Net product weight']) || null,
+            size: data['Size']?.trim() || null,
+            updated
+          };
+          
+          // Handle duplicates: keep most recent
+          const existing = productsMap.get(gtin);
+          if (!existing || productData.updated > existing.updated) {
+            productsMap.set(gtin, productData);
+          }
+        }
+      })
+      .on('end', resolve)
+      .on('error', reject);
+  });
+
+  await Promise.race([processingPromise, timeoutPromise]);
+
+  const products = Array.from(productsMap.values());
+
+  // Bulk fetch existing products
+  const gtins = products.map(p => p.gtin);
+  const existingProducts = await context.entities.ProductCatalog.findMany({
+    where: { gtin: { in: gtins } }
+  });
+  
+  const existingProductsMap = new Map();
+  existingProducts.forEach(product => {
+    existingProductsMap.set(product.gtin, product);
+  });
+
+  const newProducts = [];
+  const updatedProducts = [];
+
+  for (const product of products) {
+    const existing = existingProductsMap.get(product.gtin);
+    if (!existing) {
+      newProducts.push({
+        gtin: product.gtin,
+        name: product.name,
+        brand: product.brand,
+        category: product.category,
+        parentCategory: product.parentCategory,
+        subcategory: product.subcategory,
+        strainType: product.strainType,
+        format: product.format,
+        retailPrice: product.retailPrice,
+        wholesaleCost: product.wholesaleCost,
+        margin: product.margin,
+        description: product.description,
+        imageUrl: product.imageUrl,
+        weight: product.weight,
+        size: product.size
+      });
+    } else {
+      updatedProducts.push({
+        gtin: product.gtin,
+        name: product.name,
+        brand: product.brand,
+        category: product.category,
+        parentCategory: product.parentCategory,
+        subcategory: product.subcategory,
+        format: product.format,
+        retailPrice: product.retailPrice,
+        wholesaleCost: product.wholesaleCost,
+        margin: product.margin,
+        description: product.description,
+        imageUrl: product.imageUrl,
+        weight: product.weight,
+        size: product.size
+      });
+    }
+  }
+
+  // Batch create new products
+  if (newProducts.length > 0) {
+    const chunkSize = 100;
+    for (let i = 0; i < newProducts.length; i += chunkSize) {
+      const chunk = newProducts.slice(i, i + chunkSize);
+      
+      try {
+        await context.entities.ProductCatalog.createMany({
+          data: chunk
+        });
+      } catch (error) {
+        // If batch fails, try one by one
+        for (const product of chunk) {
+          try {
+            await context.entities.ProductCatalog.create({
+              data: product
+            });
+          } catch (err) {
+            console.log(`Skipping duplicate product: ${product.gtin}`);
+          }
+        }
+      }
+    }
+  }
+
+  // Batch update existing products
+  if (updatedProducts.length > 0) {
+    await Promise.all(updatedProducts.map(product => 
+      context.entities.ProductCatalog.update({
+        where: { gtin: product.gtin },
+        data: {
+          name: product.name,
+          brand: product.brand,
+          category: product.category,
+          parentCategory: product.parentCategory,
+          subcategory: product.subcategory,
+          strainType: product.strainType,
+          format: product.format,
+          retailPrice: product.retailPrice,
+          wholesaleCost: product.wholesaleCost,
+          margin: product.margin,
+          description: product.description,
+          imageUrl: product.imageUrl,
+          weight: product.weight,
+          size: product.size,
+          lastSeen: new Date()
+        }
+      })
+    ));
+  }
+
+  return {
+    newProducts: newProducts.length,
+    updatedProducts: updatedProducts.length,
+    totalProcessed: products.length
   };
 };
 

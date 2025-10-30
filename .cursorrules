@@ -1,0 +1,259 @@
+# Wasp Framework Guide for RetailAnalytics
+
+## Overview
+This is a Wasp full-stack web application for retail analytics. Wasp is a declarative DSL (Domain-Specific Language) for building full-stack web apps with React, Node.js, and Prisma.
+
+## Core Wasp Concepts
+
+### 1. Project Structure
+```
+/
+├── main.wasp              # Main configuration file (Wasp DSL)
+├── schema.prisma          # Database models (Prisma schema)
+├── package.json           # Dependencies
+├── src/                   # All source code
+│   ├── actions.js         # Server-side data modifications
+│   ├── queries.js         # Server-side data fetching
+│   ├── pages/            # React page components
+│   ├── components/       # React components
+│   └── middleware/       # Express middleware
+└── public/               # Static assets
+```
+
+### 2. Wasp File (main.wasp)
+- **Declarative configuration** using Wasp DSL
+- Defines: app config, routes, pages, queries, actions, auth, jobs, APIs
+- Syntax: `<declaration_type> <name> { fields }`
+- Import paths must start with `@src` (e.g., `import { Foo } from "@src/bar.js"`)
+
+### 3. Three-Tier Architecture
+Wasp apps consist of:
+1. **Client** (React SPA) - Frontend served as static files
+2. **Server** (Express/Node.js) - Backend API
+3. **Database** (PostgreSQL) - Data persistence
+
+## Key Patterns
+
+### Entities (Database Models)
+- Defined in `schema.prisma` using Prisma Schema Language
+- Wasp reads these models and makes them available throughout the app
+- Example:
+  ```prisma
+  model Task {
+    id          Int     @id @default(autoincrement())
+    description String
+    isDone      Boolean @default(false)
+  }
+  ```
+
+### Operations (Queries & Actions)
+
+#### Queries (Read Data)
+1. **Declaration in main.wasp:**
+   ```wasp
+   query getTasks {
+     fn: import { getTasks } from "@src/queries",
+     entities: [Task]
+   }
+   ```
+
+2. **Implementation in src/queries.js:**
+   ```js
+   export const getTasks = async (args, context) => {
+     return context.entities.Task.findMany({})
+   }
+   ```
+
+3. **Usage on client:**
+   ```jsx
+   import { useQuery, getTasks } from 'wasp/client/operations'
+   
+   const { data: tasks } = useQuery(getTasks)
+   ```
+
+#### Actions (Modify Data)
+1. **Declaration in main.wasp:**
+   ```wasp
+   action createTask {
+     fn: import { createTask } from "@src/actions",
+     entities: [Task]
+   }
+   ```
+
+2. **Implementation in src/actions.js:**
+   ```js
+   export const createTask = async (args, context) => {
+     return context.entities.Task.create({
+       data: { description: args.description }
+     })
+   }
+   ```
+
+3. **Usage on client:**
+   ```jsx
+   import { createTask } from 'wasp/client/operations'
+   
+   await createTask({ description: 'New task' })
+   ```
+
+### Pages & Routes
+1. **Declaration in main.wasp:**
+   ```wasp
+   route DashboardRoute { path: "/dashboard", to: DashboardPage }
+   page DashboardPage {
+     component: import { Dashboard } from "@src/pages/Dashboard",
+     authRequired: true
+   }
+   ```
+
+2. **Component in src/pages/Dashboard.jsx:**
+   ```jsx
+   export function Dashboard() {
+     return <div>Dashboard content</div>
+   }
+   ```
+
+### Authentication
+- Configured in `app.auth` in main.wasp
+- Supports: email, username/password, Google, GitHub, Discord, etc.
+- Auto-generates auth tables: `Auth`, `AuthIdentity`, `Session`
+- User entity is separate from auth entities
+- Access user via `context.user` in operations or `useAuth()` hook on client
+
+### API Endpoints
+```wasp
+api uploadCSV {
+  fn: import { uploadCSV } from "@src/apis",
+  httpRoute: (POST, "/api/upload"),
+  entities: [InventoryItem]
+}
+```
+
+### Middleware Configuration
+```wasp
+app MyApp {
+  server: {
+    middlewareConfigFn: import { serverMiddlewareFn } from "@src/serverSetup"
+  }
+}
+```
+
+## Important Rules
+
+### Import Paths
+- **ALWAYS** use `@src` prefix for imports in main.wasp
+- Example: `import { Foo } from "@src/bar.js"`
+- Paths are relative to the `src/` directory
+
+### Entities in Operations
+- List required entities in the declaration
+- Entities are injected into `context.entities`
+- Use Prisma API: `context.entities.Task.findMany()`
+
+### Client-Server Communication
+- **Queries**: Use `useQuery` hook for reactive data
+- **Actions**: Call directly or use `useAction` hook
+- Wasp handles serialization, network calls, cache invalidation
+
+### Cache Invalidation
+- Automatic: When an Action uses Entity X, all Queries using Entity X are invalidated
+- Manual: Use react-query's API directly if needed
+
+### Environment Variables
+- **Client vars**: Must start with `REACT_APP_`
+- **Server vars**: No prefix required
+- Dev: Use `.env.client` and `.env.server` files
+- Prod: Set via hosting provider
+
+### File Organization
+- No required separation of client/server code
+- Can organize by feature (recommended) or any way you prefer
+- All code must be in `src/` directory
+
+## Common Wasp Commands
+
+```bash
+wasp new <project>          # Create new project
+wasp start                  # Start dev server (client + server)
+wasp start db              # Start dev database
+wasp db migrate-dev        # Run database migrations
+wasp db studio             # Open database GUI
+wasp clean                 # Delete generated code (troubleshooting)
+wasp build                 # Build for production
+wasp test client           # Run client tests
+```
+
+## This Project's Patterns
+
+### Store Management
+- Multi-tenant architecture (multiple stores)
+- Store selection via navigation component
+- Store context passed through app
+
+### CSV Upload
+- Uses API endpoints for file upload
+- Processes inventory data
+- Stores in database via Prisma
+
+### Data Flow
+1. User uploads CSV → API endpoint
+2. Server processes → Creates Actions
+3. Database updated → Queries invalidated
+4. Client refetches → UI updates
+
+## TypeScript Support
+- Wasp fully supports TypeScript
+- Change `.jsx` to `.tsx` and `.js` to `.ts`
+- Import types from `wasp/entities` and `wasp/server/operations`
+- Full-stack type safety across client-server boundary
+
+## Best Practices
+
+### Operations
+- Use Queries for reading data (GET)
+- Use Actions for modifying data (POST/PUT/DELETE)
+- Keep operations focused and single-purpose
+- Always handle errors appropriately
+
+### Error Handling
+- Use `HttpError` from `wasp/server` for meaningful errors
+- Status codes: 401 (unauthorized), 403 (forbidden), 404 (not found), 500 (server error)
+
+### Auth Context
+- Check `context.user` exists in protected operations
+- Use `authRequired: true` on pages needing auth
+- Access user data via `user.identities.<provider>.<field>`
+
+### Database
+- Run migrations after schema changes: `wasp db migrate-dev`
+- Use Prisma's CRUD API via `context.entities`
+- Leverage Prisma relations for efficient queries
+
+### Client Components
+- Use `useQuery` for reactive data fetching
+- Use `useAuth` to access current user
+- Import from `wasp/client/operations` and `wasp/client/auth`
+
+## Troubleshooting
+- **Changes not reflecting?** → Run `wasp clean` then `wasp start`
+- **Type errors?** → Ensure `wasp start` is running (generates types)
+- **Database issues?** → Check `DATABASE_URL` in `.env.server`
+- **Auth problems?** → Verify all required env vars are set
+
+## Key Differences from Traditional Stack
+- No manual API routing needed
+- No manual CORS configuration (handled by Wasp)
+- Automatic code generation for client-server communication
+- Built-in auth system with minimal configuration
+- Automatic Query cache invalidation
+
+## Documentation Reference
+- Main docs: https://wasp.sh/docs
+- Discord: https://discord.gg/rzdnErX
+- GitHub: https://github.com/wasp-lang/wasp
+
+## Remember
+- Wasp is a **compiler**: It reads your config and generates full-stack code
+- Write business logic in JS/TS, configuration in Wasp DSL
+- Wasp handles: routing, API creation, auth flows, database migrations
+- You focus on: data models, business logic, UI components
