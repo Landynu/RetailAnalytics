@@ -136,6 +136,11 @@ query getGlobalAnalyticsFiltered {
   entities: [Store, ProductCatalog, StockLevel, InventoryMovement]
 }
 
+query getGlobalSalesAnalytics {
+  fn: import { getGlobalSalesAnalytics } from "@src/queries.js",
+  entities: [Store, ProductCatalog, InventoryMovement]
+}
+
 route DashboardRoute { path: "/", to: DashboardPage }
 page DashboardPage {
   component: import DashboardPage from "@src/pages/Dashboard.jsx",

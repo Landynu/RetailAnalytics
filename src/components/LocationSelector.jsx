@@ -19,27 +19,38 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const isAllSelected = !selectedIds || selectedIds.length === 0;
-  const selectedCount = isAllSelected ? stores.length : selectedIds.length;
+  // Differentiate between "all" (null) and "none" (empty array)
+  const isAllSelected = selectedIds === null || selectedIds === undefined;
+  const isNoneSelected = Array.isArray(selectedIds) && selectedIds.length === 0;
+  const selectedCount = isAllSelected ? stores.length : (isNoneSelected ? 0 : selectedIds.length);
 
   const handleToggleAll = () => {
     onChange(null); // null = all locations
     setIsOpen(false);
   };
 
+  const handleClearAll = () => {
+    onChange([]); // empty array = no locations selected
+    // Keep dropdown open so user can select locations
+  };
+
   const handleToggleStore = (storeId) => {
     if (isAllSelected) {
-      // If all selected, deselect just this one (select all others)
-      const allOtherIds = stores.filter(s => s.id !== storeId).map(s => s.id);
-      onChange(allOtherIds);
+      // If all selected, clicking one should select only that one
+      onChange([storeId]);
+    } else if (isNoneSelected) {
+      // If none selected, clicking one should select only that one
+      onChange([storeId]);
     } else {
       if (selectedIds.includes(storeId)) {
         // Remove this store
         const newIds = selectedIds.filter(id => id !== storeId);
-        onChange(newIds.length === 0 ? null : newIds);
+        // Keep as empty array instead of converting to null
+        onChange(newIds);
       } else {
         // Add this store
         const newIds = [...selectedIds, storeId];
+        // Only convert to null if ALL stores are now selected
         onChange(newIds.length === stores.length ? null : newIds);
       }
     }
@@ -48,6 +59,9 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
   const getDisplayText = () => {
     if (isAllSelected) {
       return `All Locations (${stores.length})`;
+    }
+    if (isNoneSelected) {
+      return 'No Locations Selected';
     }
     if (selectedIds.length === 1) {
       const store = stores.find(s => s.id === selectedIds[0]);
@@ -89,7 +103,7 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
 
           <div className="max-h-[300px] overflow-y-auto p-2 space-y-1">
             {stores.map(store => {
-              const isSelected = isAllSelected || selectedIds.includes(store.id);
+              const isSelected = isAllSelected || (!isNoneSelected && selectedIds.includes(store.id));
               return (
                 <button
                   key={store.id}
@@ -111,14 +125,24 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
           <div className="p-2 border-t bg-muted/50">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{selectedCount} selected</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleToggleAll}
-                className="h-7 text-xs"
-              >
-                Select All
-              </Button>
+              <div className="flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearAll}
+                  className="h-7 text-xs"
+                >
+                  Clear All
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleToggleAll}
+                  className="h-7 text-xs"
+                >
+                  Select All
+                </Button>
+              </div>
             </div>
           </div>
         </div>

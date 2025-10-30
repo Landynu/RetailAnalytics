@@ -213,7 +213,7 @@ const GlobalAnalyticsDashboard = ({ analytics, loading = false }) => {
               <BarChart data={storeComparisonData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
-                <YAxis />
+                <YAxis tickFormatter={(value) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} />
                 <Tooltip 
                   formatter={(value, name) => {
                     if (name === 'value') return [`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Inventory Value'];
