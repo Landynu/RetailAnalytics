@@ -515,9 +515,12 @@ export const getStoreAnalytics = async ({ storeId, excludeCategories = ['Accesso
 export const getGlobalAnalytics = async (args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  // Get all user's stores
+  // Get all user's active stores only
   const stores = await context.entities.Store.findMany({
-    where: { userId: context.user.id },
+    where: { 
+      userId: context.user.id,
+      isActive: true  // Only include active stores
+    },
     include: {
       stockLevels: {
         include: {
@@ -962,8 +965,11 @@ export const getGlobalAnalyticsFiltered = async ({
 }, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  // Build where clause for stores
-  const storeWhere = { userId: context.user.id };
+  // Build where clause for stores - only active stores
+  const storeWhere = { 
+    userId: context.user.id,
+    isActive: true  // Only include active stores
+  };
   if (storeIds && storeIds.length > 0) {
     storeWhere.id = { in: storeIds.map(id => parseInt(id)) };
   }

@@ -1,11 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { MapPin, ChevronDown, Check } from 'lucide-react';
+import { MapPin, ChevronDown, Check, Star } from 'lucide-react';
 
 const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
+
+  // Initialize with favourites if selectedIds is null and there are favourited stores
+  useEffect(() => {
+    if (selectedIds === null || selectedIds === undefined) {
+      const favourites = stores.filter(s => s.isFavourite && s.isActive);
+      if (favourites.length > 0) {
+        // Set to favourites instead of all
+        onChange(favourites.map(s => s.id));
+      }
+    }
+  }, []); // Only run on mount
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -19,10 +30,14 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Only count active stores
+  const activeStores = stores.filter(store => store.isActive);
+  const activeStoreCount = activeStores.length;
+  
   // Differentiate between "all" (null) and "none" (empty array)
   const isAllSelected = selectedIds === null || selectedIds === undefined;
   const isNoneSelected = Array.isArray(selectedIds) && selectedIds.length === 0;
-  const selectedCount = isAllSelected ? stores.length : (isNoneSelected ? 0 : selectedIds.length);
+  const selectedCount = isAllSelected ? activeStoreCount : (isNoneSelected ? 0 : selectedIds.length);
 
   const handleToggleAll = () => {
     onChange(null); // null = all locations
@@ -58,7 +73,7 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
 
   const getDisplayText = () => {
     if (isAllSelected) {
-      return `All Locations (${stores.length})`;
+      return `All Locations (${activeStoreCount})`;
     }
     if (isNoneSelected) {
       return 'No Locations Selected';
@@ -67,7 +82,7 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
       const store = stores.find(s => s.id === selectedIds[0]);
       return store ? store.name : '1 Location';
     }
-    return `${selectedIds.length} of ${stores.length} Locations`;
+    return `${selectedIds.length} of ${activeStoreCount} Locations`;
   };
 
   return (
@@ -102,7 +117,9 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
           </div>
 
           <div className="max-h-[300px] overflow-y-auto p-2 space-y-1">
-            {stores.map(store => {
+            {stores
+              .filter(store => store.isActive) // Only show active stores
+              .map(store => {
               const isSelected = isAllSelected || (!isNoneSelected && selectedIds.includes(store.id));
               return (
                 <button
@@ -114,7 +131,12 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
                     {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
                   </div>
                   <div className="flex-1 text-left">
-                    <div className="font-medium">{store.friendlyName || store.name}</div>
+                    <div className="font-medium flex items-center gap-1">
+                      {store.friendlyName || store.name}
+                      {store.isFavourite && (
+                        <Star className="h-3 w-3 text-yellow-500 fill-current" />
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground">{store.location}</div>
                   </div>
                 </button>

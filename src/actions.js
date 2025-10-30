@@ -1379,3 +1379,52 @@ export const exportAnalyticsData = async ({ storeIds, filters }, context) => {
     rowCount: csvRows.length - 1 // Exclude header
   };
 };
+
+export const toggleStoreActive = async ({ storeId }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  const store = await context.entities.Store.findUnique({
+    where: { id: parseInt(storeId) }
+  });
+
+  if (!store || store.userId !== context.user.id) {
+    throw new HttpError(403);
+  }
+
+  const updatedStore = await context.entities.Store.update({
+    where: { id: parseInt(storeId) },
+    data: {
+      isActive: !store.isActive,
+      // If disabling, also unfavourite
+      ...(store.isActive && { isFavourite: false })
+    }
+  });
+
+  return updatedStore;
+};
+
+export const toggleStoreFavourite = async ({ storeId }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  const store = await context.entities.Store.findUnique({
+    where: { id: parseInt(storeId) }
+  });
+
+  if (!store || store.userId !== context.user.id) {
+    throw new HttpError(403);
+  }
+
+  // Can only favourite active stores
+  if (!store.isActive && !store.isFavourite) {
+    throw new HttpError(400, 'Cannot favourite a disabled store');
+  }
+
+  const updatedStore = await context.entities.Store.update({
+    where: { id: parseInt(storeId) },
+    data: {
+      isFavourite: !store.isFavourite
+    }
+  });
+
+  return updatedStore;
+};

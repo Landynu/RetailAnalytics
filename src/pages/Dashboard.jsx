@@ -405,7 +405,14 @@ const DashboardPage = () => {
       {/* Store Cards Grid */}
       {stores && stores.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Your Stores</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Your Stores</h2>
+            <div className="flex gap-2 text-sm text-muted-foreground">
+              <span>{stores.filter(s => s.isActive).length} active</span>
+              <span>•</span>
+              <span>{stores.filter(s => s.isFavourite).length} favourites</span>
+            </div>
+          </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {stores.map(store => (
               <CompactStoreCard

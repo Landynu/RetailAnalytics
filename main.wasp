@@ -81,6 +81,16 @@ action exportAnalyticsData {
   entities: [Store, ProductCatalog, StockLevel, InventoryMovement]
 }
 
+action toggleStoreActive {
+  fn: import { toggleStoreActive } from "@src/actions.js",
+  entities: [Store]
+}
+
+action toggleStoreFavourite {
+  fn: import { toggleStoreFavourite } from "@src/actions.js",
+  entities: [Store]
+}
+
 query getSalesTrends {
   fn: import { getSalesTrends } from "@src/queries.js",
   entities: [Store, ProductCatalog, StockLevel, InventorySnapshot]

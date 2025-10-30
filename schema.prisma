@@ -28,6 +28,8 @@ model Store {
     secondaryColor String? @default("#059669") // emerald-600
     theme         String  @default("LIGHT") // LIGHT, DARK
     fontFamily    String?
+    isActive      Boolean @default(true) // Disabled stores excluded from analytics
+    isFavourite   Boolean @default(false) // Default filter selection
     user          User    @relation(fields: [userId], references: [id])
     userId        Int
     snapshots     InventorySnapshot[]
