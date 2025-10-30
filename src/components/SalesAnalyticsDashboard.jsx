@@ -81,10 +81,21 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
     );
   };
 
+  // Get unique store names for multi-line/stacked chart (MUST be defined first)
+  const storeNames = salesData.storePerformance?.map(s => s.name.substring(0, 12)) || [];
+  const STORE_COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899'];
+
+  // Get the correct data array based on toggle (revenue or units)
+  const topProductsSourceData = showTopProductsBy === 'revenue' 
+    ? (salesData.topProductsByRevenue || [])
+    : (salesData.topProductsByUnits || []);
+
   // Prepare chart data with byStore flattened
-  const topProductsChartData = (salesData.topProductsByRevenue || []).slice(0, 10).map(p => {
+  const topProductsChartData = topProductsSourceData.slice(0, 10).map(p => {
     const baseData = {
       name: p.name.length > 20 ? p.name.substring(0, 20) + '...' : p.name,
+      fullName: p.name,
+      brand: p.brand || 'Unknown',
       revenue: p.revenue,
       units: p.unitsSold
     };
@@ -153,10 +164,6 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
       
       return baseData;
     });
-
-  // Get unique store names for multi-line/stacked chart
-  const storeNames = salesData.storePerformance?.map(s => s.name.substring(0, 12)) || [];
-  const STORE_COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899'];
 
   // Strain sales pie chart
   const strainSalesData = Object.keys(salesData.strainSales || {})
@@ -246,63 +253,72 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
         </Card>
       )}
 
-      {/* Top Products */}
+      {/* Top Products - Table View */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Top 10 Products</CardTitle>
+              <CardTitle>Top 10 Products by {showTopProductsBy === 'revenue' ? 'Revenue' : 'Units Sold'}</CardTitle>
               <CardDescription>
-                {showTopProductsView === 'total' ? 'Total' : 'By location'} - {showTopProductsBy === 'revenue' ? 'revenue' : 'units sold'}
+                Best performing products
               </CardDescription>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowTopProductsView(showTopProductsView === 'total' ? 'by-location' : 'total')}
-              >
-                {showTopProductsView === 'total' ? 'By Location' : 'Show Total'}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowTopProductsBy(showTopProductsBy === 'revenue' ? 'units' : 'revenue')}
-              >
-                {showTopProductsBy === 'revenue' ? 'Show Units' : 'Show Revenue'}
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowTopProductsBy(showTopProductsBy === 'revenue' ? 'units' : 'revenue')}
+            >
+              {showTopProductsBy === 'revenue' ? 'Show Units' : 'Show Revenue'}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={topProductsChartData} layout="horizontal">
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" />
-              <YAxis dataKey="name" type="category" width={150} fontSize={11} />
-              <Tooltip content={showTopProductsView === 'by-location' ? <CustomTooltip showBy={showTopProductsBy} /> : undefined} 
-                formatter={showTopProductsView === 'total' ? (value, name) => {
-                  if (name === 'revenue' || name === showTopProductsBy) return showTopProductsBy === 'revenue' 
-                    ? [`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Revenue']
-                    : [`${value} units`, 'Units'];
-                  return [value, name];
-                } : undefined}
-              />
-              {showTopProductsView === 'total' ? (
-                <Bar dataKey={showTopProductsBy} fill="#10b981" name={showTopProductsBy === 'revenue' ? 'Revenue' : 'Units'} />
-              ) : (
-                storeNames.map((storeName, index) => (
-                  <Bar 
-                    key={storeName}
-                    dataKey={`${storeName}_${showTopProductsBy}`}
-                    stackId="a"
-                    fill={STORE_COLORS[index % STORE_COLORS.length]}
-                    name={storeName}
-                  />
-                ))
-              )}
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="relative overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs uppercase bg-muted/50">
+                <tr>
+                  <th className="px-3 py-3 text-left font-semibold">#</th>
+                  <th className="px-3 py-3 text-left font-semibold">Product</th>
+                  <th className="px-3 py-3 text-left font-semibold">Brand</th>
+                  {showTopProductsBy === 'revenue' ? (
+                    <>
+                      <th className="px-3 py-3 text-right font-semibold">Revenue</th>
+                      <th className="px-3 py-3 text-right font-semibold">Units</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="px-3 py-3 text-right font-semibold">Units</th>
+                      <th className="px-3 py-3 text-right font-semibold">Revenue</th>
+                    </>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {topProductsChartData.map((product, index) => (
+                  <tr key={index} className="hover:bg-muted/50 transition-colors">
+                    <td className="px-3 py-3 text-muted-foreground font-medium">{index + 1}</td>
+                    <td className="px-3 py-3 font-medium" title={product.fullName}>{product.name}</td>
+                    <td className="px-3 py-3 text-muted-foreground">{product.brand}</td>
+                    {showTopProductsBy === 'revenue' ? (
+                      <>
+                        <td className="px-3 py-3 text-right font-mono">
+                          ${product.revenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        </td>
+                        <td className="px-3 py-3 text-right">{product.units}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-3 py-3 text-right">{product.units}</td>
+                        <td className="px-3 py-3 text-right font-mono">
+                          ${product.revenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 
@@ -472,14 +488,16 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
               <BarChart data={storeComparisonData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
-                <YAxis tickFormatter={(value) => showStoresBy === 'revenue'
-                  ? `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
-                  : value.toString()} />
+                <YAxis 
+                  tickFormatter={(value) => showStoresBy === 'revenue'
+                    ? `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                    : value.toString()} 
+                />
                 <Tooltip 
                   formatter={(value, name) => {
                     if (name === 'revenue' || name === showStoresBy) return showStoresBy === 'revenue'
-                      ? [`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Revenue']
-                      : [`${value} units`, 'Units Sold'];
+                      ? [`$${Number(value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Revenue']
+                      : [`${Math.round(value)} units`, 'Units Sold'];
                     return [value, name];
                   }}
                 />

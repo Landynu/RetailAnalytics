@@ -154,7 +154,10 @@ const GlobalAnalyticsDashboard = ({ analytics, loading = false }) => {
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={topProductsChartData} layout="horizontal">
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
+                <XAxis 
+                  type="number" 
+                  tickFormatter={(value) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}
+                />
                 <YAxis dataKey="name" type="category" width={150} fontSize={11} />
                 <Tooltip 
                   formatter={(value, name) => {
