@@ -4,7 +4,7 @@ app RetailAnalytics {
   },
   title: "RetailAnalytics",
   head: [
-    "<link rel=\"icon\" href=\"/favicon.ico\" />"
+    "<link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\" />"
   ],
   client: {
     rootComponent: import { Layout } from "@src/Layout.jsx"
@@ -48,7 +48,7 @@ action uploadInventoryExport {
 
 action uploadInventoryLogs {
   fn: import { uploadInventoryLogs } from "@src/actions.js",
-  entities: [Store, ProductCatalog, InventoryMovement, StockLevel, InventorySnapshot]
+  entities: [Store, ProductCatalog, InventoryMovement, StockLevel, InventorySnapshot, UnmatchedRecord]
 }
 
 action uploadProductCatalog {
@@ -74,6 +74,11 @@ action generateSmartMenu {
 action generatePrintableMenu {
   fn: import { generatePrintableMenu } from "@src/actions.js",
   entities: [Store, ProductCatalog, StockLevel]
+}
+
+action exportAnalyticsData {
+  fn: import { exportAnalyticsData } from "@src/actions.js",
+  entities: [Store, ProductCatalog, StockLevel, InventoryMovement]
 }
 
 query getSalesTrends {
@@ -124,6 +129,11 @@ query getStoreAnalytics {
 query getGlobalAnalytics {
   fn: import { getGlobalAnalytics } from "@src/queries.js",
   entities: [Store, ProductCatalog, StockLevel]
+}
+
+query getGlobalAnalyticsFiltered {
+  fn: import { getGlobalAnalyticsFiltered } from "@src/queries.js",
+  entities: [Store, ProductCatalog, StockLevel, InventoryMovement]
 }
 
 route DashboardRoute { path: "/", to: DashboardPage }

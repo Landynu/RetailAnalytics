@@ -1,103 +1,100 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
-import { CheckCircle, Loader2, Clock } from 'lucide-react';
+import { Loader2, Clock, Terminal, Database } from 'lucide-react';
 
-const UploadProgressModal = ({ isOpen, uploadType, fileSize, estimatedSteps }) => {
-  // Calculate estimated time based on file size and steps
+const UploadProgressModal = ({ isOpen, uploadType, fileSize }) => {
+  // Calculate estimated time based on file size
   const estimateTime = (sizeInMB) => {
-    if (sizeInMB < 1) return '10-20 seconds';
-    if (sizeInMB < 5) return '30-60 seconds';
-    return '1-3 minutes';
+    if (sizeInMB < 1) return '10-30 seconds';
+    if (sizeInMB < 5) return '30-90 seconds';
+    if (sizeInMB < 10) return '1-3 minutes';
+    return '3-5 minutes';
   };
 
-  const getSteps = (type) => {
-    if (type === 'export') {
-      return [
-        { label: 'Parsing CSV file', detail: 'Reading and validating CSV structure' },
-        { label: 'Detecting locations', detail: 'Identifying store location columns' },
-        { label: 'Extracting product data', detail: 'Parsing product names, categories, prices' },
-        { label: 'Splitting categories', detail: 'Parent category ↔ Subcategory' },
-        { label: 'Extracting formats', detail: 'Detecting product formats (1g, 100mg, etc.)' },
-        { label: 'Calculating margins', detail: '(Retail - Wholesale) / Retail' },
-        { label: 'Handling duplicates', detail: 'Keeping most recent products by date' },
-        { label: 'Normalizing locations', detail: 'Mapping report names to stores' },
-        { label: 'Creating/updating stores', detail: 'Setting up store records' },
-        { label: 'Creating inventory snapshot', detail: 'Audit trail for this upload' },
-        { label: 'Fetching existing products', detail: 'Checking for GTIN matches' },
-        { label: 'Inserting new products', detail: `Batches of 100 products` },
-        { label: 'Updating existing products', detail: `Batches of 50 products` },
-        { label: 'Updating stock levels', detail: `Batches of 10 locations (may take longest)` },
-        { label: 'Finalizing upload', detail: 'Preparing results summary' }
-      ];
-    } else if (type === 'logs') {
-      return [
-        { label: 'Parsing CSV file', detail: 'Reading movement logs' },
-        { label: 'Extracting brands', detail: 'From product names (text in parentheses)' },
-        { label: 'Normalizing locations', detail: 'Matching to store names' },
-        { label: 'Validating dates', detail: 'Checking date formats' },
-        { label: 'Calculating units sold', detail: 'Absolute value of changes' },
-        { label: 'Creating snapshot', detail: 'Audit trail for this upload' },
-        { label: 'Matching products by GTIN', detail: 'Industry standard matching' },
-        { label: 'Creating movement records', detail: 'Transaction history' },
-        { label: 'Updating stock levels', detail: 'From closing quantities' },
-        { label: 'Generating error report', detail: 'Skipped rows and reasons' }
-      ];
-    }
-    return [];
+  const getTypeLabel = (type) => {
+    const labels = {
+      'export': 'Inventory Export',
+      'logs': 'Inventory Logs',
+      'catalog': 'Product Catalog'
+    };
+    return labels[type] || 'Data';
   };
 
-  const steps = getSteps(uploadType);
   const estimatedTime = estimateTime(fileSize);
+  const typeLabel = getTypeLabel(uploadType);
 
   return (
     <Dialog open={isOpen}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center">
-            <Loader2 className="h-5 w-5 mr-2 animate-spin text-primary" />
-            Processing Upload
+          <DialogTitle className="flex items-center text-xl">
+            <Loader2 className="h-6 w-6 mr-3 animate-spin text-primary" />
+            Processing {typeLabel}
           </DialogTitle>
           <DialogDescription>
-            Please wait while we process your file. This may take a moment.
+            Your data is being processed on the server. Please wait and do not close this window.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* File Info */}
-          <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-            <div className="flex items-center space-x-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Estimated time:</span>
-            </div>
-            <span className="text-sm text-muted-foreground">{estimatedTime}</span>
-          </div>
-
-          {/* Progress Steps */}
-          <div className="space-y-2 max-h-[400px] overflow-y-auto">
-            <h4 className="text-sm font-semibold mb-3">Processing Steps:</h4>
-            {steps.map((step, index) => (
-              <div 
-                key={index} 
-                className="flex items-start space-x-3 p-3 bg-secondary/30 rounded-lg animate-pulse"
-                style={{ animationDelay: `${index * 0.1}s` }}
-              >
-                <div className="flex-shrink-0 mt-0.5">
-                  <div className="h-5 w-5 rounded-full border-2 border-primary flex items-center justify-center">
-                    <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                  </div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">{step.label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{step.detail}</p>
-                </div>
+        <div className="space-y-6 py-4">
+          {/* File Info Card */}
+          <div className="p-4 bg-secondary/50 rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Database className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">File Size:</span>
               </div>
-            ))}
+              <span className="text-sm text-foreground font-mono">{fileSize.toFixed(2)} MB</span>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Estimated Time:</span>
+              </div>
+              <span className="text-sm text-muted-foreground">{estimatedTime}</span>
+            </div>
           </div>
 
-          {/* Bottom Info */}
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-xs text-blue-800">
-              <strong>Large files may take several minutes.</strong> The system is processing your data in optimized batches to ensure reliability. Do not close this window.
+          {/* Processing Animation */}
+          <div className="flex flex-col items-center justify-center py-8">
+            <div className="relative">
+              <div className="h-20 w-20 rounded-full border-4 border-primary/20"></div>
+              <div className="absolute inset-0 h-20 w-20 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Database className="h-8 w-8 text-primary animate-pulse" />
+              </div>
+            </div>
+            <p className="text-sm font-medium mt-4 text-foreground">Processing your data...</p>
+            <p className="text-xs text-muted-foreground mt-1">Optimized batching for PostgreSQL</p>
+          </div>
+
+          {/* Terminal Log Info */}
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-start space-x-3">
+              <Terminal className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-900 mb-1">
+                  Real-time Progress Available
+                </p>
+                <p className="text-xs text-blue-700 leading-relaxed">
+                  Check your <strong>terminal/console</strong> for detailed progress logs including:
+                </p>
+                <ul className="text-xs text-blue-700 mt-2 ml-4 space-y-1 list-disc">
+                  <li>Row counts and percentages</li>
+                  <li>Batch processing status</li>
+                  <li>Skipped rows and reasons</li>
+                  <li>Final summary statistics</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Patient Message */}
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground">
+              Large files are processed in optimized batches.<br />
+              The server will handle everything in the background.
             </p>
           </div>
         </div>

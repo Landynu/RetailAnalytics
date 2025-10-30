@@ -321,16 +321,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     return 'N/A';
   };
 
-  // Helper function to normalize location names
-  const normalizeLocationName = (locationName) => {
-    // Normalize common variations
-    const normalizations = {
-      'South Albert Regina': 'Albert',
-      'South Albert': 'Albert'
-    };
-    
-    return normalizations[locationName] || locationName;
-  };
+  // No longer normalizing location names - using friendlyName instead
 
   // Set a timeout for large file processing (5 minutes)
   const timeoutPromise = new Promise((_, reject) => {
@@ -366,9 +357,8 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
                 key !== 'Description' && key !== 'Barcode' && key !== 'Net product weight' &&
                 key !== 'Compliance Weight' && key !== 'Volume' && key !== 'Created' && key !== 'Updated' &&
                 !isNaN(parseInt(data[key])) && parseInt(data[key]) >= 0) {
-              const normalizedName = normalizeLocationName(key);
-              if (!locationColumns.includes(normalizedName)) {
-                locationColumns.push(normalizedName);
+              if (!locationColumns.includes(key)) {
+                locationColumns.push(key);
               }
             }
           });
@@ -405,11 +395,10 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           
           // Collect stock levels for all locations
           Object.keys(data).forEach(key => {
-            const normalizedLocation = normalizeLocationName(key);
-            if (locationColumns.includes(normalizedLocation)) {
+            if (locationColumns.includes(key)) {
               const quantity = parseInt(data[key]) || 0;
               productData.stockLevels.push({
-                location: normalizedLocation,
+                location: key,
                 originalLocation: key,
                 quantity
               });
@@ -542,10 +531,10 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     return text.length > maxLength ? text.substring(0, maxLength) : text;
   };
 
-  // Batch create new products in chunks of 100
+  // Batch create new products - PostgreSQL can handle much larger batches
   let createdProducts = [];
   if (newProducts.length > 0) {
-    const chunkSize = 100;
+    const chunkSize = 1000; // Increased from 100 for PostgreSQL
     for (let i = 0; i < newProducts.length; i += chunkSize) {
       const chunk = newProducts.slice(i, i + chunkSize).map(p => ({
         ...p,
@@ -555,18 +544,22 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       
       try {
         await context.entities.ProductCatalog.createMany({
-          data: chunk
+          data: chunk,
+          skipDuplicates: true // PostgreSQL supports this
         });
       } catch (error) {
-        // If batch insert fails (e.g., due to duplicates), insert one by one
-        for (const product of chunk) {
+        console.error(`Error in product creation batch: ${error.message}`);
+        // If batch fails, try smaller chunks
+        const smallerChunkSize = 100;
+        for (let j = 0; j < chunk.length; j += smallerChunkSize) {
+          const smallChunk = chunk.slice(j, j + smallerChunkSize);
           try {
-            await context.entities.ProductCatalog.create({
-              data: product
+            await context.entities.ProductCatalog.createMany({
+              data: smallChunk,
+              skipDuplicates: true
             });
           } catch (err) {
-            // Skip duplicates silently
-            console.log(`Skipping duplicate product: ${product.gtin}`);
+            console.error(`Failed smaller batch: ${err.message}`);
           }
         }
       }
@@ -578,9 +571,9 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     });
   }
 
-  // Batch update existing products in chunks of 50
+  // Batch update existing products - PostgreSQL handles this well
   if (existingProductsToUpdate.length > 0) {
-    const chunkSize = 50;
+    const chunkSize = 500; // Increased from 50 for PostgreSQL
     for (let i = 0; i < existingProductsToUpdate.length; i += chunkSize) {
       const chunk = existingProductsToUpdate.slice(i, i + chunkSize);
       await Promise.all(chunk.map(product => 
@@ -642,9 +635,9 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     }
   }
 
-  // Batch upsert stock levels in smaller chunks to avoid SQLite timeouts
+  // Batch upsert stock levels - PostgreSQL can handle much larger batches
   if (stockLevelUpdates.length > 0) {
-    const chunkSize = 10; // Reduced for SQLite performance
+    const chunkSize = 500; // Increased from 10 for PostgreSQL performance
     console.log(`Upserting ${stockLevelUpdates.length} stock levels in chunks of ${chunkSize}...`);
     
     for (let i = 0; i < stockLevelUpdates.length; i += chunkSize) {
@@ -676,30 +669,34 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         console.log(`Stock levels: ${i + chunk.length}/${stockLevelUpdates.length} completed`);
       } catch (error) {
         console.error(`Error in stock level chunk ${Math.floor(i / chunkSize) + 1}:`, error.message);
-        // Try one by one for this chunk
-        for (const stock of chunk) {
+        // Try smaller batches if large batch fails
+        const smallerChunkSize = 50;
+        for (let j = 0; j < chunk.length; j += smallerChunkSize) {
+          const smallChunk = chunk.slice(j, j + smallerChunkSize);
           try {
-            await context.entities.StockLevel.upsert({
-              where: {
-                storeId_productId: {
+            await Promise.all(smallChunk.map(stock => 
+              context.entities.StockLevel.upsert({
+                where: {
+                  storeId_productId: {
+                    storeId: stock.storeId,
+                    productId: stock.productId
+                  }
+                },
+                update: {
+                  quantity: stock.quantity,
+                  lastUpdated: new Date(),
+                  snapshotId: stock.snapshotId
+                },
+                create: {
                   storeId: stock.storeId,
-                  productId: stock.productId
+                  productId: stock.productId,
+                  quantity: stock.quantity,
+                  snapshotId: stock.snapshotId
                 }
-              },
-              update: {
-                quantity: stock.quantity,
-                lastUpdated: new Date(),
-                snapshotId: stock.snapshotId
-              },
-              create: {
-                storeId: stock.storeId,
-                productId: stock.productId,
-                quantity: stock.quantity,
-                snapshotId: stock.snapshotId
-              }
-            });
+              })
+            ));
           } catch (err) {
-            console.error(`Failed to upsert stock level for product ${stock.productId}:`, err.message);
+            console.error(`Failed smaller batch starting at index ${j}:`, err.message);
           }
         }
       }
@@ -729,7 +726,10 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
 
   // Log file size for monitoring (no limit enforcement)
   const csvSize = new Blob([csvData]).size;
-  console.log(`Processing inventory logs CSV: ${(csvSize / 1024 / 1024).toFixed(2)}MB`);
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('🚀 STARTING INVENTORY LOGS UPLOAD');
+  console.log(`📁 File size: ${(csvSize / 1024 / 1024).toFixed(2)}MB`);
+  console.log('═══════════════════════════════════════════════════════');
 
   // Helper function to extract brand from product name (text in parentheses)
   const extractBrand = (productName) => {
@@ -739,15 +739,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
     return match ? match[1].trim() : null;
   };
 
-  // Helper function to normalize location names
-  const normalizeLocationName = (locationName) => {
-    const normalizations = {
-      'South Albert Regina': 'Albert',
-      'South Albert': 'Albert'
-    };
-    
-    return normalizations[locationName] || locationName;
-  };
+  // No longer normalizing location names - using reportName/friendlyName instead
 
   // Set a timeout for large file processing (5 minutes)
   const timeoutPromise = new Promise((_, reject) => {
@@ -776,7 +768,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
           const changeQty = parseInt(data.Change) || 0;
           const unitsSold = Math.abs(changeQty); // Absolute value for units sold
           const brand = extractBrand(data.Product);
-          const normalizedLocation = normalizeLocationName(data.Location);
+          const location = data.Location.trim();
           
           // Handle date validation - default to specific date if invalid
           let parsedDate;
@@ -793,7 +785,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
             productName: data.Product.trim(),
             sku: data.SKU?.trim() || null,
             barcode: data.Barcode?.trim() || null,
-            location: normalizedLocation,
+            location,
             originalLocation: data.Location,
             brand,
             date: parsedDate,
@@ -813,6 +805,9 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
 
   // Race between processing and timeout
   await Promise.race([processingPromise, timeoutPromise]);
+  
+  console.log(`✅ CSV parsing complete: ${movements.length} movement records found`);
+  console.log(`📊 Validating dates and normalizing locations...`);
 
   // Get user's first store for snapshot (if they have stores)
   const userStores = await context.entities.Store.findMany({
@@ -822,8 +817,11 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   if (userStores.length === 0) {
     throw new HttpError(400, 'No stores found. Please create a store first.');
   }
+  
+  console.log(`🏪 Found ${userStores.length} store(s) in your account`);
 
   // Create inventory snapshot
+  console.log(`📸 Creating snapshot record...`);
   const snapshot = await context.entities.InventorySnapshot.create({
     data: {
       storeId: userStores[0].id,
@@ -833,11 +831,21 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   });
 
   // Process movements with better error tracking
+  console.log(`\n🔄 PROCESSING ${movements.length} MOVEMENT RECORDS...`);
+  console.log(`This may take a few moments. Progress will be logged every 100 records.\n`);
+  
   const results = [];
   const errors = [];
   const skippedRows = [];
+  let productsCreated = 0; // Track minimal products created from logs
   
-  for (const movement of movements) {
+  for (let i = 0; i < movements.length; i++) {
+    const movement = movements[i];
+    
+    // Log progress every 100 records
+    if (i > 0 && i % 100 === 0) {
+      console.log(`📈 Progress: ${i}/${movements.length} (${((i / movements.length) * 100).toFixed(1)}%) - ${results.length} processed, ${skippedRows.length} skipped`);
+    }
     try {
       // Find store by normalized location name
       const store = await context.entities.Store.findFirst({
@@ -867,10 +875,44 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
         });
       }
 
+      // If product doesn't exist but we have a GTIN, create minimal product
+      if (!product && movement.barcode) {
+        console.log(`📦 Creating minimal product from log: ${movement.productName} (${movement.barcode})`);
+        product = await context.entities.ProductCatalog.create({
+          data: {
+            gtin: movement.barcode,
+            name: movement.productName,
+            brand: movement.brand,
+            strainType: 'N/A', // Will be enriched by inventory export
+            // All other fields nullable - will be filled by export upload
+          }
+        });
+        productsCreated++;
+      }
+
+      // Only skip if we have no GTIN at all (can't create or match product)
       if (!product) {
         skippedRows.push({
           row: movement.productName,
-          reason: `Product not found by GTIN: ${movement.barcode || 'N/A'}`
+          reason: `Missing GTIN - cannot create or match product`
+        });
+        
+        // Save to UnmatchedRecord for review
+        await context.entities.UnmatchedRecord.create({
+          data: {
+            userId: context.user.id,
+            recordType: 'LOG',
+            productName: movement.productName,
+            barcode: movement.barcode,
+            sku: movement.sku,
+            location: movement.location,
+            brand: movement.brand,
+            date: movement.date,
+            changeQty: movement.changeQty,
+            employee: movement.employee,
+            reason: 'Missing GTIN - cannot create or match product',
+            rawData: JSON.stringify(movement)
+          }
         });
         continue;
       }
@@ -916,11 +958,33 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       });
     }
   }
+  
+  // Final summary
+  console.log('\n═══════════════════════════════════════════════════════');
+  console.log('✅ INVENTORY LOGS UPLOAD COMPLETE!');
+  console.log(`📊 Processed: ${results.length}/${movements.length} movements`);
+  if (productsCreated > 0) {
+    console.log(`📦 Products auto-created: ${productsCreated} (minimal entries - will be enriched by inventory export)`);
+  }
+  console.log(`⚠️  Skipped: ${skippedRows.length} rows`);
+  console.log(`❌ Errors: ${errors.length}`);
+  if (skippedRows.length > 0) {
+    console.log(`\n⚠️  Top reasons for skipped rows:`);
+    const reasons = {};
+    skippedRows.forEach(skip => {
+      reasons[skip.reason] = (reasons[skip.reason] || 0) + 1;
+    });
+    Object.entries(reasons).forEach(([reason, count]) => {
+      console.log(`   - ${reason}: ${count} rows`);
+    });
+  }
+  console.log('═══════════════════════════════════════════════════════\n');
 
   return {
     snapshot,
     movementsProcessed: results.length,
     totalMovements: movements.length,
+    productsCreated, // Number of minimal products auto-created from logs
     skippedRows: skippedRows.length,
     errors: errors.length,
     skippedDetails: skippedRows.slice(0, 10), // First 10 for reporting
@@ -1237,4 +1301,81 @@ export const generatePrintableMenu = async ({ storeId, options = {} }, context) 
   };
 
   return menuData;
+};
+
+export const exportAnalyticsData = async ({ storeIds, filters }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  // Get the filtered analytics data using the query logic
+  const analyticsData = await context.entities.Store.findMany({
+    where: {
+      userId: context.user.id,
+      ...(storeIds && storeIds.length > 0 ? { id: { in: storeIds.map(id => parseInt(id)) } } : {})
+    },
+    include: {
+      stockLevels: {
+        include: {
+          product: true
+        }
+      }
+    }
+  });
+
+  // Format data for CSV export
+  const csvRows = [];
+  csvRows.push(['Store', 'Product', 'GTIN', 'Brand', 'Category', 'Subcategory', 'Strain Type', 'Quantity', 'Retail Price', 'Total Value']);
+
+  analyticsData.forEach(store => {
+    store.stockLevels.forEach(stock => {
+      const product = stock.product;
+      
+      // Apply filters if provided
+      if (filters) {
+        if (filters.categories && filters.categories.length > 0 && !filters.categories.includes(product.parentCategory)) {
+          return;
+        }
+        if (filters.subcategories && filters.subcategories.length > 0 && !filters.subcategories.includes(product.subcategory)) {
+          return;
+        }
+        if (filters.brands && filters.brands.length > 0 && !filters.brands.includes(product.brand)) {
+          return;
+        }
+        if (filters.strainTypes && filters.strainTypes.length > 0 && !filters.strainTypes.includes(product.strainType)) {
+          return;
+        }
+      }
+
+      const totalValue = stock.quantity * (product.retailPrice || 0);
+      csvRows.push([
+        store.name,
+        product.name,
+        product.gtin,
+        product.brand || '',
+        product.parentCategory || '',
+        product.subcategory || '',
+        product.strainType || '',
+        stock.quantity,
+        product.retailPrice || 0,
+        totalValue.toFixed(2)
+      ]);
+    });
+  });
+
+  // Convert to CSV string
+  const csvContent = csvRows.map(row => 
+    row.map(cell => {
+      // Escape quotes and wrap in quotes if contains comma, quote, or newline
+      const cellStr = String(cell);
+      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+        return `"${cellStr.replace(/"/g, '""')}"`;
+      }
+      return cellStr;
+    }).join(',')
+  ).join('\n');
+
+  return {
+    csv: csvContent,
+    filename: `analytics-export-${new Date().toISOString().split('T')[0]}.csv`,
+    rowCount: csvRows.length - 1 // Exclude header
+  };
 };

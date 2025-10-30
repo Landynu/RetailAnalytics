@@ -178,12 +178,17 @@ const GlobalUploadPage = () => {
 
       const result = await uploadInventoryLogsFn({ csvData });
       
-      const successMsg = `Logs processed successfully! ${result.movementsProcessed} movements processed from ${result.totalMovements} total records across all stores.`;
-      const detailsMsg = result.skippedRows > 0 
-        ? ` ${result.skippedRows} rows skipped (products not found - upload inventory export first).`
-        : '';
+      let successMsg = `Logs processed successfully! ${result.movementsProcessed} movements processed from ${result.totalMovements} total records.`;
       
-      setSuccess(successMsg + detailsMsg);
+      if (result.productsCreated > 0) {
+        successMsg += ` ${result.productsCreated} minimal product(s) auto-created from logs (will be enriched when inventory export is uploaded).`;
+      }
+      
+      if (result.skippedRows > 0) {
+        successMsg += ` ${result.skippedRows} rows skipped (missing GTIN).`;
+      }
+      
+      setSuccess(successMsg);
       setLogsData('');
       setLogsFile(null);
       if (logsFileRef.current) logsFileRef.current.value = '';

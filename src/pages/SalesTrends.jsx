@@ -1,47 +1,30 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getStoreAnalytics } from 'wasp/client/operations';
 import { useParams, Link } from 'react-router-dom';
 import { StoreNav } from '../components/StoreNav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { TrendingUp, Package, DollarSign, Search, ArrowUpDown, Leaf, Upload } from 'lucide-react';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import {
-  useReactTable,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
-  getPaginationRowModel,
-  flexRender,
-} from '@tanstack/react-table';
+import { Package, DollarSign, Leaf, Upload, Filter } from 'lucide-react';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const STRAIN_COLORS = {
-  Sativa: '#10b981',   // green
-  Hybrid: '#f59e0b',   // amber
-  Indica: '#8b5cf6',   // purple
-  'N/A': '#6b7280'     // gray
+  Sativa: '#10b981',
+  Hybrid: '#f59e0b',
+  Indica: '#8b5cf6',
+  'N/A': '#6b7280'
 };
 
 const SalesTrendsPage = () => {
   const { storeId } = useParams();
-  const { data: analytics, isLoading, error } = useQuery(getStoreAnalytics, { storeId });
+  const [excludeCategories, setExcludeCategories] = useState(['Accessories', 'Accessory']);
+  const [showByRevenue, setShowByRevenue] = useState(true); // true = revenue, false = units
   
-  const [globalFilter, setGlobalFilter] = useState('');
-  const [sorting, setSorting] = useState([]);
-
-  // Flatten all products from all snapshots for the table
-  const tableData = useMemo(() => {
-    if (!analytics) return [];
-    
-    // Get stock levels for table
-    const products = [];
-    // We need to fetch this separately or restructure analytics query
-    return products;
-  }, [analytics]);
+  const { data: analytics, isLoading, error } = useQuery(getStoreAnalytics, { 
+    storeId, 
+    excludeCategories 
+  });
 
   if (isLoading) return (
     <div className="space-y-6">
@@ -98,14 +81,14 @@ const SalesTrendsPage = () => {
       value: analytics.strainBreakdown[strain]
     }));
 
-  const topProductsChartData = analytics.topProducts.map(p => ({
+  const topProductsData = showByRevenue ? analytics.topProductsByRevenue : analytics.topProductsByUnits;
+  const topProductsChartData = topProductsData.map(p => ({
     name: p.name.length > 20 ? p.name.substring(0, 20) + '...' : p.name,
-    revenue: p.revenue,
-    units: p.unitsSold
+    value: showByRevenue ? p.revenue : p.unitsSold
   }));
 
   const topBrandsChartData = analytics.topBrands.map(b => ({
-    name: b.brand,
+    name: b.brand.length > 15 ? b.brand.substring(0, 15) + '...' : b.brand,
     value: b.value,
     products: b.products
   }));
@@ -116,10 +99,53 @@ const SalesTrendsPage = () => {
     products: c.products
   }));
 
+  const toggleCategoryFilter = (category) => {
+    setExcludeCategories(prev => 
+      prev.includes(category) 
+        ? prev.filter(c => c !== category)
+        : [...prev, category]
+    );
+  };
+
   return (
     <div className="space-y-6">
       <StoreNav currentPage="trends" />
       
+      {/* Category Filter */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Filter className="h-5 w-5 mr-2" />
+            Category Filters
+          </CardTitle>
+          <CardDescription>
+            Toggle categories to include/exclude from analytics
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {analytics.availableCategories.map(category => {
+              const isExcluded = excludeCategories.includes(category);
+              return (
+                <Button
+                  key={category}
+                  variant={isExcluded ? 'outline' : 'default'}
+                  size="sm"
+                  onClick={() => toggleCategoryFilter(category)}
+                  className={isExcluded ? 'opacity-50' : ''}
+                >
+                  {category}
+                  {isExcluded && ' (Hidden)'}
+                </Button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Currently showing {analytics.totalProducts} products (excluding {excludeCategories.join(', ')})
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
@@ -181,11 +207,11 @@ const SalesTrendsPage = () => {
       {/* Analytics Charts */}
       <div className="grid gap-6 md:grid-cols-2">
         {/* Strain Type Distribution */}
-        {strainChartData.length > 0 && (
+        {strainChartData.length > 0 ? (
           <Card>
             <CardHeader>
               <CardTitle>Strain Type Distribution</CardTitle>
-              <CardDescription>Inventory breakdown by strain type</CardDescription>
+              <CardDescription>Flower inventory breakdown by strain</CardDescription>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -207,6 +233,16 @@ const SalesTrendsPage = () => {
                   <Tooltip />
                 </PieChart>
               </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Strain Type Distribution</CardTitle>
+              <CardDescription>No flower products in inventory</CardDescription>
+            </CardHeader>
+            <CardContent className="h-[300px] flex items-center justify-center">
+              <p className="text-muted-foreground">Upload flower products to see strain distribution</p>
             </CardContent>
           </Card>
         )}
@@ -231,11 +267,24 @@ const SalesTrendsPage = () => {
         </Card>
 
         {/* Top 10 Products by Sales */}
-        {analytics.topProducts.length > 0 && (
+        {analytics.hasMovementData && topProductsData.length > 0 ? (
           <Card>
             <CardHeader>
-              <CardTitle>Top 10 Products by Sales</CardTitle>
-              <CardDescription>Revenue from sales transactions</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Top 10 Products by Sales</CardTitle>
+                  <CardDescription>
+                    {showByRevenue ? 'Revenue' : 'Units sold'} from sales transactions
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowByRevenue(!showByRevenue)}
+                >
+                  {showByRevenue ? 'Show Units' : 'Show Revenue'}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
@@ -243,10 +292,25 @@ const SalesTrendsPage = () => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
                   <YAxis dataKey="name" type="category" width={150} />
-                  <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
-                  <Bar dataKey="revenue" fill="#3b82f6" />
+                  <Tooltip 
+                    formatter={(value) => showByRevenue ? `$${value.toFixed(2)}` : `${value} units`} 
+                  />
+                  <Bar dataKey="value" fill="#3b82f6" />
                 </BarChart>
               </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Top 10 Products by Sales</CardTitle>
+              <CardDescription>Sales transaction data</CardDescription>
+            </CardHeader>
+            <CardContent className="h-[300px] flex items-center justify-center">
+              <div className="text-center">
+                <p className="text-muted-foreground mb-2">No sales data available</p>
+                <p className="text-xs text-muted-foreground">Upload inventory logs to see sales analytics</p>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -271,34 +335,16 @@ const SalesTrendsPage = () => {
         </Card>
       </div>
 
-      {/* Sales Data Note */}
-      {analytics.topProducts.length === 0 && (
+      {/* Info Note */}
+      {!analytics.hasMovementData && (
         <Card className="border-blue-200 bg-blue-50">
           <CardContent className="p-4">
             <p className="text-sm text-blue-800">
-              <strong>Note:</strong> Sales data (Top 10 Products chart) requires inventory logs to be uploaded. Upload inventory logs to see sales analytics.
+              <strong>Note:</strong> Sales data (Top 10 Products chart) requires inventory logs to be uploaded. Upload inventory logs at <Link to="/upload" className="underline">Global Upload</Link> to see sales analytics.
             </p>
           </CardContent>
         </Card>
       )}
-
-      {/* Detailed Product List - Coming in next update */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Inventory Details</CardTitle>
-              <CardDescription>Complete product list with filtering and sorting</CardDescription>
-            </div>
-            <Badge>{analytics.totalProducts} products</Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Detailed filterable/sortable product table will be added in the next update...
-          </p>
-        </CardContent>
-      </Card>
     </div>
   );
 };

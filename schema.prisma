@@ -1,5 +1,5 @@
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   // Wasp requires that the url is set to the DATABASE_URL environment variable.
   url      = env("DATABASE_URL")
 }
@@ -10,10 +10,11 @@ generator client {
 }
 
 model User {
-    id          Int     @id @default(autoincrement())
-    role        String  @default("ANALYST") // ADMIN, ANALYST
-    permissions String? // JSON string for granular permissions
-    stores      Store[]
+    id               Int     @id @default(autoincrement())
+    role             String  @default("ANALYST") // ADMIN, ANALYST
+    permissions      String? // JSON string for granular permissions
+    stores           Store[]
+    unmatchedRecords UnmatchedRecord[]
 }
 
 model Store {
@@ -107,6 +108,31 @@ model InventoryMovement {
     changeQty   Int
     closingQty  Int
     notes       String?
+}
+
+model UnmatchedRecord {
+    id              Int      @id @default(autoincrement())
+    userId          Int
+    user            User     @relation(fields: [userId], references: [id])
+    recordType      String   // LOG, EXPORT, CATALOG
+    productName     String?
+    barcode         String?
+    sku             String?
+    location        String?
+    brand           String?
+    category        String?
+    retailPrice     Float?
+    wholesaleCost   Float?
+    quantity        Int?
+    date            DateTime?
+    changeQty       Int?
+    employee        String?
+    reason          String   // Why it was skipped
+    rawData         String   // Full JSON of the original row
+    createdAt       DateTime @default(now())
+    resolved        Boolean  @default(false)
+    resolvedAt      DateTime?
+    notes           String?
 }
 
 // Legacy models for backward compatibility
