@@ -15,6 +15,7 @@ model User {
     permissions      String? // JSON string for granular permissions
     stores           Store[]
     unmatchedRecords UnmatchedRecord[]
+    orderWorksheets  OrderWorksheet[]
 }
 
 model Store {
@@ -58,8 +59,14 @@ model ProductCatalog {
     description    String?
     imageUrl       String?
     lastSeen       DateTime @default(now())
+    status         String?  @default("ACTIVE") // ACTIVE, ON_SALE, DISCONTINUED, SEASONAL
+    salePrice      Float?   // Promotional pricing when on sale
+    caseSize       Int?     @default(12) // Units per case for ordering
+    reorderPoint   Int?     // Custom reorder threshold
+    orderingNotes  String?  // Notes for purchasing decisions
     stockLevels    StockLevel[]
     movements      InventoryMovement[]
+    worksheetItems OrderWorksheetItem[]
 }
 
 model Category {
@@ -135,6 +142,30 @@ model UnmatchedRecord {
     resolved        Boolean  @default(false)
     resolvedAt      DateTime?
     notes           String?
+}
+
+model OrderWorksheet {
+    id         Int      @id @default(autoincrement())
+    userId     Int
+    user       User     @relation(fields: [userId], references: [id])
+    name       String   @default("Current Order")
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
+    items      OrderWorksheetItem[]
+}
+
+model OrderWorksheetItem {
+    id            Int      @id @default(autoincrement())
+    worksheetId   Int
+    worksheet     OrderWorksheet @relation(fields: [worksheetId], references: [id], onDelete: Cascade)
+    productId     Int
+    product       ProductCatalog @relation(fields: [productId], references: [id])
+    quantity      Int      // Suggested quantity
+    userQuantity  Int?     // User-modified quantity
+    notes         String?
+    addedAt       DateTime @default(now())
+    
+    @@unique([worksheetId, productId])
 }
 
 // Legacy models for backward compatibility

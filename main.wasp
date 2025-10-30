@@ -151,6 +151,46 @@ query getGlobalSalesAnalytics {
   entities: [Store, ProductCatalog, InventoryMovement]
 }
 
+query getOrderingAnalytics {
+  fn: import { getOrderingAnalytics } from "@src/queries.js",
+  entities: [Store, ProductCatalog, StockLevel, InventoryMovement]
+}
+
+query getOrCreateOrderWorksheet {
+  fn: import { getOrCreateOrderWorksheet } from "@src/actions.js",
+  entities: [OrderWorksheet, OrderWorksheetItem, ProductCatalog]
+}
+
+action addToOrderWorksheet {
+  fn: import { addToOrderWorksheet } from "@src/actions.js",
+  entities: [OrderWorksheet, OrderWorksheetItem, ProductCatalog]
+}
+
+action updateOrderWorksheetItem {
+  fn: import { updateOrderWorksheetItem } from "@src/actions.js",
+  entities: [OrderWorksheet, OrderWorksheetItem, ProductCatalog]
+}
+
+action removeFromOrderWorksheet {
+  fn: import { removeFromOrderWorksheet } from "@src/actions.js",
+  entities: [OrderWorksheet, OrderWorksheetItem]
+}
+
+action clearOrderWorksheet {
+  fn: import { clearOrderWorksheet } from "@src/actions.js",
+  entities: [OrderWorksheet, OrderWorksheetItem]
+}
+
+action exportOrderWorksheet {
+  fn: import { exportOrderWorksheet } from "@src/actions.js",
+  entities: [OrderWorksheet, OrderWorksheetItem, ProductCatalog]
+}
+
+action markProductStatus {
+  fn: import { markProductStatus } from "@src/actions.js",
+  entities: [ProductCatalog]
+}
+
 route DashboardRoute { path: "/", to: DashboardPage }
 page DashboardPage {
   component: import DashboardPage from "@src/pages/Dashboard.jsx",
@@ -178,5 +218,11 @@ page SmartMenuPage {
 route GlobalUploadRoute { path: "/upload", to: GlobalUploadPage }
 page GlobalUploadPage {
   component: import GlobalUploadPage from "@src/pages/GlobalUpload.jsx",
+  authRequired: true
+}
+
+route OrderingRoute { path: "/ordering", to: OrderingPage }
+page OrderingPage {
+  component: import OrderingDashboard from "@src/pages/OrderingDashboard.jsx",
   authRequired: true
 }

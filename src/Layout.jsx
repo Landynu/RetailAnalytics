@@ -27,6 +27,9 @@ export const Layout = () => {
                   <Link to="/" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
                     Dashboard
                   </Link>
+                  <Link to="/ordering" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                    Ordering
+                  </Link>
                 </nav>
               )}
             </div>

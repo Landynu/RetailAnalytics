@@ -959,6 +959,219 @@ export const getGlobalSalesAnalytics = async ({
   };
 };
 
+export const getOrderingAnalytics = async ({
+  storeIds = null,
+  dateRange = null,
+  filters = {}
+}, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  // Default to 14 days if no date range provided
+  const endDate = dateRange?.end ? new Date(dateRange.end) : new Date();
+  const startDate = dateRange?.start ? new Date(dateRange.start) : new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const periodDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));
+
+  // Build store filter
+  const storeWhere = { userId: context.user.id, isActive: true };
+  if (storeIds && storeIds.length > 0) {
+    storeWhere.id = { in: storeIds.map(id => parseInt(id)) };
+  }
+
+  // Get user's active stores
+  const stores = await context.entities.Store.findMany({
+    where: storeWhere,
+    select: { id: true, name: true, location: true }
+  });
+
+  const storeIdList = stores.map(s => s.id);
+
+  // Build product filter
+  const productWhere = {};
+  if (filters.brands && filters.brands.length > 0) {
+    productWhere.brand = { in: filters.brands };
+  }
+  if (filters.categories && filters.categories.length > 0) {
+    productWhere.parentCategory = { in: filters.categories };
+  }
+  if (filters.subcategories && filters.subcategories.length > 0) {
+    productWhere.subcategory = { in: filters.subcategories };
+  }
+  if (filters.formats && filters.formats.length > 0) {
+    productWhere.format = { in: filters.formats };
+  }
+
+  // Get all products with stock levels
+  const products = await context.entities.ProductCatalog.findMany({
+    where: productWhere,
+    include: {
+      stockLevels: {
+        where: { storeId: { in: storeIdList } },
+        include: { store: { select: { id: true, name: true } } }
+      },
+      movements: {
+        where: {
+          storeId: { in: storeIdList },
+          date: { gte: startDate, lte: endDate }
+        },
+        orderBy: { date: 'desc' }
+      }
+    }
+  });
+
+  // Calculate metrics for each product
+  const productMetrics = [];
+  
+  for (const product of products) {
+    // Skip if no inventory across all locations
+    const totalInventory = product.stockLevels.reduce((sum, sl) => sum + sl.quantity, 0);
+    if (totalInventory === 0 && product.movements.length === 0) continue;
+
+    // Calculate sales in period
+    const salesMovements = product.movements.filter(m => m.type === 'sale');
+    const totalSales = salesMovements.reduce((sum, m) => sum + Math.abs(m.changeQty), 0);
+    
+    // Calculate velocity (units per week)
+    const weeksInPeriod = periodDays / 7;
+    const velocity = weeksInPeriod > 0 ? totalSales / weeksInPeriod : 0;
+    
+    // Calculate weeks of inventory left
+    const weeksLeft = velocity > 0 ? totalInventory / velocity : 999;
+    
+    // Days since last sale
+    const lastSaleDate = salesMovements.length > 0 ? salesMovements[0].date : null;
+    const daysSinceLastSale = lastSaleDate ? Math.floor((endDate - lastSaleDate) / (24 * 60 * 60 * 1000)) : null;
+    
+    // Days since last purchase order
+    const poMovements = product.movements.filter(m => m.type === 'purchase order');
+    const lastPODate = poMovements.length > 0 ? poMovements[0].date : null;
+    const daysSinceLastPO = lastPODate ? Math.floor((endDate - lastPODate) / (24 * 60 * 60 * 1000)) : null;
+    
+    // Suggested order quantity (2-week buffer)
+    const twoWeekDemand = velocity * 2;
+    const suggestedQty = Math.max(0, Math.ceil(twoWeekDemand - totalInventory));
+    const caseSize = product.caseSize || 12;
+    const suggestedCases = Math.ceil(suggestedQty / caseSize);
+    
+    // Per-location inventory (as array for serialization)
+    const locationInventory = product.stockLevels.map(sl => ({
+      storeId: sl.storeId,
+      storeName: sl.store.name,
+      quantity: sl.quantity
+    }));
+
+    // Per-location sales (as array for serialization)
+    const locationSales = [];
+    const salesByStore = {};
+    salesMovements.forEach(m => {
+      if (!salesByStore[m.storeId]) {
+        salesByStore[m.storeId] = 0;
+      }
+      salesByStore[m.storeId] += Math.abs(m.changeQty);
+    });
+    Object.keys(salesByStore).forEach(storeId => {
+      locationSales.push({
+        storeId: parseInt(storeId),
+        units: salesByStore[storeId]
+      });
+    });
+
+    productMetrics.push({
+      id: product.id,
+      gtin: product.gtin,
+      name: product.name,
+      brand: product.brand,
+      parentCategory: product.parentCategory,
+      subcategory: product.subcategory,
+      format: product.format,
+      status: product.status,
+      retailPrice: product.retailPrice,
+      wholesaleCost: product.wholesaleCost,
+      margin: product.margin,
+      caseSize,
+      totalInventory,
+      locationInventory,
+      locationSales,
+      totalSales,
+      velocity,
+      weeksLeft,
+      daysSinceLastSale,
+      daysSinceLastPO,
+      suggestedQty,
+      suggestedCases
+    });
+  }
+
+  // Calculate category rankings
+  const categoryGroups = {};
+  productMetrics.forEach(p => {
+    const cat = p.parentCategory || 'Uncategorized';
+    if (!categoryGroups[cat]) categoryGroups[cat] = [];
+    categoryGroups[cat].push(p);
+  });
+
+  Object.keys(categoryGroups).forEach(cat => {
+    categoryGroups[cat].sort((a, b) => b.totalSales - a.totalSales);
+    categoryGroups[cat].forEach((p, idx) => {
+      p.categoryRank = idx + 1;
+      p.isTop10 = idx < 10;
+    });
+  });
+
+  // Sort by velocity (fastest movers first)
+  productMetrics.sort((a, b) => b.velocity - a.velocity);
+
+  // Calculate sales matrix data (top 20 products by sales)
+  const topProducts = [...productMetrics]
+    .sort((a, b) => b.totalSales - a.totalSales)
+    .slice(0, 20);
+
+  const salesMatrix = topProducts.map(p => {
+    const salesByLocation = {};
+    stores.forEach(store => {
+      const locationSale = p.locationSales.find(s => s.storeId === store.id);
+      salesByLocation[store.name] = locationSale ? locationSale.units : 0;
+    });
+    return {
+      productName: p.name,
+      brand: p.brand,
+      ...salesByLocation,
+      total: p.totalSales
+    };
+  });
+
+  // Calculate location totals (as array for serialization)
+  const locationTotals = stores.map(store => {
+    const storeProducts = productMetrics.filter(p => 
+      p.locationInventory.find(l => l.storeId === store.id && l.quantity > 0)
+    );
+    return {
+      storeName: store.name,
+      productCount: storeProducts.length
+    };
+  });
+
+  // Get unique values for filters
+  const allBrands = [...new Set(products.map(p => p.brand).filter(Boolean))].sort();
+  const allCategories = [...new Set(products.map(p => p.parentCategory).filter(Boolean))].sort();
+  const allSubcategories = [...new Set(products.map(p => p.subcategory).filter(Boolean))].sort();
+  const allFormats = [...new Set(products.map(p => p.format).filter(Boolean))].sort();
+
+  return {
+    products: productMetrics,
+    salesMatrix,
+    locationTotals,
+    stores: stores.map(s => ({ id: s.id, name: s.name, location: s.location })),
+    dateRange: { start: startDate.toISOString(), end: endDate.toISOString() },
+    periodDays,
+    filterOptions: {
+      brands: allBrands,
+      categories: allCategories,
+      subcategories: allSubcategories,
+      formats: allFormats
+    }
+  };
+};
+
 export const getGlobalAnalyticsFiltered = async ({
   storeIds = null,
   filters = {}
