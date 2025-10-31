@@ -77,8 +77,8 @@ const FilterDropdown = ({
       </Button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-2 w-[280px] bg-background border rounded-lg shadow-lg">
-          <div className="p-2 border-b flex items-center justify-between">
+        <div className="absolute z-50 mt-2 w-[280px] bg-background border rounded-lg shadow-lg max-h-[450px] flex flex-col">
+          <div className="p-2 border-b flex items-center justify-between flex-shrink-0">
             <span className="text-sm font-semibold">{label}</span>
             {selectedValues.length > 0 && (
               <Button
@@ -93,7 +93,7 @@ const FilterDropdown = ({
             )}
           </div>
 
-          <div className="max-h-[300px] overflow-y-auto p-2 space-y-1">
+          <div className="overflow-y-auto p-2 space-y-1 flex-1 min-h-0" style={{ maxHeight: '350px' }}>
             {options.length > 0 ? (
               options.map(option => {
                 const isSelected = selectedValues.includes(option);
@@ -118,7 +118,7 @@ const FilterDropdown = ({
           </div>
 
           {options.length > 0 && (
-            <div className="p-2 border-t bg-muted/50">
+            <div className="p-2 border-t bg-muted/50 flex-shrink-0">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{selectedValues.length} of {options.length} selected</span>
                 <div className="flex gap-1">

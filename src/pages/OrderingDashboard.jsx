@@ -1,26 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from 'wasp/client/operations';
-import { getOrderingAnalytics, getOrCreateOrderWorksheet } from 'wasp/client/operations';
-import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet } from 'wasp/client/operations';
+import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores } from 'wasp/client/operations';
+import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats } from 'wasp/client/operations';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import LocationSelector from '../components/LocationSelector';
-import FilterDropdown from '../components/FilterDropdown';
 import DateRangeFilter from '../components/DateRangeFilter';
-import { ShoppingCart, Download, Trash2, TrendingUp, Package } from 'lucide-react';
+import FilterDropdown from '../components/FilterDropdown';
+import { ShoppingCart, Download, Trash2, ArrowUp, ArrowDown, Package, Tag } from 'lucide-react';
 import { useDebounce } from '../lib/useDebounce';
 
 const OrderingDashboard = () => {
-  // State management
+  const { data: stores } = useQuery(getUserStores);
   const [selectedStoreIds, setSelectedStoreIds] = useState(null);
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
   const [dateRange, setDateRange] = useState(() => {
-    // Default to 14 days
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 14);
-    return { start: start.toISOString(), end: end.toISOString() };
+    return { start: start.toISOString(), end: end.toISOString(), preset: 'last14' };
   });
+  
   const [filters, setFilters] = useState({
     brands: [],
     categories: [],
@@ -28,19 +29,15 @@ const OrderingDashboard = () => {
     formats: []
   });
 
-  // Debounce filters
   const debouncedFilters = useDebounce(filters, 300);
 
-  // Fetch ordering analytics
   const { data: analytics, isLoading: analyticsLoading, refetch: refetchAnalytics } = useQuery(
     getOrderingAnalytics,
     { storeIds: selectedStoreIds, dateRange, filters: debouncedFilters }
   );
 
-  // Fetch order worksheet
-  const { data: worksheet, isLoading: worksheetLoading } = useQuery(getOrCreateOrderWorksheet);
+  const { data: worksheet } = useQuery(getOrCreateOrderWorksheet);
 
-  // Refetch when filters change
   useEffect(() => {
     refetchAnalytics();
   }, [debouncedFilters, selectedStoreIds, dateRange]);
@@ -60,7 +57,6 @@ const OrderingDashboard = () => {
   const handleExportOrder = async () => {
     try {
       const result = await exportOrderWorksheet();
-      // Create and download CSV file
       const blob = new Blob([result.csv], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -84,214 +80,414 @@ const OrderingDashboard = () => {
     }
   };
 
-  // Helper function to get status color
-  const getWeeksLeftColor = (weeksLeft) => {
-    if (weeksLeft < 1) return 'bg-red-100 text-red-800';
-    if (weeksLeft < 2) return 'bg-orange-100 text-orange-800';
-    if (weeksLeft < 3) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-green-100 text-green-800';
+  const handleEnrichFormats = async () => {
+    if (confirm('This will update format data for all products. This may take a minute. Continue?')) {
+      try {
+        const result = await enrichProductFormats();
+        alert(`Format enrichment complete!\n${result.updated} products updated\n${result.skipped} products skipped`);
+        refetchAnalytics();
+      } catch (error) {
+        alert('Error enriching formats: ' + error.message);
+      }
+    }
+  };
+
+  const getLocationCellColor = (inventory, sales, weeksLeft) => {
+    if (inventory === 0 && sales > 0) return 'bg-red-100';
+    if (weeksLeft < 1) return 'bg-orange-100';
+    if (weeksLeft < 2) return 'bg-yellow-100';
+    if (inventory > 0 && sales > 0) return 'bg-green-50';
+    if (inventory === 0 && sales === 0) return 'bg-gray-50 text-gray-400';
+    return '';
+  };
+
+  const getHeatMapColor = (value, maxValue) => {
+    if (!value || !maxValue || maxValue === 0) return 'bg-gray-100';
+    const percentage = (value / maxValue) * 100;
+    if (percentage >= 75) return 'bg-emerald-200 text-emerald-900';
+    if (percentage >= 50) return 'bg-lime-200 text-lime-900';
+    if (percentage >= 35) return 'bg-yellow-200 text-yellow-900';
+    if (percentage >= 20) return 'bg-orange-200 text-orange-900';
+    if (percentage >= 10) return 'bg-rose-200 text-rose-900';
+    return 'bg-red-100 text-red-900';
+  };
+
+  const handleSort = (key) => {
+    let direction = 'desc';
+    if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = 'asc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedProducts = React.useMemo(() => {
+    if (!analytics?.products) return [];
+    const sorted = [...analytics.products];
+    if (sortConfig.key) {
+      sorted.sort((a, b) => {
+        let aVal = a[sortConfig.key];
+        let bVal = b[sortConfig.key];
+        if (sortConfig.key === 'brand' || sortConfig.key === 'name') {
+          aVal = (aVal || '').toLowerCase();
+          bVal = (bVal || '').toLowerCase();
+        }
+        if (aVal == null) return 1;
+        if (bVal == null) return -1;
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sorted;
+  }, [analytics?.products, sortConfig]);
+
+  const maxTotalSales = analytics?.products ? Math.max(...analytics.products.map(p => p.totalSales || 0)) : 0;
+
+  const SortableHeader = ({ column, children, align = "left", width }) => (
+    <th 
+      onClick={() => handleSort(column)}
+      className={`px-3 py-3 font-semibold border bg-background cursor-pointer hover:bg-muted/50 ${width} ${
+        align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
+      }`}
+    >
+      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
+        <span className="break-words">{children}</span>
+        {sortConfig.key === column && (
+          sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 flex-shrink-0" /> : <ArrowDown className="h-3 w-3 flex-shrink-0" />
+        )}
+      </div>
+    </th>
+  );
+
+  const getStrainColor = (strainType) => {
+    switch(strainType) {
+      case 'Sativa': return 'bg-green-500';
+      case 'Hybrid': return 'bg-purple-500';
+      case 'Indica': return 'bg-blue-500';
+      default: return 'bg-gray-400';
+    }
+  };
+
+  const cleanText = (text) => {
+    if (!text) return '';
+    return text.replace(/\s*>\s*/g, ' ').trim();
   };
 
   if (analyticsLoading) {
     return (
-      <div className="space-y-6">
-        <div className="animate-pulse h-12 bg-muted rounded"></div>
-        <div className="animate-pulse h-96 bg-muted rounded"></div>
+      <div className="flex h-screen">
+        <div className="animate-pulse w-64 bg-muted"></div>
+        <div className="flex-1 p-6 space-y-6">
+          <div className="animate-pulse h-96 bg-muted rounded"></div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Ordering Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
-            Smart ordering intelligence for {analytics?.periodDays || 14} days
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleClearOrder}>
-            <Trash2 className="h-4 w-4 mr-2" />
-            Clear Order
-          </Button>
-          <Button onClick={handleExportOrder}>
-            <Download className="h-4 w-4 mr-2" />
-            Export Order ({worksheet?.items?.length || 0})
-          </Button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <DateRangeFilter
-          dateRange={dateRange}
-          onChange={setDateRange}
-        />
-        
-        <LocationSelector
-          stores={analytics?.stores || []}
-          selectedIds={selectedStoreIds}
-          onChange={setSelectedStoreIds}
-        />
-
-        <FilterDropdown
-          label="Brands"
-          options={analytics?.filterOptions?.brands || []}
-          selectedValues={filters.brands}
-          onChange={(values) => setFilters({ ...filters, brands: values })}
-        />
-
-        <FilterDropdown
-          label="Categories"
-          options={analytics?.filterOptions?.categories || []}
-          selectedValues={filters.categories}
-          onChange={(values) => setFilters({ ...filters, categories: values })}
-        />
-
-        <FilterDropdown
-          label="Subcategories"
-          options={analytics?.filterOptions?.subcategories || []}
-          selectedValues={filters.subcategories}
-          onChange={(values) => setFilters({ ...filters, subcategories: values })}
-        />
-
-        <FilterDropdown
-          label="Formats"
-          options={analytics?.filterOptions?.formats || []}
-          selectedValues={filters.formats}
-          onChange={(values) => setFilters({ ...filters, formats: values })}
-        />
-
-        {(filters.brands.length > 0 || filters.categories.length > 0 || 
-          filters.subcategories.length > 0 || filters.formats.length > 0) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setFilters({ brands: [], categories: [], subcategories: [], formats: [] })}
-          >
-            Clear Filters
-          </Button>
-        )}
-      </div>
-
-      {/* Sales Matrix */}
-      {analytics?.salesMatrix && analytics.salesMatrix.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Top Selling Products by Location</CardTitle>
-            <CardDescription>Units sold in the selected period</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-xs uppercase bg-muted/50">
-                  <tr>
-                    <th className="px-3 py-3 text-left font-semibold">Product</th>
-                    <th className="px-3 py-3 text-left font-semibold">Brand</th>
-                    {analytics.stores.map(store => (
-                      <th key={store.id} className="px-3 py-3 text-right font-semibold">
-                        {store.name}
-                      </th>
-                    ))}
-                    <th className="px-3 py-3 text-right font-semibold">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {analytics.salesMatrix.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-muted/50">
-                      <td className="px-3 py-3 font-medium">{row.productName}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{row.brand}</td>
-                      {analytics.stores.map(store => (
-                        <td key={store.id} className="px-3 py-3 text-right">
-                          {row[store.name] || 0}
-                        </td>
-                      ))}
-                      <td className="px-3 py-3 text-right font-semibold">{row.total}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+    <div className="flex h-screen overflow-hidden w-full">
+      <div className="w-72 border-r bg-card p-4 overflow-y-auto flex-shrink-0">
+        <div className="space-y-6">
+          <h2 className="text-lg font-semibold text-emerald-800">Filters</h2>
+          
+          <div className="mb-4">
+            <label className="text-sm font-medium mb-2 block text-emerald-800">Brands</label>
+            <div className="border rounded-lg p-2 bg-background max-h-64 overflow-y-auto space-y-1">
+              {(analytics?.filterOptions?.brands || []).map(brand => {
+                const isSelected = filters.brands.includes(brand);
+                return (
+                  <div
+                    key={brand}
+                    onClick={(e) => {
+                      if (e.ctrlKey || e.metaKey) {
+                        // Ctrl+click: Toggle this brand (multi-select)
+                        if (isSelected) {
+                          setFilters({ ...filters, brands: filters.brands.filter(b => b !== brand) });
+                        } else {
+                          setFilters({ ...filters, brands: [...filters.brands, brand] });
+                        }
+                      } else {
+                        // Normal click: Select only this brand (single-select)
+                        setFilters({ ...filters, brands: [brand] });
+                      }
+                    }}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm ${
+                      isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
+                    }`}
+                  >
+                    <span>{brand}</span>
+                  </div>
+                );
+              })}
             </div>
-          </CardContent>
-        </Card>
-      )}
+            {filters.brands.length > 0 && (
+              <div className="mt-2 text-xs text-muted-foreground">
+                {filters.brands.length} selected
+              </div>
+            )}
+          </div>
 
-      {/* Main Ordering Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Product Ordering Intelligence</CardTitle>
-          <CardDescription>
-            Showing {analytics?.products?.length || 0} products
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          <div className="mb-4">
+            <label className="text-sm font-medium mb-2 block text-emerald-800">Categories</label>
+            <div className="border rounded-lg p-2 bg-background max-h-64 overflow-y-auto space-y-1">
+              {(analytics?.filterOptions?.categories || []).map(cat => {
+                const isSelected = filters.categories.includes(cat);
+                return (
+                  <div
+                    key={cat}
+                    onClick={(e) => {
+                      if (e.ctrlKey || e.metaKey) {
+                        // Ctrl+click: Toggle this category (multi-select)
+                        if (isSelected) {
+                          setFilters({ ...filters, categories: filters.categories.filter(c => c !== cat) });
+                        } else {
+                          setFilters({ ...filters, categories: [...filters.categories, cat] });
+                        }
+                      } else {
+                        // Normal click: Select only this category (single-select)
+                        setFilters({ ...filters, categories: [cat] });
+                      }
+                    }}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm ${
+                      isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
+                    }`}
+                  >
+                    <span>{cat}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {filters.categories.length > 0 && (
+              <div className="mt-2 text-xs text-muted-foreground">
+                {filters.categories.length} selected
+              </div>
+            )}
+          </div>
+
+          {(filters.brands.length > 0 || filters.categories.length > 0 || 
+            filters.subcategories.length > 0 || filters.formats.length > 0) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFilters({ brands: [], categories: [], subcategories: [], formats: [] })}
+              className="w-full"
+            >
+              Clear All Filters
+            </Button>
+          )}
+
+          <div className="border-t pt-4">
+            <h3 className="text-sm font-semibold mb-2 text-emerald-800">Order Summary</h3>
+            <div className="text-sm text-muted-foreground mb-4">
+              {worksheet?.items?.length || 0} items in order
+            </div>
+            <div className="space-y-2">
+              <Button onClick={handleExportOrder} className="w-full" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Export Order
+              </Button>
+              <Button variant="outline" onClick={handleClearOrder} className="w-full" size="sm">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Clear Order
+              </Button>
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <h3 className="text-sm font-semibold mb-2 text-emerald-800">Admin Tools</h3>
+            <div className="space-y-2">
+              <Button variant="secondary" onClick={handleEnrichFormats} className="w-full" size="sm">
+                🔄 Enrich Formats
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Updates format data for all products (multipacks, etc.)
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto min-w-0">
+        <div className="p-4 space-y-4 w-full">
+          <div>
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <div>
+                <h1 className="text-3xl font-bold text-emerald-800">Ordering Intelligence</h1>
+                <p className="text-emerald-700 mt-1">
+                  Analysis for {analytics?.periodDays || 14} days • {sortedProducts.length} products
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3 flex-wrap">
+              <LocationSelector
+                stores={stores || []}
+                selectedIds={selectedStoreIds}
+                onChange={setSelectedStoreIds}
+              />
+              <DateRangeFilter dateRange={dateRange} onChange={setDateRange} />
+              <FilterDropdown
+                label="Formats"
+                options={analytics?.filterOptions?.formats || []}
+                selectedValues={filters.formats}
+                onChange={(values) => setFilters({ ...filters, formats: values })}
+                icon={Tag}
+              />
+              <FilterDropdown
+                label="Subcategories"
+                options={analytics?.filterOptions?.subcategories || []}
+                selectedValues={filters.subcategories}
+                onChange={(values) => setFilters({ ...filters, subcategories: values })}
+                icon={Package}
+              />
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-xs uppercase bg-muted/50 sticky top-0">
+            <table className="w-full border-collapse border">
+              <thead className="bg-background sticky top-0 z-10 border-b-2">
                 <tr>
-                  <th className="px-3 py-3 text-left font-semibold">Product</th>
-                  <th className="px-3 py-3 text-left font-semibold">Brand</th>
-                  <th className="px-3 py-3 text-left font-semibold">Category</th>
-                  <th className="px-3 py-3 text-right font-semibold">Cost</th>
-                  <th className="px-3 py-3 text-right font-semibold">Retail</th>
-                  <th className="px-3 py-3 text-right font-semibold">Margin</th>
-                  {analytics?.stores?.map(store => (
-                    <th key={store.id} className="px-3 py-3 text-right font-semibold">
-                      {store.name} Inv
-                    </th>
-                  ))}
-                  <th className="px-3 py-3 text-right font-semibold">Total Inv</th>
-                  <th className="px-3 py-3 text-right font-semibold">Sales</th>
-                  <th className="px-3 py-3 text-right font-semibold">Wks Left</th>
-                  <th className="px-3 py-3 text-right font-semibold">Suggested</th>
-                  <th className="px-3 py-3 text-center font-semibold">Actions</th>
+                  <SortableHeader column="name" width="w-64">Product</SortableHeader>
+                  <SortableHeader column="brand" width="w-32">Brand</SortableHeader>
+                  <SortableHeader column="strainType" width="w-24">Type</SortableHeader>
+                  <SortableHeader column="format" width="w-24">Format</SortableHeader>
+                  <SortableHeader column="parentCategory" width="w-32">Category</SortableHeader>
+                  <SortableHeader column="wholesaleCost" align="right" width="w-24">Cost</SortableHeader>
+                  <SortableHeader column="retailPrice" align="right" width="w-24">Retail</SortableHeader>
+                  <SortableHeader column="margin" align="right" width="w-20">Margin</SortableHeader>
+                  {analytics?.stores?.map(store => {
+                    const storeProductCount = sortedProducts.filter(p => 
+                      p.locationInventory.find(l => l.storeId === store.id && l.quantity > 0)
+                    ).length;
+                    return (
+                      <th key={store.id} className="px-3 py-3 text-center font-semibold border bg-background w-28">
+                        <Badge variant="secondary" className="mb-1 text-xs">{storeProductCount}</Badge>
+                        <div className="break-words">{store.name}</div>
+                        <div className="text-xs font-normal text-muted-foreground">Inv/Sales</div>
+                      </th>
+                    );
+                  })}
+                  <SortableHeader column="totalInventory" align="right" width="w-24">Total Inv</SortableHeader>
+                  <SortableHeader column="totalSales" align="right" width="w-24">Total Sales</SortableHeader>
+                  <th className="px-3 py-3 text-center font-semibold border bg-background w-28">
+                    <div className="break-words">Popularity</div>
+                    <div className="text-xs font-normal text-muted-foreground">{analytics?.periodDays || 14} Days</div>
+                  </th>
+                  <SortableHeader column="weeksLeft" align="center" width="w-24">Wks Left</SortableHeader>
+                  <SortableHeader column="daysSinceLastSale" align="right" width="w-28">Days Since Sale</SortableHeader>
+                  <SortableHeader column="daysSinceLastPO" align="right" width="w-28">Days Since PO</SortableHeader>
+                  <SortableHeader column="suggestedQty" align="right" width="w-28">Suggested</SortableHeader>
+                  <th className="px-3 py-3 text-center font-semibold border bg-background w-28">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
-                {analytics?.products?.map((product) => (
-                  <tr key={product.id} className="hover:bg-muted/50">
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-2">
+              <tbody>
+                {sortedProducts.map((product) => (
+                  <tr key={product.id} className="hover:bg-muted/30 border-b">
+                    <td className="px-3 py-3 border w-64">
+                      <div className="flex items-start gap-2">
                         {product.isTop10 && (
-                          <Badge variant="default" className="text-xs">
+                          <Badge variant="default" className="text-xs shrink-0">
                             🏆 #{product.categoryRank}
                           </Badge>
                         )}
-                        <span className="font-medium">{product.name}</span>
+                        <span className="font-medium text-emerald-900 break-words line-clamp-3">{product.name}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-muted-foreground">{product.brand}</td>
-                    <td className="px-3 py-3 text-muted-foreground text-xs">
-                      {product.parentCategory}
-                      {product.subcategory && ` > ${product.subcategory}`}
+                    <td className="px-3 py-3 border text-emerald-800 font-medium w-32">
+                      <div className="break-words text-base">{product.brand}</div>
                     </td>
-                    <td className="px-3 py-3 text-right">${(product.wholesaleCost || 0).toFixed(2)}</td>
-                    <td className="px-3 py-3 text-right">${(product.retailPrice || 0).toFixed(2)}</td>
-                    <td className="px-3 py-3 text-right">
+                    <td className="px-3 py-3 border w-24">
+                      {product.strainType && product.strainType !== 'N/A' ? (
+                        <Badge className={`${getStrainColor(product.strainType)} text-white text-xs`}>
+                          {product.strainType}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-center border w-24">
+                      <span className="text-base font-medium">{cleanText(product.format) || '-'}</span>
+                    </td>
+                    <td className="px-3 py-3 text-muted-foreground border w-32">
+                      <div className="break-words text-sm">
+                        {product.parentCategory}
+                        {product.subcategory && <><br/><span className="text-xs">› {cleanText(product.subcategory)}</span></>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono border w-24 text-base">
+                      ${(product.wholesaleCost || 0).toFixed(2)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono border w-24 text-base">
+                      ${(product.retailPrice || 0).toFixed(2)}
+                    </td>
+                    <td className="px-3 py-3 text-right border w-20 text-base">
                       {((product.margin || 0) * 100).toFixed(0)}%
                     </td>
                     {analytics.stores.map(store => {
                       const inv = product.locationInventory.find(l => l.storeId === store.id);
+                      const sale = product.locationSales.find(s => s.storeId === store.id);
+                      const inventory = inv ? inv.quantity : 0;
+                      const sales = sale ? sale.units : 0;
+                      const localVelocity = sales / (analytics.periodDays / 7);
+                      const localWeeksLeft = localVelocity > 0 ? inventory / localVelocity : 999;
+                      
                       return (
-                        <td key={store.id} className="px-3 py-3 text-right">
-                          {inv ? inv.quantity : 0}
+                        <td 
+                          key={store.id} 
+                          className={`px-3 py-3 text-center border font-mono w-28 ${getLocationCellColor(inventory, sales, localWeeksLeft)}`}
+                        >
+                          <div className="font-semibold text-lg">{inventory}</div>
+                          <div className="text-sm text-muted-foreground">/ {sales}</div>
                         </td>
                       );
                     })}
-                    <td className="px-3 py-3 text-right font-semibold">{product.totalInventory}</td>
-                    <td className="px-3 py-3 text-right">{product.totalSales}</td>
-                    <td className="px-3 py-3 text-right">
-                      <Badge className={getWeeksLeftColor(product.weeksLeft)}>
+                    <td className="px-3 py-3 text-right font-semibold border w-24 text-lg">
+                      {product.totalInventory}
+                    </td>
+                    <td className={`px-3 py-3 text-right border w-24 font-semibold text-lg ${getHeatMapColor(product.totalSales, maxTotalSales)}`}>
+                      {product.totalSales}
+                    </td>
+                    <td className={`px-3 py-3 text-center border w-28 ${getHeatMapColor(product.totalSales, maxTotalSales)}`}>
+                      <div className="flex items-center justify-center gap-1">
+                        <div className="text-base font-bold">
+                          {maxTotalSales > 0 ? Math.round((product.totalSales / maxTotalSales) * 100) : 0}%
+                        </div>
+                        {product.totalSales > maxTotalSales * 0.75 ? '🔥' : 
+                         product.totalSales > maxTotalSales * 0.5 ? '🌡️' : 
+                         product.totalSales > maxTotalSales * 0.25 ? '❄️' : '🧊'}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-center border w-24">
+                      <Badge className={
+                        product.weeksLeft < 2 ? 'bg-green-500' :
+                        product.weeksLeft < 3 ? 'bg-yellow-500' : 'bg-red-500'
+                      }>
                         {product.weeksLeft < 999 ? product.weeksLeft.toFixed(1) : '∞'}w
                       </Badge>
                     </td>
-                    <td className="px-3 py-3 text-right">
+                    <td className="px-3 py-3 text-right border w-28 text-base">
+                      {product.daysSinceLastSale !== null ? (
+                        <span className={product.daysSinceLastSale > 30 ? 'text-red-600 font-semibold' : ''}>
+                          {product.daysSinceLastSale}d
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-right border w-28 text-base">
+                      {product.daysSinceLastPO !== null ? (
+                        <span className={product.daysSinceLastPO > 90 ? 'text-orange-600 font-semibold' : ''}>
+                          {product.daysSinceLastPO}d
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-right border w-28">
                       {product.suggestedQty > 0 ? (
                         <div>
-                          <div className="font-semibold">{product.suggestedQty} units</div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="font-semibold text-lg">{product.suggestedQty}</div>
+                          <div className="text-sm text-muted-foreground">
                             ({product.suggestedCases} cases)
                           </div>
                         </div>
@@ -299,7 +495,7 @@ const OrderingDashboard = () => {
                         <span className="text-muted-foreground">-</span>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-center">
+                    <td className="px-3 py-3 text-center border w-28">
                       {product.suggestedQty > 0 && (
                         <Button
                           size="sm"
@@ -316,24 +512,47 @@ const OrderingDashboard = () => {
               </tbody>
             </table>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Location Totals */}
-      {analytics?.locationTotals && analytics.locationTotals.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-          {analytics.locationTotals.map(location => (
-            <Card key={location.storeName}>
-              <CardContent className="pt-6">
-                <div className="text-2xl font-bold">{location.productCount}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Products at {location.storeName}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
+          {analytics?.salesMatrix && analytics.salesMatrix.length > 0 && (
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold text-emerald-800 mb-3">Top Selling Products by Location</h2>
+              <p className="text-sm text-emerald-700 mb-4">Units sold in the selected period</p>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse border">
+                  <thead className="bg-background sticky top-0">
+                    <tr>
+                      <th className="px-3 py-3 text-left font-semibold border">Product</th>
+                      <th className="px-3 py-3 text-left font-semibold border">Brand</th>
+                      <th className="px-3 py-3 text-left font-semibold border">Category</th>
+                      {analytics.stores.map(store => (
+                        <th key={store.id} className="px-3 py-3 text-right font-semibold border">
+                          {store.name}
+                        </th>
+                      ))}
+                      <th className="px-3 py-3 text-right font-semibold border">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analytics.salesMatrix.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-muted/30 border-b">
+                        <td className="px-3 py-3 font-medium border">{row.productName}</td>
+                        <td className="px-3 py-3 text-muted-foreground border">{row.brand}</td>
+                        <td className="px-3 py-3 text-muted-foreground text-sm border">{row.category}</td>
+                        {analytics.stores.map(store => (
+                          <td key={store.id} className="px-3 py-3 text-right border text-base">
+                            {row[store.name] || 0}
+                          </td>
+                        ))}
+                        <td className="px-3 py-3 text-right font-semibold border text-base">{row.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };

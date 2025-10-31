@@ -36,6 +36,10 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
         start.setDate(start.getDate() - 7);
         start.setHours(0, 0, 0, 0);
         break;
+      case 'last14':
+        start.setDate(start.getDate() - 14);
+        start.setHours(0, 0, 0, 0);
+        break;
       case 'last30':
         start.setDate(start.getDate() - 30);
         start.setHours(0, 0, 0, 0);
@@ -67,7 +71,7 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
   const handlePresetClick = (preset) => {
     const range = getRelativeDateRange(preset);
     setActivePreset(preset);
-    onChange(range);
+    onChange({ ...range, preset }); // Include preset in the range object
     setIsOpen(false);
   };
 
@@ -95,28 +99,31 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
   const getDisplayText = () => {
     if (!dateRange) return 'All Time';
     
-    if (activePreset === 'custom') {
-      const start = new Date(dateRange.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      const end = new Date(dateRange.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      return `${start} - ${end}`;
+    // Check if dateRange has a preset property
+    if (dateRange.preset) {
+      const presetLabels = {
+        today: 'Today',
+        last7: 'Last 7 Days',
+        last14: 'Last 14 Days',
+        last30: 'Last 30 Days',
+        last90: 'Last 90 Days',
+        thisMonth: 'This Month',
+        lastMonth: 'Last Month',
+        thisYear: 'This Year'
+      };
+      return presetLabels[dateRange.preset] || 'Custom Range';
     }
     
-    const presetLabels = {
-      today: 'Today',
-      last7: 'Last 7 Days',
-      last30: 'Last 30 Days',
-      last90: 'Last 90 Days',
-      thisMonth: 'This Month',
-      lastMonth: 'Last Month',
-      thisYear: 'This Year'
-    };
-    
-    return presetLabels[activePreset] || 'Custom Range';
+    // Fallback to showing the date range
+    const start = new Date(dateRange.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const end = new Date(dateRange.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `${start} - ${end}`;
   };
 
   const presets = [
     { id: 'today', label: 'Today' },
     { id: 'last7', label: 'Last 7 Days' },
+    { id: 'last14', label: 'Last 14 Days' },
     { id: 'last30', label: 'Last 30 Days' },
     { id: 'last90', label: 'Last 90 Days' },
     { id: 'thisMonth', label: 'This Month' },

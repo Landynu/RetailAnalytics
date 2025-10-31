@@ -191,6 +191,11 @@ action markProductStatus {
   entities: [ProductCatalog]
 }
 
+action enrichProductFormats {
+  fn: import { enrichProductFormats } from "@src/actions.js",
+  entities: [ProductCatalog]
+}
+
 route DashboardRoute { path: "/", to: DashboardPage }
 page DashboardPage {
   component: import DashboardPage from "@src/pages/Dashboard.jsx",

@@ -275,21 +275,31 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     return { parentCategory: category.trim(), subcategory: null };
   };
 
-  // Helper function to extract format from product name
+  // Helper function to extract format from product name (improved for multipacks)
   const extractFormat = (productName) => {
     if (!productName) return null;
     
+    // Clean up the product name
+    const cleaned = productName.trim();
+    
+    // Look for multipack patterns: "10 x 0.3g", "5x10mg", "12 x 100mg", etc.
+    const multipackPattern = /(\d+)\s*[xX×]\s*(\d+\.?\d*\s*(g|mg|ml|oz|%))/i;
+    const multipackMatch = cleaned.match(multipackPattern);
+    if (multipackMatch) {
+      return multipackMatch[0].trim(); // Returns "10 x 0.3g"
+    }
+    
     // Extract format from last part after "-" or within parentheses
-    const lastDashPart = productName.split('-').pop().trim();
+    const lastDashPart = cleaned.split('-').pop().trim();
     
     // Look for patterns like "1g", "100mg", "0.5g", "10ml", etc.
-    const formatMatch = lastDashPart.match(/(\d+\.?\d*\s*(g|mg|ml|oz|ml|%))/i);
+    const formatMatch = lastDashPart.match(/(\d+\.?\d*\s*(g|mg|ml|oz|%))/i);
     if (formatMatch) {
       return formatMatch[0].trim();
     }
     
     // Also check within parentheses
-    const parenMatch = productName.match(/\(([^)]*(?:g|mg|ml|oz|%))\)/i);
+    const parenMatch = cleaned.match(/\(([^)]*(?:g|mg|ml|oz|%))\)/i);
     if (parenMatch) {
       return parenMatch[1].trim();
     }
@@ -1673,4 +1683,63 @@ export const markProductStatus = async ({ productId, status, salePrice }, contex
   });
 
   return updatedProduct;
+};
+
+export const enrichProductFormats = async (args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  console.log('🔄 Starting format enrichment for all products...');
+
+  // Helper to extract format (same improved logic)
+  const extractFormat = (productName) => {
+    if (!productName) return null;
+    const cleaned = productName.trim();
+    const multipackPattern = /(\d+)\s*[xX×]\s*(\d+\.?\d*\s*(g|mg|ml|oz|%))/i;
+    const multipackMatch = cleaned.match(multipackPattern);
+    if (multipackMatch) return multipackMatch[0].trim();
+    const lastDashPart = cleaned.split('-').pop().trim();
+    const formatMatch = lastDashPart.match(/(\d+\.?\d*\s*(g|mg|ml|oz|%))/i);
+    if (formatMatch) return formatMatch[0].trim();
+    const parenMatch = cleaned.match(/\(([^)]*(?:g|mg|ml|oz|%))\)/i);
+    if (parenMatch) return parenMatch[1].trim();
+    return null;
+  };
+
+  // Get all products
+  const products = await context.entities.ProductCatalog.findMany();
+  console.log(`📦 Found ${products.length} products to process`);
+
+  let updated = 0;
+  let skipped = 0;
+
+  // Process in chunks
+  const chunkSize = 100;
+  for (let i = 0; i < products.length; i += chunkSize) {
+    const chunk = products.slice(i, i + chunkSize);
+    
+    await Promise.all(chunk.map(async (product) => {
+      const newFormat = extractFormat(product.name);
+      
+      // Only update if format changed or was null
+      if (newFormat && newFormat !== product.format) {
+        await context.entities.ProductCatalog.update({
+          where: { id: product.id },
+          data: { format: newFormat }
+        });
+        updated++;
+      } else {
+        skipped++;
+      }
+    }));
+
+    console.log(`Progress: ${Math.min(i + chunkSize, products.length)}/${products.length}`);
+  }
+
+  console.log(`✅ Format enrichment complete: ${updated} updated, ${skipped} skipped`);
+
+  return {
+    totalProducts: products.length,
+    updated,
+    skipped
+  };
 };

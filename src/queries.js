@@ -1082,6 +1082,7 @@ export const getOrderingAnalytics = async ({
       brand: product.brand,
       parentCategory: product.parentCategory,
       subcategory: product.subcategory,
+      strainType: product.strainType,
       format: product.format,
       status: product.status,
       retailPrice: product.retailPrice,
@@ -1134,6 +1135,7 @@ export const getOrderingAnalytics = async ({
     return {
       productName: p.name,
       brand: p.brand,
+      category: p.parentCategory,
       ...salesByLocation,
       total: p.totalSales
     };
