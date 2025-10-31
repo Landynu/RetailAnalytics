@@ -10,7 +10,7 @@ const STRAIN_COLORS = {
   Indica: '#8b5cf6'
 };
 
-const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
+const SalesAnalyticsDashboard = ({ salesData, loading = false, showDaily = false, onToggleDaily }) => {
   const [showTopProductsBy, setShowTopProductsBy] = useState('revenue');
   const [showTopProductsView, setShowTopProductsView] = useState('total');
   const [showCategoryBy, setShowCategoryBy] = useState('revenue');
@@ -180,12 +180,22 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Sales Trends (Weekly)</CardTitle>
+                <CardTitle>Sales Trends ({showDaily ? 'Daily' : 'Weekly'})</CardTitle>
                 <CardDescription>
                   {showTrendsView === 'total' ? 'Total' : 'By location'} - {showTrendsBy === 'revenue' ? 'revenue' : 'units sold'}
+                  {showDaily && ' (Last 30 days)'}
                 </CardDescription>
               </div>
               <div className="flex gap-2">
+                {onToggleDaily && (
+                  <Button
+                    variant={showDaily ? "default" : "outline"}
+                    size="sm"
+                    onClick={onToggleDaily}
+                  >
+                    {showDaily ? 'Show Weekly' : 'Show Daily'}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -228,14 +238,7 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} fontSize={11} />
                   <YAxis />
-                  <Tooltip 
-                    formatter={(value, name) => {
-                      const isRevenue = showTrendsBy === 'revenue';
-                      return isRevenue
-                        ? [`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, name]
-                        : [`${value} units`, name];
-                    }}
-                  />
+                  <Tooltip content={<CustomTooltip showBy={showTrendsBy} />} />
                   {storeNames.map((storeName, index) => (
                     <Bar 
                       key={storeName}

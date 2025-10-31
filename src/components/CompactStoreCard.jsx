@@ -32,8 +32,7 @@ const CompactStoreCard = ({ store, metrics, onViewDetails }) => {
     setIsUpdating(true);
     try {
       await toggleStoreFavourite({ storeId: store.id });
-      // The parent component will refetch stores
-      window.location.reload();
+      // Changes will appear on next page refresh
     } catch (error) {
       console.error('Error toggling favourite:', error);
       alert(error.message || 'Failed to update favourite status');
@@ -54,7 +53,7 @@ const CompactStoreCard = ({ store, metrics, onViewDetails }) => {
       setIsUpdating(true);
       try {
         await toggleStoreActive({ storeId: store.id });
-        window.location.reload();
+        // Changes will appear on next page refresh
       } catch (error) {
         console.error('Error enabling store:', error);
         alert('Failed to enable store');
@@ -69,7 +68,7 @@ const CompactStoreCard = ({ store, metrics, onViewDetails }) => {
     try {
       await toggleStoreActive({ storeId: store.id });
       setShowDisableDialog(false);
-      window.location.reload();
+      // Changes will appear on next page refresh
     } catch (error) {
       console.error('Error disabling store:', error);
       alert('Failed to disable store');

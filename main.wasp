@@ -151,6 +151,11 @@ query getGlobalSalesAnalytics {
   entities: [Store, ProductCatalog, WeeklySalesSummary]
 }
 
+query getDailySalesAnalytics {
+  fn: import { getDailySalesAnalytics } from "@src/queries.js",
+  entities: [Store, ProductCatalog, InventoryMovement]
+}
+
 query getOrderingAnalytics {
   fn: import { getOrderingAnalytics } from "@src/queries.js",
   entities: [Store, ProductCatalog, StockLevel, InventoryMovement]

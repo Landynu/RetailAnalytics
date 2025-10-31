@@ -15,7 +15,8 @@ const OrderingDashboard = () => {
   const { data: stores } = useQuery(getUserStores);
   const [selectedStoreIds, setSelectedStoreIds] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
-  const [hiddenCategories, setHiddenCategories] = useState(new Set(['Accessories']));
+  const [hiddenCategories, setHiddenCategories] = useState(new Set(['Accessories', 'VPT']));
+  const [visibleHiddenCategories, setVisibleHiddenCategories] = useState(new Set()); // Track which hidden categories are shown
   const [dateRange, setDateRange] = useState(() => {
     const end = new Date();
     const start = new Date();
@@ -31,18 +32,52 @@ const OrderingDashboard = () => {
     sizes: []
   });
 
+  const [pagination, setPagination] = useState({
+    offset: 0,
+    limit: 100
+  });
+
+  const [allProducts, setAllProducts] = useState([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   const debouncedFilters = useDebounce(filters, 300);
+
+  // Determine if we should include hidden categories in the query
+  const includeHiddenCategories = visibleHiddenCategories.size > 0;
 
   const { data: analytics, isLoading: analyticsLoading, refetch: refetchAnalytics } = useQuery(
     getOrderingAnalytics,
-    { storeIds: selectedStoreIds, dateRange, filters: debouncedFilters }
+    { 
+      storeIds: selectedStoreIds, 
+      dateRange, 
+      filters: debouncedFilters,
+      limit: pagination.limit,
+      offset: pagination.offset,
+      includeHiddenCategories
+    }
   );
 
   const { data: worksheet } = useQuery(getOrCreateOrderWorksheet);
 
+  // Reset pagination when filters change
   useEffect(() => {
-    refetchAnalytics();
-  }, [debouncedFilters, selectedStoreIds, dateRange]);
+    setPagination({ offset: 0, limit: 100 });
+    setAllProducts([]);
+  }, [debouncedFilters, selectedStoreIds, dateRange, includeHiddenCategories]);
+
+  // Accumulate products when pagination changes
+  useEffect(() => {
+    if (analytics?.products) {
+      if (pagination.offset === 0) {
+        // First page - replace all products
+        setAllProducts(analytics.products);
+      } else {
+        // Subsequent pages - append products
+        setAllProducts(prev => [...prev, ...analytics.products]);
+      }
+      setIsLoadingMore(false);
+    }
+  }, [analytics?.products, pagination.offset]);
 
   const handleAddToOrder = async (product) => {
     try {
@@ -122,9 +157,46 @@ const OrderingDashboard = () => {
     setSortConfig({ key, direction });
   };
 
+  const handleLoadMore = async () => {
+    if (analytics?.hasMore && !isLoadingMore) {
+      setIsLoadingMore(true);
+      setPagination(prev => ({
+        ...prev,
+        offset: prev.offset + prev.limit
+      }));
+    }
+  };
+
+  const handleCategoryVisibilityToggle = (category) => {
+    const newHidden = new Set(hiddenCategories);
+    const newVisible = new Set(visibleHiddenCategories);
+    
+    const isCurrentlyHidden = hiddenCategories.has(category);
+    const isAccessoryLike = ['Accessories', 'Accessory', 'VPT'].includes(category);
+    
+    if (isCurrentlyHidden) {
+      // Show the category
+      newHidden.delete(category);
+      if (isAccessoryLike) {
+        // If it's Accessories/VPT, mark it as visible so we fetch the data
+        newVisible.add(category);
+      }
+    } else {
+      // Hide the category
+      newHidden.add(category);
+      if (isAccessoryLike) {
+        // If hiding Accessories/VPT, remove from visible set
+        newVisible.delete(category);
+      }
+    }
+    
+    setHiddenCategories(newHidden);
+    setVisibleHiddenCategories(newVisible);
+  };
+
   const sortedProducts = React.useMemo(() => {
-    if (!analytics?.products) return [];
-    let sorted = [...analytics.products];
+    if (!allProducts || allProducts.length === 0) return [];
+    let sorted = [...allProducts];
     
     // Filter out products from hidden categories
     if (hiddenCategories.size > 0) {
@@ -149,9 +221,9 @@ const OrderingDashboard = () => {
       });
     }
     return sorted;
-  }, [analytics?.products, sortConfig, hiddenCategories]);
+  }, [allProducts, sortConfig, hiddenCategories]);
 
-  const maxTotalSales = analytics?.products ? Math.max(...analytics.products.map(p => p.totalSales || 0)) : 0;
+  const maxTotalSales = sortedProducts.length > 0 ? Math.max(...sortedProducts.map(p => p.totalSales || 0)) : 0;
 
   const SortableHeader = ({ column, children, align = "left", width }) => (
     <th 
@@ -259,13 +331,7 @@ const OrderingDashboard = () => {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        const newHidden = new Set(hiddenCategories);
-                        if (isHidden) {
-                          newHidden.delete(cat);
-                        } else {
-                          newHidden.add(cat);
-                        }
-                        setHiddenCategories(newHidden);
+                        handleCategoryVisibilityToggle(cat);
                       }}
                       className={`flex-shrink-0 hover:scale-110 transition-transform ${
                         isHidden ? 'text-muted-foreground' : 'text-foreground'
@@ -365,7 +431,8 @@ const OrderingDashboard = () => {
               <div>
                 <h1 className="text-3xl font-bold text-emerald-800">Ordering Intelligence</h1>
                 <p className="text-emerald-700 mt-1">
-                  Analysis for {analytics?.periodDays || 14} days • {sortedProducts.length} products
+                  Analysis for {analytics?.periodDays || 14} days • Showing {sortedProducts.length} of {analytics?.totalCount || 0} products
+                  {analytics?.hasMore && <span className="ml-2 text-sm">(Load more below)</span>}
                 </p>
               </div>
             </div>
@@ -569,6 +636,29 @@ const OrderingDashboard = () => {
                 ))}
               </tbody>
             </table>
+            
+            {analytics?.hasMore && (
+              <div className="flex justify-center py-6">
+                <Button 
+                  onClick={handleLoadMore}
+                  disabled={isLoadingMore}
+                  size="lg"
+                  variant="outline"
+                  className="w-64"
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <span className="animate-spin mr-2">⏳</span>
+                      Loading More...
+                    </>
+                  ) : (
+                    <>
+                      Load More Products ({analytics.totalCount - allProducts.length} remaining)
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
 
           {analytics?.salesMatrix && analytics.salesMatrix.length > 0 && (

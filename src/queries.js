@@ -948,10 +948,362 @@ export const getGlobalSalesAnalytics = async ({
   return result;
 };
 
+export const getDailySalesAnalytics = async ({
+  storeIds = null,
+  filters = {}
+}, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  // Default to last 30 days for performance
+  const endDate = filters.dateRange?.end ? new Date(filters.dateRange.end) : new Date();
+  const startDate = filters.dateRange?.start ? new Date(filters.dateRange.start) : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  console.log('📅 Daily sales query:', {
+    start: startDate.toISOString(),
+    end: endDate.toISOString(),
+    storeFilter: storeIds ? `${storeIds.length} stores` : 'all stores'
+  });
+
+  // Build where clause for movements
+  const movementWhere = {
+    type: 'sale', // Only actual sales
+    date: {
+      gte: startDate,
+      lte: endDate
+    }
+  };
+
+  // Store filter
+  if (storeIds && storeIds.length > 0) {
+    movementWhere.storeId = { in: storeIds.map(id => parseInt(id)) };
+  }
+
+  // Build product filter
+  const productFilter = {};
+  if (filters.excludeCategories && filters.excludeCategories.length > 0) {
+    productFilter.parentCategory = { notIn: filters.excludeCategories };
+  }
+  if (filters.categories && filters.categories.length > 0) {
+    productFilter.parentCategory = { in: filters.categories };
+  }
+  if (filters.subcategories && filters.subcategories.length > 0) {
+    productFilter.subcategory = { in: filters.subcategories };
+  }
+  if (filters.brands && filters.brands.length > 0) {
+    productFilter.brand = { in: filters.brands };
+  }
+  if (filters.strainTypes && filters.strainTypes.length > 0) {
+    productFilter.strainType = { in: filters.strainTypes };
+  }
+
+  // Add product filter if any filters exist
+  if (Object.keys(productFilter).length > 0) {
+    movementWhere.product = productFilter;
+  }
+
+  // Fetch daily movements
+  const movements = await context.entities.InventoryMovement.findMany({
+    where: movementWhere,
+    include: {
+      product: {
+        select: {
+          id: true,
+          name: true,
+          gtin: true,
+          brand: true,
+          parentCategory: true,
+          subcategory: true,
+          strainType: true,
+          retailPrice: true
+        }
+      },
+      store: {
+        select: {
+          id: true,
+          name: true,
+          location: true
+        }
+      }
+    },
+    orderBy: { date: 'asc' }
+  });
+
+  console.log('📊 Daily movements fetched:', movements.length);
+
+  // Aggregate data by day
+  let grossSales = 0;
+  let grossUnits = 0;
+  const productSales = {};
+  const brandSales = {};
+  const categorySales = {};
+  const storeSales = {};
+  const dailySalesData = {}; // Group by day
+  const strainSales = { Sativa: 0, Hybrid: 0, Indica: 0 };
+
+  movements.forEach(movement => {
+    const unitsSold = Math.abs(movement.changeQty);
+    const revenue = unitsSold * (movement.product.retailPrice || 0);
+    
+    // Totals
+    grossSales += revenue;
+    grossUnits += unitsSold;
+
+    // Product sales
+    const productId = movement.product.id;
+    if (!productSales[productId]) {
+      productSales[productId] = {
+        product: movement.product,
+        unitsSold: 0,
+        revenue: 0,
+        lastSale: movement.date
+      };
+    }
+    productSales[productId].unitsSold += unitsSold;
+    productSales[productId].revenue += revenue;
+    if (movement.date > productSales[productId].lastSale) {
+      productSales[productId].lastSale = movement.date;
+    }
+
+    // Brand sales
+    const brand = movement.product.brand || 'Unknown';
+    if (!brandSales[brand]) {
+      brandSales[brand] = { revenue: 0, unitsSold: 0 };
+    }
+    brandSales[brand].revenue += revenue;
+    brandSales[brand].unitsSold += unitsSold;
+
+    // Category sales
+    const category = movement.product.parentCategory || 'Uncategorized';
+    if (!categorySales[category]) {
+      categorySales[category] = { revenue: 0, unitsSold: 0 };
+    }
+    categorySales[category].revenue += revenue;
+    categorySales[category].unitsSold += unitsSold;
+
+    // Store sales
+    if (movement.store) {
+      const storeId = movement.store.id;
+      if (!storeSales[storeId]) {
+        storeSales[storeId] = {
+          storeId,
+          name: movement.store.name,
+          location: movement.store.location,
+          revenue: 0,
+          unitsSold: 0
+        };
+      }
+      storeSales[storeId].revenue += revenue;
+      storeSales[storeId].unitsSold += unitsSold;
+    }
+
+    // Daily sales for trends
+    const dateKey = movement.date.toISOString().split('T')[0];
+    if (!dailySalesData[dateKey]) {
+      dailySalesData[dateKey] = {
+        date: dateKey,
+        grossSales: 0,
+        refunds: 0,
+        netRevenue: 0,
+        unitsSold: 0,
+        byStore: {}
+      };
+    }
+    dailySalesData[dateKey].grossSales += revenue;
+    dailySalesData[dateKey].netRevenue += revenue;
+    dailySalesData[dateKey].unitsSold += unitsSold;
+
+    // Track per-store daily sales
+    if (movement.store) {
+      const storeName = movement.store.name.substring(0, 12);
+      if (!dailySalesData[dateKey].byStore[storeName]) {
+        dailySalesData[dateKey].byStore[storeName] = { revenue: 0, units: 0 };
+      }
+      dailySalesData[dateKey].byStore[storeName].revenue += revenue;
+      dailySalesData[dateKey].byStore[storeName].units += unitsSold;
+    }
+
+    // Strain sales
+    const strain = movement.product.strainType;
+    if (strain && strainSales[strain] !== undefined) {
+      strainSales[strain] += unitsSold;
+    }
+  });
+
+  // Prepare per-store breakdowns for products, categories, and brands
+  const productsByStore = {};
+  const categoriesByStore = {};
+  const brandsByStore = {};
+
+  movements.forEach(movement => {
+    if (!movement.store) return;
+    
+    const storeName = movement.store.name.substring(0, 12);
+    const unitsSold = Math.abs(movement.changeQty);
+    const revenue = unitsSold * (movement.product.retailPrice || 0);
+
+    // Products by store
+    const productKey = `${movement.product.id}_${storeName}`;
+    if (!productsByStore[productKey]) {
+      productsByStore[productKey] = {
+        productId: movement.product.id,
+        productName: movement.product.name,
+        storeName,
+        revenue: 0,
+        units: 0
+      };
+    }
+    productsByStore[productKey].revenue += revenue;
+    productsByStore[productKey].units += unitsSold;
+
+    // Categories by store
+    const category = movement.product.parentCategory || 'Uncategorized';
+    const catKey = `${category}_${storeName}`;
+    if (!categoriesByStore[catKey]) {
+      categoriesByStore[catKey] = {
+        category,
+        storeName,
+        revenue: 0,
+        units: 0
+      };
+    }
+    categoriesByStore[catKey].revenue += revenue;
+    categoriesByStore[catKey].units += unitsSold;
+
+    // Brands by store
+    const brand = movement.product.brand || 'Unknown';
+    const brandKey = `${brand}_${storeName}`;
+    if (!brandsByStore[brandKey]) {
+      brandsByStore[brandKey] = {
+        brand,
+        storeName,
+        revenue: 0,
+        units: 0
+      };
+    }
+    brandsByStore[brandKey].revenue += revenue;
+    brandsByStore[brandKey].units += unitsSold;
+  });
+
+  // Top products by revenue
+  const topProductsByRevenue = Object.values(productSales)
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10)
+    .map(item => ({
+      name: item.product.name,
+      gtin: item.product.gtin,
+      brand: item.product.brand,
+      unitsSold: item.unitsSold,
+      revenue: item.revenue,
+      strainType: item.product.strainType,
+      lastSale: item.lastSale.toISOString(),
+      byStore: Object.values(productsByStore)
+        .filter(p => p.productId === item.product.id)
+        .reduce((acc, p) => {
+          acc[p.storeName] = { revenue: p.revenue, units: p.units };
+          return acc;
+        }, {})
+    }));
+
+  const topProductsByUnits = Object.values(productSales)
+    .sort((a, b) => b.unitsSold - a.unitsSold)
+    .slice(0, 10)
+    .map(item => ({
+      name: item.product.name,
+      gtin: item.product.gtin,
+      brand: item.product.brand,
+      unitsSold: item.unitsSold,
+      revenue: item.revenue,
+      strainType: item.product.strainType,
+      lastSale: item.lastSale.toISOString()
+    }));
+
+  // Top brands with per-store breakdown
+  const topBrands = Object.keys(brandSales)
+    .map(brand => ({
+      brand,
+      revenue: brandSales[brand].revenue,
+      unitsSold: brandSales[brand].unitsSold,
+      byStore: Object.values(brandsByStore)
+        .filter(b => b.brand === brand)
+        .reduce((acc, b) => {
+          acc[b.storeName] = { revenue: b.revenue, units: b.units };
+          return acc;
+        }, {})
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10);
+
+  // Category performance with per-store breakdown
+  const categoryPerformance = Object.keys(categorySales)
+    .map(category => ({
+      category,
+      revenue: categorySales[category].revenue,
+      unitsSold: categorySales[category].unitsSold,
+      byStore: Object.values(categoriesByStore)
+        .filter(c => c.category === category)
+        .reduce((acc, c) => {
+          acc[c.storeName] = { revenue: c.revenue, units: c.units };
+          return acc;
+        }, {})
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // Store performance
+  const storePerformance = Object.values(storeSales)
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // Sales trends (daily data sorted by date)
+  const salesTrends = Object.values(dailySalesData)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const avgTransactionValue = grossUnits > 0 ? grossSales / grossUnits : 0;
+
+  const result = {
+    grossSales,
+    refunds: 0, // Not tracking refunds in daily view
+    netRevenue: grossSales,
+    totalRevenue: grossSales,
+    totalUnitsSold: grossUnits,
+    grossUnits,
+    refundUnits: 0,
+    refundRate: 0,
+    avgTransactionValue,
+    topProductsByRevenue,
+    topProductsByUnits,
+    topBrands,
+    categoryPerformance,
+    storePerformance,
+    salesTrends,
+    strainSales,
+    movementSummary: {
+      totalSales: movements.length,
+      totalRefunds: 0,
+      totalTransfers: 0,
+      totalPurchases: 0,
+      totalAudits: 0
+    },
+    totalTransactions: movements.length,
+    hasData: movements.length > 0
+  };
+
+  console.log('💰 Daily sales analytics summary:', {
+    totalRevenue: result.totalRevenue,
+    unitsSold: result.totalUnitsSold,
+    avgTransaction: result.avgTransactionValue,
+    dataPoints: salesTrends.length,
+    hasData: result.hasData
+  });
+
+  return result;
+};
+
 export const getOrderingAnalytics = async ({
   storeIds = null,
   dateRange = null,
-  filters = {}
+  filters = {},
+  limit = 100,
+  offset = 0,
+  includeHiddenCategories = false
 }, context) => {
   if (!context.user) { throw new HttpError(401) }
 
@@ -974,53 +1326,39 @@ export const getOrderingAnalytics = async ({
 
   const storeIdList = stores.map(s => s.id);
 
-  // Build product filter
-  const productWhere = {
-    // Exclude Accessories and VPT by default (can be unhidden via UI)
-    parentCategory: { notIn: ['Accessories', 'Accessory', 'VPT'] }
-  };
-  
-  if (filters.brands && filters.brands.length > 0) {
-    productWhere.brand = { in: filters.brands };
-  }
-  if (filters.categories && filters.categories.length > 0) {
-    productWhere.parentCategory = { in: filters.categories };
-  }
-  if (filters.subcategories && filters.subcategories.length > 0) {
-    productWhere.subcategory = { in: filters.subcategories };
-  }
-  if (filters.units && filters.units.length > 0) {
-    productWhere.unitCount = { in: filters.units };
-  }
-  if (filters.sizes && filters.sizes.length > 0) {
-    productWhere.unitSize = { in: filters.sizes };
-  }
-
   // 30-day activity filter: Only show products with recent activity
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  // Get all products with stock levels
-  // IMPORTANT: Only include products that have EITHER:
-  // 1. Current inventory > 0 in any store, OR
-  // 2. Sales activity in the last 30 days
-  const products = await context.entities.ProductCatalog.findMany({
-    where: {
-      ...productWhere,
-      OR: [
-        // Has current inventory
-        { stockLevels: { some: { 
-          storeId: { in: storeIdList },
-          quantity: { gt: 0 } 
-        }}},
-        // OR has sales in last 30 days
-        { movements: { some: {
-          storeId: { in: storeIdList },
-          type: 'sale',
-          date: { gte: thirtyDaysAgo }
-        }}}
-      ]
-    },
+  // Base filter: Only date range, stores, and 30-day activity
+  // Exclude Accessories/VPT by default for performance (unless explicitly requested)
+  const baseProductWhere = {
+    AND: [
+      {
+        OR: [
+          // Has current inventory
+          { stockLevels: { some: { 
+            storeId: { in: storeIdList },
+            quantity: { gt: 0 } 
+          }}},
+          // OR has sales in last 30 days
+          { movements: { some: {
+            storeId: { in: storeIdList },
+            type: 'sale',
+            date: { gte: thirtyDaysAgo }
+          }}}
+        ]
+      },
+      // Exclude Accessories/VPT unless explicitly requested
+      ...(includeHiddenCategories ? [] : [
+        { parentCategory: { notIn: ['Accessories', 'Accessory', 'VPT'] } }
+      ])
+    ]
+  };
+
+  // Get all products with base filter only (for rankings and filter options)
+  const allProducts = await context.entities.ProductCatalog.findMany({
+    where: baseProductWhere,
     include: {
       stockLevels: {
         where: { storeId: { in: storeIdList } },
@@ -1036,10 +1374,10 @@ export const getOrderingAnalytics = async ({
     }
   });
 
-  // Calculate metrics for each product
-  const productMetrics = [];
+  // Calculate metrics for ALL products (for rankings)
+  const allProductMetrics = [];
   
-  for (const product of products) {
+  for (const product of allProducts) {
     // Skip if no inventory across all locations
     const totalInventory = product.stockLevels.reduce((sum, sl) => sum + sl.quantity, 0);
     if (totalInventory === 0 && product.movements.length === 0) continue;
@@ -1093,7 +1431,7 @@ export const getOrderingAnalytics = async ({
       });
     });
 
-    productMetrics.push({
+    allProductMetrics.push({
       id: product.id,
       gtin: product.gtin,
       name: product.name,
@@ -1122,27 +1460,77 @@ export const getOrderingAnalytics = async ({
     });
   }
 
-  // Calculate category rankings
+  // Calculate category rankings using ALL products (not filtered)
   const categoryGroups = {};
-  productMetrics.forEach(p => {
+  allProductMetrics.forEach(p => {
     const cat = p.parentCategory || 'Uncategorized';
     if (!categoryGroups[cat]) categoryGroups[cat] = [];
     categoryGroups[cat].push(p);
   });
 
+  // Assign ranks based on full dataset
+  const rankingsMap = new Map();
   Object.keys(categoryGroups).forEach(cat => {
     categoryGroups[cat].sort((a, b) => b.totalSales - a.totalSales);
     categoryGroups[cat].forEach((p, idx) => {
-      p.categoryRank = idx + 1;
-      p.isTop10 = idx < 10;
+      rankingsMap.set(p.id, {
+        categoryRank: idx + 1,
+        isTop10: idx < 10
+      });
     });
   });
 
-  // Sort by velocity (fastest movers first)
-  productMetrics.sort((a, b) => b.velocity - a.velocity);
+  // Now apply user filters to get the displayed products
+  const filteredProducts = allProductMetrics.filter(p => {
+    // Apply brand filter
+    if (filters.brands && filters.brands.length > 0) {
+      if (!filters.brands.includes(p.brand)) return false;
+    }
+    
+    // Apply category filter
+    if (filters.categories && filters.categories.length > 0) {
+      if (!filters.categories.includes(p.parentCategory)) return false;
+    }
+    
+    // Apply subcategory filter
+    if (filters.subcategories && filters.subcategories.length > 0) {
+      if (!filters.subcategories.includes(p.subcategory)) return false;
+    }
+    
+    // Apply unit count filter
+    if (filters.units && filters.units.length > 0) {
+      if (!filters.units.includes(p.unitCount)) return false;
+    }
+    
+    // Apply unit size filter
+    if (filters.sizes && filters.sizes.length > 0) {
+      if (!filters.sizes.includes(p.unitSize)) return false;
+    }
+    
+    return true;
+  });
 
-  // Calculate sales matrix data (top 20 products by sales)
-  const topProducts = [...productMetrics]
+  // Apply rankings to filtered products
+  filteredProducts.forEach(p => {
+    const ranking = rankingsMap.get(p.id);
+    if (ranking) {
+      p.categoryRank = ranking.categoryRank;
+      p.isTop10 = ranking.isTop10;
+    }
+  });
+
+  // Sort by velocity (fastest movers first)
+  filteredProducts.sort((a, b) => b.velocity - a.velocity);
+
+  // Calculate total count before pagination
+  const totalCount = filteredProducts.length;
+  const hasMore = offset + limit < totalCount;
+
+  // Apply pagination
+  const paginatedProducts = filteredProducts.slice(offset, offset + limit);
+
+  // Calculate sales matrix data (top 20 products by sales from ALL filtered products, not just paginated)
+  const topProducts = [...filteredProducts]
     .sort((a, b) => b.totalSales - a.totalSales)
     .slice(0, 20);
 
@@ -1161,9 +1549,9 @@ export const getOrderingAnalytics = async ({
     };
   });
 
-  // Calculate location totals (as array for serialization)
+  // Calculate location totals from all filtered products
   const locationTotals = stores.map(store => {
-    const storeProducts = productMetrics.filter(p => 
+    const storeProducts = filteredProducts.filter(p => 
       p.locationInventory.find(l => l.storeId === store.id && l.quantity > 0)
     );
     return {
@@ -1173,21 +1561,38 @@ export const getOrderingAnalytics = async ({
   });
 
   console.log('📦 Ordering analytics result:', {
-    totalProducts: products.length,
-    productMetrics: productMetrics.length,
+    totalProducts: allProducts.length,
+    filteredProducts: filteredProducts.length,
+    paginatedProducts: paginatedProducts.length,
+    offset,
+    limit,
+    totalCount,
+    hasMore,
     periodDays,
     dateRange: `${startDate.toISOString()} to ${endDate.toISOString()}`
   });
 
-  // Get unique values for filters
-  const allBrands = [...new Set(products.map(p => p.brand).filter(Boolean))].sort();
-  const allCategories = [...new Set(products.map(p => p.parentCategory).filter(Boolean))].sort();
-  const allSubcategories = [...new Set(products.map(p => p.subcategory).filter(Boolean))].sort();
-  const allUnits = [...new Set(products.map(p => p.unitCount).filter(Boolean))].sort((a, b) => a - b);
-  const allSizes = [...new Set(products.map(p => p.unitSize).filter(Boolean))].sort();
+  // Get unique values for filters from ALL products (not filtered)
+  // This ensures brands/categories always show all available options
+  // Always include Accessories/VPT in category list so users can toggle it
+  const allBrands = [...new Set(allProducts.map(p => p.brand).filter(Boolean))].sort();
+  const allCategoriesSet = new Set(allProducts.map(p => p.parentCategory).filter(Boolean));
+  // Add hidden categories to filter list even if not in results
+  if (!includeHiddenCategories) {
+    allCategoriesSet.add('Accessories');
+    allCategoriesSet.add('VPT');
+  }
+  const allCategories = Array.from(allCategoriesSet).sort();
+  const allSubcategories = [...new Set(allProducts.map(p => p.subcategory).filter(Boolean))].sort();
+  const allUnits = [...new Set(allProducts.map(p => p.unitCount).filter(Boolean))].sort((a, b) => a - b);
+  const allSizes = [...new Set(allProducts.map(p => p.unitSize).filter(Boolean))].sort();
 
   return {
-    products: productMetrics,
+    products: paginatedProducts,
+    totalCount,
+    hasMore,
+    offset,
+    limit,
     salesMatrix,
     locationTotals,
     stores: stores.map(s => ({ id: s.id, name: s.name, location: s.location })),

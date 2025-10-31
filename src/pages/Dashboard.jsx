@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from 'wasp/client/operations';
-import { getUserStores, getGlobalAnalyticsFiltered, getGlobalSalesAnalytics } from 'wasp/client/operations';
+import { getUserStores, getGlobalAnalyticsFiltered, getGlobalSalesAnalytics, getDailySalesAnalytics } from 'wasp/client/operations';
 import { Link } from 'wasp/client/router';
 import { CreateStoreModal } from '../components/CreateStoreModal';
 import LocationSelector from '../components/LocationSelector';
@@ -84,6 +84,7 @@ const DashboardPage = () => {
     const saved = localStorage.getItem('showOnlyFavorites');
     return saved ? JSON.parse(saved) : false;
   });
+  const [showDailyTrends, setShowDailyTrends] = useState(false); // Default to weekly view
 
   // Persist hideAccessories setting
   useEffect(() => {
@@ -128,11 +129,18 @@ const DashboardPage = () => {
     { enabled: !focusedStoreId } // Only fetch when not viewing store detail
   );
 
-  // Fetch sales analytics with filters
+  // Fetch sales analytics with filters (weekly by default)
   const { data: salesData, isLoading: salesLoading, refetch: refetchSales } = useQuery(
     getGlobalSalesAnalytics,
     { storeIds: selectedStoreIds, filters: effectiveFilters },
-    { enabled: !focusedStoreId && activeView === 'sales' }
+    { enabled: !focusedStoreId && activeView === 'sales' && !showDailyTrends }
+  );
+
+  // Fetch daily sales analytics when daily view is active
+  const { data: dailySalesData, isLoading: dailySalesLoading } = useQuery(
+    getDailySalesAnalytics,
+    { storeIds: selectedStoreIds, filters: effectiveFilters },
+    { enabled: !focusedStoreId && activeView === 'sales' && showDailyTrends }
   );
 
   // React Query automatically refetches when parameters change, so we don't need manual refetch
@@ -455,8 +463,10 @@ const DashboardPage = () => {
         />
       ) : (
         <SalesAnalyticsDashboard 
-          salesData={salesData} 
-          loading={salesLoading}
+          salesData={showDailyTrends ? dailySalesData : salesData} 
+          loading={showDailyTrends ? dailySalesLoading : salesLoading}
+          showDaily={showDailyTrends}
+          onToggleDaily={() => setShowDailyTrends(!showDailyTrends)}
         />
       )}
 
