@@ -307,6 +307,33 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     return null;
   };
 
+  // Helper function to parse unit count and unit size from product name
+  const parseFormatDetails = (productName) => {
+    if (!productName) return { unitCount: 1, unitSize: null, format: null };
+    
+    const cleaned = productName.trim();
+    
+    // Look for multipack patterns: "10 x 0.3g", "5x10mg", "12 x 100mg", etc.
+    const multipackPattern = /(\d+)\s*[xX×]\s*(\d+\.?\d*\s*(g|mg|ml|oz|%))/i;
+    const multipackMatch = cleaned.match(multipackPattern);
+    
+    if (multipackMatch) {
+      return {
+        unitCount: parseInt(multipackMatch[1]),
+        unitSize: multipackMatch[2].trim(),
+        format: multipackMatch[0].trim() // "10 x 0.3g"
+      };
+    }
+    
+    // Single unit - extract format
+    const format = extractFormat(productName);
+    return {
+      unitCount: 1,
+      unitSize: format,
+      format: format
+    };
+  };
+
   // Helper function to calculate margin
   const calculateMargin = (retailPrice, wholesaleCost) => {
     if (!retailPrice || retailPrice === 0) return 0;
@@ -380,7 +407,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           const retailPrice = parseFloat(data['Retail price']?.replace(/[$,]/g, '') || 0);
           const wholesaleCost = parseFloat(data['Wholesale cost']?.replace(/[$,]/g, '') || 0);
           const { parentCategory, subcategory } = splitCategory(data['Category']);
-          const format = extractFormat(data['Product Name']);
+          const { unitCount, unitSize, format } = parseFormatDetails(data['Product Name']);
           const margin = calculateMargin(retailPrice, wholesaleCost);
           const strainType = extractStrainType(parentCategory, subcategory);
           const updated = data['Updated'] ? new Date(data['Updated']) : new Date();
@@ -394,6 +421,8 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
             subcategory,
             strainType,
             format,
+            unitCount,
+            unitSize,
             retailPrice,
             wholesaleCost,
             margin,
@@ -492,6 +521,8 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         subcategory: product.subcategory,
         strainType: product.strainType,
         format: product.format,
+        unitCount: product.unitCount,
+        unitSize: product.unitSize,
         retailPrice: product.retailPrice,
         wholesaleCost: product.wholesaleCost,
         margin: product.margin,
@@ -523,6 +554,8 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           subcategory: product.subcategory,
           strainType: product.strainType,
           format: product.format,
+          unitCount: product.unitCount,
+          unitSize: product.unitSize,
           retailPrice: product.retailPrice,
           wholesaleCost: product.wholesaleCost,
           margin: product.margin,
@@ -597,6 +630,8 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
             subcategory: product.subcategory,
             strainType: product.strainType,
             format: product.format,
+            unitCount: product.unitCount,
+            unitSize: product.unitSize,
             retailPrice: product.retailPrice,
             wholesaleCost: product.wholesaleCost,
             margin: product.margin,
@@ -1690,19 +1725,39 @@ export const enrichProductFormats = async (args, context) => {
 
   console.log('🔄 Starting format enrichment for all products...');
 
-  // Helper to extract format (same improved logic)
-  const extractFormat = (productName) => {
-    if (!productName) return null;
+  // Helper to parse format details
+  const parseFormatDetails = (productName) => {
+    if (!productName) return { unitCount: 1, unitSize: null, format: null };
+    
     const cleaned = productName.trim();
+    
+    // Look for multipack patterns: "10 x 0.3g", "5x10mg", "12 x 100mg", etc.
     const multipackPattern = /(\d+)\s*[xX×]\s*(\d+\.?\d*\s*(g|mg|ml|oz|%))/i;
     const multipackMatch = cleaned.match(multipackPattern);
-    if (multipackMatch) return multipackMatch[0].trim();
+    
+    if (multipackMatch) {
+      return {
+        unitCount: parseInt(multipackMatch[1]),
+        unitSize: multipackMatch[2].trim(),
+        format: multipackMatch[0].trim()
+      };
+    }
+    
+    // Single unit - extract format
     const lastDashPart = cleaned.split('-').pop().trim();
     const formatMatch = lastDashPart.match(/(\d+\.?\d*\s*(g|mg|ml|oz|%))/i);
-    if (formatMatch) return formatMatch[0].trim();
+    if (formatMatch) {
+      const format = formatMatch[0].trim();
+      return { unitCount: 1, unitSize: format, format };
+    }
+    
     const parenMatch = cleaned.match(/\(([^)]*(?:g|mg|ml|oz|%))\)/i);
-    if (parenMatch) return parenMatch[1].trim();
-    return null;
+    if (parenMatch) {
+      const format = parenMatch[1].trim();
+      return { unitCount: 1, unitSize: format, format };
+    }
+    
+    return { unitCount: 1, unitSize: null, format: null };
   };
 
   // Get all products
@@ -1718,13 +1773,22 @@ export const enrichProductFormats = async (args, context) => {
     const chunk = products.slice(i, i + chunkSize);
     
     await Promise.all(chunk.map(async (product) => {
-      const newFormat = extractFormat(product.name);
+      const { unitCount, unitSize, format } = parseFormatDetails(product.name);
       
-      // Only update if format changed or was null
-      if (newFormat && newFormat !== product.format) {
+      // Check if update is needed
+      const needsUpdate = 
+        (format && format !== product.format) ||
+        (unitCount && unitCount !== product.unitCount) ||
+        (unitSize && unitSize !== product.unitSize);
+      
+      if (needsUpdate) {
         await context.entities.ProductCatalog.update({
           where: { id: product.id },
-          data: { format: newFormat }
+          data: { 
+            format: format || product.format,
+            unitCount: unitCount || product.unitCount || 1,
+            unitSize: unitSize || product.unitSize
+          }
         });
         updated++;
       } else {

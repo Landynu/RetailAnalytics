@@ -1084,6 +1084,8 @@ export const getOrderingAnalytics = async ({
       subcategory: product.subcategory,
       strainType: product.strainType,
       format: product.format,
+      unitCount: product.unitCount,
+      unitSize: product.unitSize,
       status: product.status,
       retailPrice: product.retailPrice,
       wholesaleCost: product.wholesaleCost,
@@ -1157,6 +1159,7 @@ export const getOrderingAnalytics = async ({
   const allCategories = [...new Set(products.map(p => p.parentCategory).filter(Boolean))].sort();
   const allSubcategories = [...new Set(products.map(p => p.subcategory).filter(Boolean))].sort();
   const allFormats = [...new Set(products.map(p => p.format).filter(Boolean))].sort();
+  const allUnitCounts = [...new Set(products.map(p => p.unitCount).filter(Boolean))].sort((a, b) => a - b);
 
   return {
     products: productMetrics,
@@ -1169,7 +1172,8 @@ export const getOrderingAnalytics = async ({
       brands: allBrands,
       categories: allCategories,
       subcategories: allSubcategories,
-      formats: allFormats
+      formats: allFormats,
+      unitCounts: allUnitCounts
     }
   };
 };

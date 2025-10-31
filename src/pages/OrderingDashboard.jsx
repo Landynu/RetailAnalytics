@@ -8,13 +8,14 @@ import { Badge } from '../components/ui/badge';
 import LocationSelector from '../components/LocationSelector';
 import DateRangeFilter from '../components/DateRangeFilter';
 import FilterDropdown from '../components/FilterDropdown';
-import { ShoppingCart, Download, Trash2, ArrowUp, ArrowDown, Package, Tag } from 'lucide-react';
+import { ShoppingCart, Download, Trash2, ArrowUp, ArrowDown, Package, Tag, Eye, EyeOff } from 'lucide-react';
 import { useDebounce } from '../lib/useDebounce';
 
 const OrderingDashboard = () => {
   const { data: stores } = useQuery(getUserStores);
   const [selectedStoreIds, setSelectedStoreIds] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
+  const [hiddenCategories, setHiddenCategories] = useState(new Set(['Accessories']));
   const [dateRange, setDateRange] = useState(() => {
     const end = new Date();
     const start = new Date();
@@ -122,7 +123,15 @@ const OrderingDashboard = () => {
 
   const sortedProducts = React.useMemo(() => {
     if (!analytics?.products) return [];
-    const sorted = [...analytics.products];
+    let sorted = [...analytics.products];
+    
+    // Filter out products from hidden categories
+    if (hiddenCategories.size > 0) {
+      sorted = sorted.filter(product => {
+        return !hiddenCategories.has(product.parentCategory);
+      });
+    }
+    
     if (sortConfig.key) {
       sorted.sort((a, b) => {
         let aVal = a[sortConfig.key];
@@ -139,7 +148,7 @@ const OrderingDashboard = () => {
       });
     }
     return sorted;
-  }, [analytics?.products, sortConfig]);
+  }, [analytics?.products, sortConfig, hiddenCategories]);
 
   const maxTotalSales = analytics?.products ? Math.max(...analytics.products.map(p => p.totalSales || 0)) : 0;
 
@@ -232,27 +241,53 @@ const OrderingDashboard = () => {
             <div className="border rounded-lg p-2 bg-background max-h-64 overflow-y-auto space-y-1">
               {(analytics?.filterOptions?.categories || []).map(cat => {
                 const isSelected = filters.categories.includes(cat);
+                const isHidden = hiddenCategories.has(cat);
+                
                 return (
                   <div
                     key={cat}
-                    onClick={(e) => {
-                      if (e.ctrlKey || e.metaKey) {
-                        // Ctrl+click: Toggle this category (multi-select)
-                        if (isSelected) {
-                          setFilters({ ...filters, categories: filters.categories.filter(c => c !== cat) });
-                        } else {
-                          setFilters({ ...filters, categories: [...filters.categories, cat] });
-                        }
-                      } else {
-                        // Normal click: Select only this category (single-select)
-                        setFilters({ ...filters, categories: [cat] });
-                      }
-                    }}
-                    className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm ${
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm ${
                       isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
                     }`}
                   >
-                    <span>{cat}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const newHidden = new Set(hiddenCategories);
+                        if (isHidden) {
+                          newHidden.delete(cat);
+                        } else {
+                          newHidden.add(cat);
+                        }
+                        setHiddenCategories(newHidden);
+                      }}
+                      className="flex-shrink-0 hover:opacity-70"
+                      title={isHidden ? 'Click to show' : 'Click to hide'}
+                    >
+                      {isHidden ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                    <span
+                      onClick={(e) => {
+                        if (e.ctrlKey || e.metaKey) {
+                          // Ctrl+click: Toggle this category (multi-select)
+                          if (isSelected) {
+                            setFilters({ ...filters, categories: filters.categories.filter(c => c !== cat) });
+                          } else {
+                            setFilters({ ...filters, categories: [...filters.categories, cat] });
+                          }
+                        } else {
+                          // Normal click: Select only this category (single-select)
+                          setFilters({ ...filters, categories: [cat] });
+                        }
+                      }}
+                      className={`flex-1 cursor-pointer ${isHidden ? 'opacity-50' : ''}`}
+                    >
+                      {cat}
+                    </span>
                   </div>
                 );
               })}

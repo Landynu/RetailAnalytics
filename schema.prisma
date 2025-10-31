@@ -49,6 +49,8 @@ model ProductCatalog {
     subcategory    String?  // Split from category (e.g., "Chocolate")
     strainType     String?  // Sativa, Hybrid, Indica, or N/A
     format         String?  // Extracted from product name (e.g., "1g", "100mg")
+    unitCount      Int?     @default(1) // Number of units in pack (1 for singles, 10 for "10 x 0.5g")
+    unitSize       String?  // Size of each unit ("3.5g" or "0.5g" from "10 x 0.5g")
     size           String?
     weight         Float?
     thc            Float?
