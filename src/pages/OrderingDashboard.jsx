@@ -27,7 +27,8 @@ const OrderingDashboard = () => {
     brands: [],
     categories: [],
     subcategories: [],
-    formats: []
+    units: [],
+    sizes: []
   });
 
   const debouncedFilters = useDebounce(filters, 300);
@@ -237,7 +238,12 @@ const OrderingDashboard = () => {
           </div>
 
           <div className="mb-4">
-            <label className="text-sm font-medium mb-2 block text-emerald-800">Categories</label>
+            <label className="text-sm font-medium mb-2 block text-emerald-800">
+              Categories
+              <span className="block text-xs font-normal text-muted-foreground mt-0.5">
+                👁️ = show/hide • Click name = filter
+              </span>
+            </label>
             <div className="border rounded-lg p-2 bg-background max-h-64 overflow-y-auto space-y-1">
               {(analytics?.filterOptions?.categories || []).map(cat => {
                 const isSelected = filters.categories.includes(cat);
@@ -246,7 +252,7 @@ const OrderingDashboard = () => {
                 return (
                   <div
                     key={cat}
-                    className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm ${
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
                       isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
                     }`}
                   >
@@ -261,8 +267,10 @@ const OrderingDashboard = () => {
                         }
                         setHiddenCategories(newHidden);
                       }}
-                      className="flex-shrink-0 hover:opacity-70"
-                      title={isHidden ? 'Click to show' : 'Click to hide'}
+                      className={`flex-shrink-0 hover:scale-110 transition-transform ${
+                        isHidden ? 'text-muted-foreground' : 'text-foreground'
+                      }`}
+                      title={isHidden ? 'Hidden - Click to show in table' : 'Visible - Click to hide from table'}
                     >
                       {isHidden ? (
                         <EyeOff className="h-4 w-4" />
@@ -284,7 +292,10 @@ const OrderingDashboard = () => {
                           setFilters({ ...filters, categories: [cat] });
                         }
                       }}
-                      className={`flex-1 cursor-pointer ${isHidden ? 'opacity-50' : ''}`}
+                      className={`flex-1 cursor-pointer hover:underline ${
+                        isHidden ? 'opacity-50 line-through' : ''
+                      }`}
+                      title="Click to filter by this category"
                     >
                       {cat}
                     </span>
@@ -294,17 +305,22 @@ const OrderingDashboard = () => {
             </div>
             {filters.categories.length > 0 && (
               <div className="mt-2 text-xs text-muted-foreground">
-                {filters.categories.length} selected
+                {filters.categories.length} selected for filtering
+              </div>
+            )}
+            {hiddenCategories.size > 0 && (
+              <div className="mt-1 text-xs text-muted-foreground">
+                {hiddenCategories.size} hidden from view
               </div>
             )}
           </div>
 
           {(filters.brands.length > 0 || filters.categories.length > 0 || 
-            filters.subcategories.length > 0 || filters.formats.length > 0) && (
+            filters.subcategories.length > 0 || filters.units.length > 0 || filters.sizes.length > 0) && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setFilters({ brands: [], categories: [], subcategories: [], formats: [] })}
+              onClick={() => setFilters({ brands: [], categories: [], subcategories: [], units: [], sizes: [] })}
               className="w-full"
             >
               Clear All Filters
@@ -362,10 +378,17 @@ const OrderingDashboard = () => {
               />
               <DateRangeFilter dateRange={dateRange} onChange={setDateRange} />
               <FilterDropdown
-                label="Formats"
-                options={analytics?.filterOptions?.formats || []}
-                selectedValues={filters.formats}
-                onChange={(values) => setFilters({ ...filters, formats: values })}
+                label="Units"
+                options={analytics?.filterOptions?.units || []}
+                selectedValues={filters.units}
+                onChange={(values) => setFilters({ ...filters, units: values })}
+                icon={Package}
+              />
+              <FilterDropdown
+                label="Size"
+                options={analytics?.filterOptions?.sizes || []}
+                selectedValues={filters.sizes}
+                onChange={(values) => setFilters({ ...filters, sizes: values })}
                 icon={Tag}
               />
               <FilterDropdown

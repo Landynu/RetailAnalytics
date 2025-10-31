@@ -25,6 +25,12 @@ const GlobalUploadPage = () => {
   const [logsFile, setLogsFile] = useState(null);
   const [catalogFile, setCatalogFile] = useState(null);
   
+  // Bulk logs upload states
+  const [bulkLogsFiles, setBulkLogsFiles] = useState([]);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
+  const [bulkResults, setBulkResults] = useState(null);
+  
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -44,6 +50,8 @@ const GlobalUploadPage = () => {
   const exportFileRef = useRef(null);
   const logsFileRef = useRef(null);
   const catalogFileRef = useRef(null);
+  const bulkLogsFolderRef = useRef(null);
+  const bulkLogsFilesRef = useRef(null);
 
   // File handling functions
   const handleFileSelect = (file, setFile, setData) => {

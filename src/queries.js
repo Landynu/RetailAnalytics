@@ -996,8 +996,11 @@ export const getOrderingAnalytics = async ({
   if (filters.subcategories && filters.subcategories.length > 0) {
     productWhere.subcategory = { in: filters.subcategories };
   }
-  if (filters.formats && filters.formats.length > 0) {
-    productWhere.format = { in: filters.formats };
+  if (filters.units && filters.units.length > 0) {
+    productWhere.unitCount = { in: filters.units };
+  }
+  if (filters.sizes && filters.sizes.length > 0) {
+    productWhere.unitSize = { in: filters.sizes };
   }
 
   // Get all products with stock levels
@@ -1158,8 +1161,8 @@ export const getOrderingAnalytics = async ({
   const allBrands = [...new Set(products.map(p => p.brand).filter(Boolean))].sort();
   const allCategories = [...new Set(products.map(p => p.parentCategory).filter(Boolean))].sort();
   const allSubcategories = [...new Set(products.map(p => p.subcategory).filter(Boolean))].sort();
-  const allFormats = [...new Set(products.map(p => p.format).filter(Boolean))].sort();
-  const allUnitCounts = [...new Set(products.map(p => p.unitCount).filter(Boolean))].sort((a, b) => a - b);
+  const allUnits = [...new Set(products.map(p => p.unitCount).filter(Boolean))].sort((a, b) => a - b);
+  const allSizes = [...new Set(products.map(p => p.unitSize).filter(Boolean))].sort();
 
   return {
     products: productMetrics,
@@ -1172,8 +1175,8 @@ export const getOrderingAnalytics = async ({
       brands: allBrands,
       categories: allCategories,
       subcategories: allSubcategories,
-      formats: allFormats,
-      unitCounts: allUnitCounts
+      units: allUnits,
+      sizes: allSizes
     }
   };
 };
