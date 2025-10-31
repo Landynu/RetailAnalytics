@@ -10,6 +10,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import FilterDropdown from '../components/FilterDropdown';
 import { ShoppingCart, Download, Trash2, ArrowUp, ArrowDown, Package, Tag, Eye, EyeOff } from 'lucide-react';
 import { useDebounce } from '../lib/useDebounce';
+import DataLoadingOverlay from '../components/DataLoadingOverlay';
 
 const OrderingDashboard = () => {
   const { data: stores } = useQuery(getUserStores);
@@ -59,10 +60,23 @@ const OrderingDashboard = () => {
 
   const { data: worksheet } = useQuery(getOrCreateOrderWorksheet);
 
-  // Reset pagination when filters change
+  // Auto-deselect brands that are no longer in the eligible brand list
+  useEffect(() => {
+    if (analytics?.filterOptions?.brands) {
+      const eligibleBrands = new Set(analytics.filterOptions.brands);
+      const stillValid = filters.brands.filter(b => eligibleBrands.has(b));
+      
+      // Only update if something changed to avoid infinite loop
+      if (stillValid.length !== filters.brands.length) {
+        setFilters(prev => ({ ...prev, brands: stillValid }));
+      }
+    }
+  }, [analytics?.filterOptions?.brands]);
+
+  // Reset pagination when filters change (but keep existing data visible)
   useEffect(() => {
     setPagination({ offset: 0, limit: 100 });
-    setAllProducts([]);
+    // Don't clear allProducts - keep existing data visible during refetch
   }, [debouncedFilters, selectedStoreIds, dateRange, includeHiddenCategories]);
 
   // Accumulate products when pagination changes
@@ -255,7 +269,11 @@ const OrderingDashboard = () => {
     return text.replace(/\s*>\s*/g, ' ').trim();
   };
 
-  if (analyticsLoading) {
+  // Show skeleton loading only on initial page load (no data yet)
+  const isInitialLoad = analyticsLoading && allProducts.length === 0;
+  const isRefetching = analyticsLoading && allProducts.length > 0;
+
+  if (isInitialLoad) {
     return (
       <div className="flex h-screen">
         <div className="animate-pulse w-64 bg-muted"></div>
@@ -424,7 +442,12 @@ const OrderingDashboard = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-w-0">
+      <div className="flex-1 overflow-y-auto min-w-0 relative">
+        <DataLoadingOverlay 
+          isLoading={isRefetching} 
+          message="Applying filters..."
+          productCount={analytics?.totalCount}
+        />
         <div className="p-4 space-y-4 w-full">
           <div>
             <div className="flex items-center justify-between gap-4 mb-4">
@@ -469,6 +492,7 @@ const OrderingDashboard = () => {
           </div>
 
           <div className="overflow-x-auto">
+            {analytics && (
             <table className="w-full border-collapse border">
               <thead className="bg-background sticky top-0 z-10 border-b-2">
                 <tr>
@@ -481,12 +505,15 @@ const OrderingDashboard = () => {
                   <SortableHeader column="retailPrice" align="right" width="w-24">Retail</SortableHeader>
                   <SortableHeader column="margin" align="right" width="w-20">Margin</SortableHeader>
                   {analytics?.stores?.map(store => {
-                    const storeProductCount = sortedProducts.filter(p => 
-                      p.locationInventory.find(l => l.storeId === store.id && l.quantity > 0)
-                    ).length;
+                    // Get total count from backend data (already accounts for all filtered products)
+                    const locationTotal = analytics.locationTotals?.find(lt => lt.storeName === store.name);
+                    const storeProductCount = locationTotal?.productCount || 0;
+                    
                     return (
                       <th key={store.id} className="px-3 py-3 text-center font-semibold border bg-background w-28">
-                        <Badge variant="secondary" className="mb-1 text-xs">{storeProductCount}</Badge>
+                        {storeProductCount > 0 && (
+                          <Badge variant="secondary" className="mb-1 text-xs">{storeProductCount}</Badge>
+                        )}
                         <div className="break-words">{store.name}</div>
                         <div className="text-xs font-normal text-muted-foreground">Inv/Sales</div>
                       </th>
@@ -548,12 +575,12 @@ const OrderingDashboard = () => {
                     <td className="px-3 py-3 text-right border w-20 text-base">
                       {((product.margin || 0) * 100).toFixed(0)}%
                     </td>
-                    {analytics.stores.map(store => {
+                    {(analytics?.stores || []).map(store => {
                       const inv = product.locationInventory.find(l => l.storeId === store.id);
                       const sale = product.locationSales.find(s => s.storeId === store.id);
                       const inventory = inv ? inv.quantity : 0;
                       const sales = sale ? sale.units : 0;
-                      const localVelocity = sales / (analytics.periodDays / 7);
+                      const localVelocity = sales / ((analytics?.periodDays || 14) / 7);
                       const localWeeksLeft = localVelocity > 0 ? inventory / localVelocity : 999;
                       
                       return (
@@ -636,6 +663,7 @@ const OrderingDashboard = () => {
                 ))}
               </tbody>
             </table>
+            )}
             
             {analytics?.hasMore && (
               <div className="flex justify-center py-6">
@@ -672,7 +700,7 @@ const OrderingDashboard = () => {
                       <th className="px-3 py-3 text-left font-semibold border">Product</th>
                       <th className="px-3 py-3 text-left font-semibold border">Brand</th>
                       <th className="px-3 py-3 text-left font-semibold border">Category</th>
-                      {analytics.stores.map(store => (
+                      {(analytics?.stores || []).map(store => (
                         <th key={store.id} className="px-3 py-3 text-right font-semibold border">
                           {store.name}
                         </th>
@@ -686,7 +714,7 @@ const OrderingDashboard = () => {
                         <td className="px-3 py-3 font-medium border">{row.productName}</td>
                         <td className="px-3 py-3 text-muted-foreground border">{row.brand}</td>
                         <td className="px-3 py-3 text-muted-foreground text-sm border">{row.category}</td>
-                        {analytics.stores.map(store => (
+                        {(analytics?.stores || []).map(store => (
                           <td key={store.id} className="px-3 py-3 text-right border text-base">
                             {row[store.name] || 0}
                           </td>

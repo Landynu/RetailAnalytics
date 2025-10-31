@@ -285,3 +285,33 @@ model WeeklyBrandSummary {
   @@unique([weekStart, storeId, brand])
   @@index([weekStart, brand])
 }
+
+model ProductSeasonality {
+  id            Int      @id @default(autoincrement())
+  productId     Int      @unique
+  product       ProductCatalog @relation(fields: [productId], references: [id])
+  
+  // Year-over-year metrics
+  yoyGrowth     Float?   // % change vs last year same period
+  
+  // Best performing months (top 3)
+  peakMonth1    Int?     // 1-12
+  peakMonth2    Int?
+  peakMonth3    Int?
+  
+  // Trend classification
+  trend         String   // "GROWING", "DECLINING", "STABLE", "NEW", "SEASONAL"
+  
+  // Seasonality score (0-100, higher = more seasonal)
+  seasonalityScore Float @default(0)
+  
+  // Last N weeks performance
+  last4WeeksAvg   Float @default(0)
+  last12WeeksAvg  Float @default(0)
+  last52WeeksAvg  Float @default(0)
+  
+  lastCalculated DateTime @updatedAt
+  
+  @@index([trend])
+  @@index([seasonalityScore])
+}

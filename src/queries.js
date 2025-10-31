@@ -1572,10 +1572,34 @@ export const getOrderingAnalytics = async ({
     dateRange: `${startDate.toISOString()} to ${endDate.toISOString()}`
   });
 
-  // Get unique values for filters from ALL products (not filtered)
-  // This ensures brands/categories always show all available options
-  // Always include Accessories/VPT in category list so users can toggle it
-  const allBrands = [...new Set(allProducts.map(p => p.brand).filter(Boolean))].sort();
+  // Build smart brand filter list from products matching NON-brand filters
+  // This ensures brands are context-aware of other filters but not self-filtering
+  const filterOptionsProducts = allProductMetrics.filter(p => {
+    // Apply category filter
+    if (filters.categories && filters.categories.length > 0) {
+      if (!filters.categories.includes(p.parentCategory)) return false;
+    }
+    // Apply subcategory filter
+    if (filters.subcategories && filters.subcategories.length > 0) {
+      if (!filters.subcategories.includes(p.subcategory)) return false;
+    }
+    // Apply unit count filter
+    if (filters.units && filters.units.length > 0) {
+      if (!filters.units.includes(p.unitCount)) return false;
+    }
+    // Apply unit size filter
+    if (filters.sizes && filters.sizes.length > 0) {
+      if (!filters.sizes.includes(p.unitSize)) return false;
+    }
+    // NO brand filter applied here - that's the whole point!
+    return true;
+  });
+
+  // Extract unique values for filters
+  // Brands: Smart filter based on other filters (excludes brand filter itself)
+  const smartBrands = [...new Set(filterOptionsProducts.map(p => p.brand).filter(Boolean))].sort();
+  
+  // Categories: Always show all available (including hidden ones for toggle)
   const allCategoriesSet = new Set(allProducts.map(p => p.parentCategory).filter(Boolean));
   // Add hidden categories to filter list even if not in results
   if (!includeHiddenCategories) {
@@ -1583,7 +1607,18 @@ export const getOrderingAnalytics = async ({
     allCategoriesSet.add('VPT');
   }
   const allCategories = Array.from(allCategoriesSet).sort();
-  const allSubcategories = [...new Set(allProducts.map(p => p.subcategory).filter(Boolean))].sort();
+  
+  // Other filters: Get from products matching non-self filters
+  // For subcategories, also respect category filter
+  const subcategoryProducts = allProductMetrics.filter(p => {
+    if (filters.categories && filters.categories.length > 0) {
+      if (!filters.categories.includes(p.parentCategory)) return false;
+    }
+    return true;
+  });
+  const allSubcategories = [...new Set(subcategoryProducts.map(p => p.subcategory).filter(Boolean))].sort();
+  
+  // Units and sizes: Use all products (no cross-filtering needed)
   const allUnits = [...new Set(allProducts.map(p => p.unitCount).filter(Boolean))].sort((a, b) => a - b);
   const allSizes = [...new Set(allProducts.map(p => p.unitSize).filter(Boolean))].sort();
 
@@ -1599,7 +1634,7 @@ export const getOrderingAnalytics = async ({
     dateRange: { start: startDate.toISOString(), end: endDate.toISOString() },
     periodDays,
     filterOptions: {
-      brands: allBrands,
+      brands: smartBrands, // Smart brand list based on other filters
       categories: allCategories,
       subcategories: allSubcategories,
       units: allUnits,

@@ -32,7 +32,7 @@ const UploadProgressModal = ({ isOpen, uploadType, fileSize }) => {
             Processing {typeLabel}
           </DialogTitle>
           <DialogDescription>
-            Your data is being processed on the server. Please wait and do not close this window.
+            Your data is being processed on the server. You can close this window - processing will continue in the background.
           </DialogDescription>
         </DialogHeader>
 
@@ -91,10 +91,12 @@ const UploadProgressModal = ({ isOpen, uploadType, fileSize }) => {
           </div>
 
           {/* Patient Message */}
-          <div className="text-center">
+          <div className="text-center space-y-2">
             <p className="text-xs text-muted-foreground">
-              Large files are processed in optimized batches.<br />
-              The server will handle everything in the background.
+              Processing continues on the server even if you close this window.
+            </p>
+            <p className="text-xs font-medium text-foreground">
+              You'll see a success message when complete, or check the server console for real-time progress.
             </p>
           </div>
         </div>

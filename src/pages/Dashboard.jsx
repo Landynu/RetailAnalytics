@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getUserStores, getGlobalAnalyticsFiltered, getGlobalSalesAnalytics, getDailySalesAnalytics } from 'wasp/client/operations';
-import { Link } from 'wasp/client/router';
 import { CreateStoreModal } from '../components/CreateStoreModal';
 import LocationSelector from '../components/LocationSelector';
 import FilterDropdown from '../components/FilterDropdown';
@@ -13,7 +12,7 @@ import CompactStoreCard from '../components/CompactStoreCard';
 import InPageStoreDetail from '../components/InPageStoreDetail';
 import ExportButton from '../components/ExportButton';
 import { Button } from '../components/ui/button';
-import { Plus, Upload, Package, DollarSign, Store as StoreIcon, Leaf, TrendingUp, Star } from 'lucide-react';
+import { Plus, Package, DollarSign, Store as StoreIcon, Leaf, TrendingUp, Star } from 'lucide-react';
 import { useDebounce } from '../lib/useDebounce';
 
 // Default to last 14 days for performance
@@ -186,7 +185,7 @@ const DashboardPage = () => {
   // If viewing store detail, show that instead
   if (focusedStoreId) {
     return (
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 py-6 max-w-7xl">
         <InPageStoreDetail 
           storeId={focusedStoreId}
           onBack={() => setFocusedStoreId(null)}
@@ -197,7 +196,7 @@ const DashboardPage = () => {
 
   if (storesLoading) {
     return (
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 py-6 max-w-7xl space-y-6">
         <div className="animate-pulse h-12 bg-muted rounded"></div>
         <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
           {[1, 2, 3, 4, 5].map(i => (
@@ -209,9 +208,10 @@ const DashboardPage = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header with Location Selector */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <div className="container mx-auto px-4 py-6 max-w-7xl">
+      <div className="space-y-6">
+        {/* Header with Location Selector */}
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Analytics Dashboard</h1>
@@ -244,12 +244,6 @@ const DashboardPage = () => {
             storeIds={selectedStoreIds} 
             filters={debouncedFilters}
           />
-          <Link to="/upload">
-            <Button variant="outline">
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Data
-            </Button>
-          </Link>
           <CreateStoreModal onStoreCreated={refetchStores}>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
@@ -533,6 +527,7 @@ const DashboardPage = () => {
           </CreateStoreModal>
         </div>
       )}
+      </div>
     </div>
   );
 };
