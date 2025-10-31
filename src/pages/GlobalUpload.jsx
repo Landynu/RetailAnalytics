@@ -86,6 +86,155 @@ const GlobalUploadPage = () => {
   const handleLogsFileSelect = (e) => handleFileSelect(e.target.files[0], setLogsFile, setLogsData);
   const handleCatalogFileSelect = (e) => handleFileSelect(e.target.files[0], setCatalogFile, setCatalogData);
 
+  // Bulk logs file handling
+  const handleBulkLogsSelect = (e) => {
+    const files = Array.from(e.target.files);
+    const csvFiles = files.filter(file => 
+      file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv')
+    );
+    
+    if (csvFiles.length === 0) {
+      setError('No valid CSV files selected');
+      return;
+    }
+    
+    const fileObjects = csvFiles.map(file => ({
+      id: `${file.name}-${Date.now()}-${Math.random()}`,
+      file,
+      name: file.name,
+      size: file.size,
+      status: 'pending', // pending, processing, completed, error
+      progress: 0,
+      result: null,
+      error: null
+    }));
+    
+    setBulkLogsFiles(prev => [...prev, ...fileObjects]);
+    setError('');
+  };
+
+  const removeBulkFile = (fileId) => {
+    setBulkLogsFiles(prev => prev.filter(f => f.id !== fileId));
+  };
+
+  const clearBulkQueue = () => {
+    if (!isBulkProcessing) {
+      setBulkLogsFiles([]);
+      setBulkResults(null);
+      setError('');
+      setSuccess('');
+    }
+  };
+
+  const processBulkLogs = async () => {
+    if (bulkLogsFiles.length === 0) {
+      setError('No files to process');
+      return;
+    }
+
+    setIsBulkProcessing(true);
+    setBulkProgress({ current: 0, total: bulkLogsFiles.length });
+    setBulkResults(null);
+    setError('');
+    setSuccess('');
+
+    const results = {
+      totalFiles: bulkLogsFiles.length,
+      successCount: 0,
+      errorCount: 0,
+      totalMovements: 0,
+      totalProcessed: 0,
+      totalSkipped: 0,
+      productsCreated: 0,
+      dateRange: { earliest: null, latest: null },
+      errors: [],
+      fileDetails: []
+    };
+
+    // Process files sequentially
+    for (let i = 0; i < bulkLogsFiles.length; i++) {
+      const fileObj = bulkLogsFiles[i];
+      
+      // Update file status to processing
+      setBulkLogsFiles(prev => prev.map(f => 
+        f.id === fileObj.id ? { ...f, status: 'processing', progress: 0 } : f
+      ));
+
+      try {
+        // Read file content
+        const csvData = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.readAsText(fileObj.file);
+        });
+
+        // Process the file
+        const result = await uploadInventoryLogsFn({ csvData });
+
+        // Update file status to completed
+        setBulkLogsFiles(prev => prev.map(f => 
+          f.id === fileObj.id 
+            ? { ...f, status: 'completed', progress: 100, result } 
+            : f
+        ));
+
+        // Aggregate results
+        results.successCount++;
+        results.totalMovements += result.totalMovements || 0;
+        results.totalProcessed += result.movementsProcessed || 0;
+        results.totalSkipped += result.skippedRows || 0;
+        results.productsCreated += result.productsCreated || 0;
+        
+        results.fileDetails.push({
+          filename: fileObj.name,
+          status: 'success',
+          movements: result.movementsProcessed || 0,
+          total: result.totalMovements || 0,
+          skipped: result.skippedRows || 0
+        });
+
+      } catch (err) {
+        // Update file status to error
+        setBulkLogsFiles(prev => prev.map(f => 
+          f.id === fileObj.id 
+            ? { ...f, status: 'error', progress: 0, error: err.message } 
+            : f
+        ));
+
+        results.errorCount++;
+        results.errors.push({
+          filename: fileObj.name,
+          error: err.message
+        });
+
+        results.fileDetails.push({
+          filename: fileObj.name,
+          status: 'error',
+          error: err.message
+        });
+      }
+
+      // Update overall progress
+      setBulkProgress({ current: i + 1, total: bulkLogsFiles.length });
+    }
+
+    setBulkResults(results);
+    setIsBulkProcessing(false);
+
+    if (results.successCount > 0) {
+      setSuccess(
+        `Bulk upload complete! ${results.successCount}/${results.totalFiles} files processed successfully. ` +
+        `${results.totalProcessed} movements added from ${results.totalMovements} total records.` +
+        (results.productsCreated > 0 ? ` ${results.productsCreated} products auto-created.` : '')
+      );
+    }
+
+    if (results.errorCount > 0) {
+      setError(`${results.errorCount} file(s) failed to process. See details below.`);
+    }
+  };
+
   const handleExportUpload = async () => {
     if (!exportData.trim() && !exportFile) {
       setError('Please select a CSV file or paste CSV data');
@@ -382,60 +531,254 @@ const GlobalUploadPage = () => {
 
           {/* Logs Tab */}
           {activeTab === 'logs' && (
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Inventory Logs Upload</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Upload inventory-logs.csv with transaction history across all stores. Products must exist in the database before uploading logs.
-                </p>
-                
-                <div className="mb-4">
-                  <label className="text-sm font-medium mb-2 block">Upload CSV File</label>
-                  <div className="flex items-center space-x-4">
-                    <input ref={logsFileRef} type="file" accept=".csv" onChange={handleLogsFileSelect} className="hidden" />
-                    <Button type="button" variant="outline" onClick={() => logsFileRef.current?.click()} className="flex items-center">
-                      <File className="h-4 w-4 mr-2" />
-                      Choose CSV File
+            <div className="space-y-6">
+              {/* Single File Upload */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold mb-2">Single File Upload</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Upload a single inventory-logs.csv file with transaction history.
+                  </p>
+                  
+                  <div className="mb-4">
+                    <label className="text-sm font-medium mb-2 block">Upload CSV File</label>
+                    <div className="flex items-center space-x-4">
+                      <input ref={logsFileRef} type="file" accept=".csv" onChange={handleLogsFileSelect} className="hidden" />
+                      <Button type="button" variant="outline" onClick={() => logsFileRef.current?.click()} className="flex items-center">
+                        <File className="h-4 w-4 mr-2" />
+                        Choose CSV File
+                      </Button>
+                      {logsFile && (
+                        <div className="flex items-center space-x-2">
+                          <FileText className="h-4 w-4 text-green-600" />
+                          <span className="text-sm text-green-600">{logsFile.name}</span>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => {
+                            setLogsFile(null);
+                            setLogsData('');
+                            if (logsFileRef.current) logsFileRef.current.value = '';
+                          }}>Remove</Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <label className="text-sm font-medium mb-2 block">CSV Data Preview</label>
+                  <textarea
+                    className="w-full h-32 p-3 border rounded-md bg-background"
+                    placeholder="CSV data will appear here..."
+                    value={logsData}
+                    onChange={(e) => setLogsData(e.target.value)}
+                    readOnly={logsFile && logsFile.size > 5 * 1024 * 1024}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Expected columns: Date, Type, SKU, Barcode, Product, Employee, Location, Opening, Change, Closing, Notes
+                  </p>
+                </div>
+                <Button onClick={handleLogsUpload} disabled={isLoading || (!logsData.trim() && !logsFile)} className="flex items-center">
+                  {isLoading ? (
+                    <>
+                      <div className="animate-spin h-4 w-4 mr-2 border-2 border-current border-t-transparent rounded-full" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <TrendingUp className="h-4 w-4 mr-2" />
+                      Process Single File
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              <Separator />
+
+              {/* Bulk Upload Section */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold mb-2">Bulk Upload - Multiple Files</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Upload multiple inventory log files at once for historical data analysis. Select a folder or multiple CSV files.
+                  </p>
+                  
+                  <div className="flex items-center space-x-4 mb-4">
+                    <input 
+                      ref={bulkLogsFolderRef} 
+                      type="file" 
+                      accept=".csv" 
+                      webkitdirectory="true"
+                      directory="true"
+                      multiple 
+                      onChange={handleBulkLogsSelect} 
+                      className="hidden" 
+                    />
+                    <input 
+                      ref={bulkLogsFilesRef} 
+                      type="file" 
+                      accept=".csv" 
+                      multiple 
+                      onChange={handleBulkLogsSelect} 
+                      className="hidden" 
+                    />
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => bulkLogsFolderRef.current?.click()}
+                      disabled={isBulkProcessing}
+                      className="flex items-center"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Choose Folder
                     </Button>
-                    {logsFile && (
-                      <div className="flex items-center space-x-2">
-                        <FileText className="h-4 w-4 text-green-600" />
-                        <span className="text-sm text-green-600">{logsFile.name}</span>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => {
-                          setLogsFile(null);
-                          setLogsData('');
-                          if (logsFileRef.current) logsFileRef.current.value = '';
-                        }}>Remove</Button>
-                      </div>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => bulkLogsFilesRef.current?.click()}
+                      disabled={isBulkProcessing}
+                      className="flex items-center"
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      Choose Multiple Files
+                    </Button>
+                    {bulkLogsFiles.length > 0 && (
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        onClick={clearBulkQueue}
+                        disabled={isBulkProcessing}
+                        className="text-destructive"
+                      >
+                        Clear All ({bulkLogsFiles.length})
+                      </Button>
                     )}
                   </div>
-                </div>
 
-                <label className="text-sm font-medium mb-2 block">CSV Data Preview</label>
-                <textarea
-                  className="w-full h-32 p-3 border rounded-md bg-background"
-                  placeholder="CSV data will appear here..."
-                  value={logsData}
-                  onChange={(e) => setLogsData(e.target.value)}
-                  readOnly={logsFile && logsFile.size > 5 * 1024 * 1024}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Expected columns: Date, Type, SKU, Barcode, Product, Employee, Location, Opening, Change, Closing, Notes
-                </p>
+                  {/* File Queue Display */}
+                  {bulkLogsFiles.length > 0 && (
+                    <div className="border rounded-lg p-4 space-y-2 max-h-96 overflow-y-auto">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium">Upload Queue ({bulkLogsFiles.length} files)</h4>
+                        {isBulkProcessing && (
+                          <span className="text-sm text-muted-foreground">
+                            Processing {bulkProgress.current} of {bulkProgress.total}...
+                          </span>
+                        )}
+                      </div>
+                      
+                      {bulkLogsFiles.map((fileObj) => (
+                        <div 
+                          key={fileObj.id} 
+                          className="flex items-center justify-between p-3 bg-muted rounded-md"
+                        >
+                          <div className="flex items-center space-x-3 flex-1">
+                            <FileText className={`h-5 w-5 ${
+                              fileObj.status === 'completed' ? 'text-green-600' :
+                              fileObj.status === 'error' ? 'text-red-600' :
+                              fileObj.status === 'processing' ? 'text-blue-600' :
+                              'text-gray-400'
+                            }`} />
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-2">
+                                <span className="text-sm font-medium">{fileObj.name}</span>
+                                {fileObj.status === 'completed' && <CheckCircle className="h-4 w-4 text-green-600" />}
+                                {fileObj.status === 'error' && <AlertCircle className="h-4 w-4 text-red-600" />}
+                                {fileObj.status === 'processing' && (
+                                  <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full" />
+                                )}
+                              </div>
+                              <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                                <span>{(fileObj.size / 1024 / 1024).toFixed(2)} MB</span>
+                                {fileObj.status === 'completed' && fileObj.result && (
+                                  <span className="text-green-600">
+                                    • {fileObj.result.movementsProcessed || 0} movements
+                                  </span>
+                                )}
+                                {fileObj.status === 'error' && (
+                                  <span className="text-red-600">• {fileObj.error}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          {!isBulkProcessing && fileObj.status === 'pending' && (
+                            <Button 
+                              type="button" 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => removeBulkFile(fileObj.id)}
+                            >
+                              Remove
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Upload Controls */}
+                  {bulkLogsFiles.length > 0 && (
+                    <div className="flex items-center space-x-4 mt-4">
+                      <Button 
+                        onClick={processBulkLogs} 
+                        disabled={isBulkProcessing || bulkLogsFiles.length === 0}
+                        className="flex items-center"
+                      >
+                        {isBulkProcessing ? (
+                          <>
+                            <div className="animate-spin h-4 w-4 mr-2 border-2 border-current border-t-transparent rounded-full" />
+                            Processing {bulkProgress.current}/{bulkProgress.total}...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4 mr-2" />
+                            Upload All Files ({bulkLogsFiles.length})
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Results Summary */}
+                  {bulkResults && (
+                    <div className="border rounded-lg p-4 mt-4 space-y-3 bg-muted/50">
+                      <h4 className="font-medium flex items-center">
+                        <CheckCircle className="h-5 w-5 mr-2 text-green-600" />
+                        Bulk Upload Results
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <div className="text-2xl font-bold">{bulkResults.successCount}/{bulkResults.totalFiles}</div>
+                          <div className="text-xs text-muted-foreground">Files Processed</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-green-600">{bulkResults.totalProcessed}</div>
+                          <div className="text-xs text-muted-foreground">Movements Added</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-blue-600">{bulkResults.totalMovements}</div>
+                          <div className="text-xs text-muted-foreground">Total Records</div>
+                        </div>
+                        {bulkResults.productsCreated > 0 && (
+                          <div>
+                            <div className="text-2xl font-bold text-purple-600">{bulkResults.productsCreated}</div>
+                            <div className="text-xs text-muted-foreground">Products Created</div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {bulkResults.errors.length > 0 && (
+                        <div className="mt-4">
+                          <h5 className="text-sm font-medium text-red-600 mb-2">Errors ({bulkResults.errors.length})</h5>
+                          <div className="space-y-1 max-h-40 overflow-y-auto">
+                            {bulkResults.errors.map((err, idx) => (
+                              <div key={idx} className="text-sm text-red-600 bg-red-50 p-2 rounded">
+                                <strong>{err.filename}:</strong> {err.error}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-              <Button onClick={handleLogsUpload} disabled={isLoading || (!logsData.trim() && !logsFile)} className="flex items-center">
-                {isLoading ? (
-                  <>
-                    <div className="animate-spin h-4 w-4 mr-2 border-2 border-current border-t-transparent rounded-full" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <TrendingUp className="h-4 w-4 mr-2" />
-                    Process Inventory Logs
-                  </>
-                )}
-              </Button>
             </div>
           )}
 
