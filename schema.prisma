@@ -2,11 +2,16 @@ datasource db {
   provider = "postgresql"
   // Wasp requires that the url is set to the DATABASE_URL environment variable.
   url      = env("DATABASE_URL")
+  // Production-ready connection pool configuration
+  relationMode = "prisma"
 }
 
 // Wasp requires the `prisma-client-js` generator to be present.
 generator client {
   provider = "prisma-client-js"
+  // Optimize for production performance
+  previewFeatures = ["fullTextSearch", "fullTextIndex"]
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 model User {
@@ -37,6 +42,8 @@ model Store {
     stockLevels   StockLevel[]
     movements     InventoryMovement[]
     inventories Inventory[] // Legacy relation
+    
+    @@index([userId, isActive])
 }
 
 model ProductCatalog {
@@ -69,13 +76,18 @@ model ProductCatalog {
     stockLevels    StockLevel[]
     movements      InventoryMovement[]
     worksheetItems OrderWorksheetItem[]
+    
+    @@index([parentCategory])
+    @@index([brand])
+    @@index([status])
+    @@index([parentCategory, brand])
 }
 
 model Category {
     id           Int        @id @default(autoincrement())
     name         String
     parentId   Int?
-    parent       Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+    parent       Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
     children     Category[] @relation("CategoryHierarchy")
     hierarchy    String     // e.g., "Edibles > Chocolate > Dark"
     displayOrder Int        @default(0)
@@ -104,6 +116,8 @@ model StockLevel {
     snapshot   InventorySnapshot? @relation(fields: [snapshotId], references: [id])
     
     @@unique([storeId, productId])
+    @@index([storeId, quantity])
+    @@index([productId])
 }
 
 model InventoryMovement {
@@ -119,6 +133,11 @@ model InventoryMovement {
     changeQty   Int
     closingQty  Int
     notes       String?
+    
+    @@index([date, type])
+    @@index([storeId, date])
+    @@index([productId, date])
+    @@index([storeId, type, date])
 }
 
 model UnmatchedRecord {
@@ -186,4 +205,83 @@ model Product {
     price       Float
     inventory   Inventory @relation(fields: [inventoryId], references: [id])
     inventoryId Int
+}
+
+// Weekly Summary Tables for Performance Optimization
+// These store pre-aggregated data to reduce query load
+
+model WeeklySalesSummary {
+  id          Int      @id @default(autoincrement())
+  weekStart   DateTime // Monday of the week
+  storeId     Int
+  store       Store    @relation(fields: [storeId], references: [id])
+  productId   Int
+  product     ProductCatalog @relation(fields: [productId], references: [id])
+  
+  // Sales metrics
+  grossSales  Float    @default(0)
+  refunds     Float    @default(0)
+  netRevenue  Float    @default(0)
+  unitsSold   Int      @default(0)
+  refundUnits Int      @default(0)
+  
+  // Temporal breakdown - day of week (JSON: {"0": sales_amount, "1": sales_amount, ...})
+  salesByDayOfWeek Json?
+  
+  // Time of day breakdown (4 buckets)
+  salesMorning   Float @default(0)  // 6am-12pm
+  salesAfternoon Float @default(0)  // 12pm-6pm
+  salesEvening   Float @default(0)  // 6pm-10pm
+  salesNight     Float @default(0)  // 10pm-6am
+  
+  unitsMorning   Int @default(0)
+  unitsAfternoon Int @default(0)
+  unitsEvening   Int @default(0)
+  unitsNight     Int @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([weekStart, storeId, productId])
+  @@index([weekStart, storeId])
+  @@index([weekStart, productId])
+}
+
+model WeeklyCategorySummary {
+  id          Int      @id @default(autoincrement())
+  weekStart   DateTime
+  storeId     Int
+  store       Store    @relation(fields: [storeId], references: [id])
+  category    String   // parentCategory
+  
+  grossSales  Float    @default(0)
+  refunds     Float    @default(0)
+  netRevenue  Float    @default(0)
+  unitsSold   Int      @default(0)
+  productCount Int     @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([weekStart, storeId, category])
+  @@index([weekStart, category])
+}
+
+model WeeklyBrandSummary {
+  id          Int      @id @default(autoincrement())
+  weekStart   DateTime
+  storeId     Int
+  store       Store    @relation(fields: [storeId], references: [id])
+  brand       String
+  
+  grossSales  Float    @default(0)
+  refunds     Float    @default(0)
+  netRevenue  Float    @default(0)
+  unitsSold   Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([weekStart, storeId, brand])
+  @@index([weekStart, brand])
 }

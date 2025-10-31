@@ -13,8 +13,19 @@ import CompactStoreCard from '../components/CompactStoreCard';
 import InPageStoreDetail from '../components/InPageStoreDetail';
 import ExportButton from '../components/ExportButton';
 import { Button } from '../components/ui/button';
-import { Plus, Upload, Package, DollarSign, Store as StoreIcon, Leaf, TrendingUp } from 'lucide-react';
+import { Plus, Upload, Package, DollarSign, Store as StoreIcon, Leaf, TrendingUp, Star } from 'lucide-react';
 import { useDebounce } from '../lib/useDebounce';
+
+// Default to last 14 days for performance
+const getDefault14DayRange = () => {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - 14);
+  return {
+    start: start.toISOString().split('T')[0],
+    end: end.toISOString().split('T')[0]
+  };
+};
 
 const DEFAULT_FILTERS = {
   categories: [],
@@ -23,8 +34,11 @@ const DEFAULT_FILTERS = {
   strainTypes: [],
   priceRange: null,
   stockStatus: null,
-  dateRange: null
+  dateRange: getDefault14DayRange() // Default to last 14 days
 };
+
+// Version for localStorage - increment when DEFAULT_FILTERS structure changes
+const FILTERS_VERSION = '2.0';
 
 const DashboardPage = () => {
   const { data: stores, isLoading: storesLoading, refetch: refetchStores } = useQuery(getUserStores);
@@ -40,14 +54,35 @@ const DashboardPage = () => {
     return saved ? JSON.parse(saved) : true; // Default to hiding zero inventory
   });
   const [filters, setFilters] = useState(() => {
-    // Load from localStorage
+    // Check version and clear if outdated
+    const savedVersion = localStorage.getItem('retailAnalyticsFiltersVersion');
+    if (savedVersion !== FILTERS_VERSION) {
+      // Clear old filters and set new version
+      localStorage.removeItem('retailAnalyticsFilters');
+      localStorage.setItem('retailAnalyticsFiltersVersion', FILTERS_VERSION);
+      console.log('🔄 Filters reset due to version update');
+      return DEFAULT_FILTERS;
+    }
+    
+    // Load from localStorage only if version matches
     const saved = localStorage.getItem('retailAnalyticsFilters');
-    return saved ? JSON.parse(saved) : DEFAULT_FILTERS;
+    const loadedFilters = saved ? JSON.parse(saved) : DEFAULT_FILTERS;
+    
+    // Ensure dateRange exists (backward compatibility)
+    if (!loadedFilters.dateRange) {
+      loadedFilters.dateRange = getDefault14DayRange();
+    }
+    
+    return loadedFilters;
   });
   const [focusedStoreId, setFocusedStoreId] = useState(null);
   const [activeView, setActiveView] = useState(() => {
     const saved = localStorage.getItem('dashboardView');
     return saved || 'inventory'; // 'inventory' or 'sales'
+  });
+  const [showOnlyFavorites, setShowOnlyFavorites] = useState(() => {
+    const saved = localStorage.getItem('showOnlyFavorites');
+    return saved ? JSON.parse(saved) : false;
   });
 
   // Persist hideAccessories setting
@@ -63,15 +98,21 @@ const DashboardPage = () => {
   // Debounce filters for better performance
   const debouncedFilters = useDebounce(filters, 300);
 
-  // Persist filters to localStorage
+  // Persist filters to localStorage with version
   useEffect(() => {
     localStorage.setItem('retailAnalyticsFilters', JSON.stringify(filters));
+    localStorage.setItem('retailAnalyticsFiltersVersion', FILTERS_VERSION);
   }, [filters]);
 
   // Persist active view
   useEffect(() => {
     localStorage.setItem('dashboardView', activeView);
   }, [activeView]);
+
+  // Persist favorite filter setting
+  useEffect(() => {
+    localStorage.setItem('showOnlyFavorites', JSON.stringify(showOnlyFavorites));
+  }, [showOnlyFavorites]);
 
   // Apply hideAccessories and hideZeroInventory to filters
   const effectiveFilters = {
@@ -94,15 +135,8 @@ const DashboardPage = () => {
     { enabled: !focusedStoreId && activeView === 'sales' }
   );
 
-  // Refetch analytics when effective filters change
-  useEffect(() => {
-    if (!focusedStoreId) {
-      refetchAnalytics();
-      if (activeView === 'sales') {
-        refetchSales();
-      }
-    }
-  }, [effectiveFilters, selectedStoreIds, focusedStoreId, activeView]);
+  // React Query automatically refetches when parameters change, so we don't need manual refetch
+  // Removed aggressive polling that was causing performance issues
 
   // Calculate store metrics for compact cards
   const storeMetrics = analytics?.storePerformance?.reduce((acc, store) => {
@@ -112,6 +146,30 @@ const DashboardPage = () => {
     };
     return acc;
   }, {}) || {};
+
+  // Filter and sort stores: favorite filter + sorting by favorite > active > disabled
+  const displayStores = React.useMemo(() => {
+    if (!stores) return [];
+    
+    // Apply favorite filter if enabled
+    let filtered = showOnlyFavorites 
+      ? stores.filter(s => s.isFavourite)
+      : stores;
+    
+    // Sort by: favorite first, then active, then disabled
+    return filtered.sort((a, b) => {
+      // First priority: favorites
+      if (a.isFavourite !== b.isFavourite) {
+        return a.isFavourite ? -1 : 1;
+      }
+      // Second priority: active status
+      if (a.isActive !== b.isActive) {
+        return a.isActive ? -1 : 1;
+      }
+      // Default: alphabetical by name
+      return a.name.localeCompare(b.name);
+    });
+  }, [stores, showOnlyFavorites]);
 
   const handleClearFilters = () => {
     setFilters(DEFAULT_FILTERS);
@@ -406,23 +464,46 @@ const DashboardPage = () => {
       {stores && stores.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Your Stores</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-semibold">Your Stores</h2>
+              <Button
+                variant={showOnlyFavorites ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowOnlyFavorites(!showOnlyFavorites)}
+              >
+                <Star className={`h-4 w-4 mr-1 ${showOnlyFavorites ? 'fill-current' : ''}`} />
+                {showOnlyFavorites ? 'Showing Favorites' : 'Show Favorites'}
+              </Button>
+            </div>
             <div className="flex gap-2 text-sm text-muted-foreground">
               <span>{stores.filter(s => s.isActive).length} active</span>
               <span>•</span>
               <span>{stores.filter(s => s.isFavourite).length} favourites</span>
+              {showOnlyFavorites && (
+                <>
+                  <span>•</span>
+                  <span>{displayStores.length} shown</span>
+                </>
+              )}
             </div>
           </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {stores.map(store => (
-              <CompactStoreCard
-                key={store.id}
-                store={store}
-                metrics={storeMetrics[store.id]}
-                onViewDetails={() => setFocusedStoreId(store.id)}
-              />
-            ))}
-          </div>
+          {displayStores.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {displayStores.map(store => (
+                <CompactStoreCard
+                  key={store.id}
+                  store={store}
+                  metrics={storeMetrics[store.id]}
+                  onViewDetails={() => setFocusedStoreId(store.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Star className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No favorite stores yet. Click the star on a store card to mark it as a favorite.</p>
+            </div>
+          )}
         </div>
       )}
 

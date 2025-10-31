@@ -148,7 +148,7 @@ query getGlobalAnalyticsFiltered {
 
 query getGlobalSalesAnalytics {
   fn: import { getGlobalSalesAnalytics } from "@src/queries.js",
-  entities: [Store, ProductCatalog, InventoryMovement]
+  entities: [Store, ProductCatalog, WeeklySalesSummary]
 }
 
 query getOrderingAnalytics {
@@ -194,6 +194,11 @@ action markProductStatus {
 action enrichProductFormats {
   fn: import { enrichProductFormats } from "@src/actions.js",
   entities: [ProductCatalog]
+}
+
+action backfillWeeklySummaries {
+  fn: import { backfillWeeklySummaries } from "@src/actions.js",
+  entities: [Store, ProductCatalog, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary]
 }
 
 route DashboardRoute { path: "/", to: DashboardPage }

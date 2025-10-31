@@ -144,9 +144,8 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
     units: s.unitsSold
   }));
 
-  // Sales trends - limit to last 30 days for readability
+  // Sales trends - weekly data (backend provides weekly summaries for performance)
   const salesTrendsData = (salesData.salesTrends || [])
-    .slice(-30)
     .map(t => {
       const baseData = {
         date: new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -181,7 +180,7 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false }) => {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Sales Trends (Last 30 Days)</CardTitle>
+                <CardTitle>Sales Trends (Weekly)</CardTitle>
                 <CardDescription>
                   {showTrendsView === 'total' ? 'Total' : 'By location'} - {showTrendsBy === 'revenue' ? 'revenue' : 'units sold'}
                 </CardDescription>
