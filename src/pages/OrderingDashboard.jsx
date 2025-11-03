@@ -3,6 +3,8 @@ import { useQuery } from 'wasp/client/operations';
 import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores, getDistributors } from 'wasp/client/operations';
 import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats, seedDistributors, syncBrands } from 'wasp/client/operations';
 import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { Card } from '../components/ui/card';
 import LocationSelector from '../components/LocationSelector';
 import DateRangeFilter from '../components/DateRangeFilter';
 import FilterDropdown from '../components/FilterDropdown';
@@ -332,11 +334,16 @@ const OrderingDashboard = () => {
             </div>
             
             <div className="flex items-center gap-3 flex-wrap">
-              <LocationSelector
-                stores={stores || []}
-                selectedIds={selectedStoreIds}
-                onChange={setSelectedStoreIds}
-              />
+              <div className="flex items-center gap-2">
+                <LocationSelector
+                  stores={stores || []}
+                  selectedIds={selectedStoreIds}
+                  onChange={setSelectedStoreIds}
+                />
+                <Badge variant="secondary" className="h-8 px-3 text-sm font-semibold">
+                  {analytics?.totalCount || 0} Products
+                </Badge>
+              </div>
               <DateRangeFilter dateRange={dateRange} onChange={setDateRange} />
               <FilterDropdown
                 label="Units"
@@ -369,6 +376,31 @@ const OrderingDashboard = () => {
                 Reset Columns
               </Button>
             </div>
+          </div>
+
+          {/* Strain Classification Cards */}
+          <div className="grid grid-cols-3 gap-4">
+            <Card className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+              <div className="text-center">
+                <div className="text-purple-600 font-semibold text-sm mb-1">Hybrid</div>
+                <div className="text-3xl font-bold text-purple-800">{analytics?.strainCounts?.Hybrid || 0}</div>
+                <div className="text-purple-600 text-xs mt-1">products</div>
+              </div>
+            </Card>
+            <Card className="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200">
+              <div className="text-center">
+                <div className="text-emerald-600 font-semibold text-sm mb-1">Sativa</div>
+                <div className="text-3xl font-bold text-emerald-800">{analytics?.strainCounts?.Sativa || 0}</div>
+                <div className="text-emerald-600 text-xs mt-1">products</div>
+              </div>
+            </Card>
+            <Card className="p-4 bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
+              <div className="text-center">
+                <div className="text-amber-600 font-semibold text-sm mb-1">Indica</div>
+                <div className="text-3xl font-bold text-amber-800">{analytics?.strainCounts?.Indica || 0}</div>
+                <div className="text-amber-600 text-xs mt-1">products</div>
+              </div>
+            </Card>
           </div>
 
           <div className="overflow-x-auto">

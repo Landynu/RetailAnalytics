@@ -90,14 +90,15 @@ const OrderingTableHeader = ({
 
   const renderHeaderContent = (column) => {
     if (column.isLocation) {
-      const locationTotal = analytics?.locationTotals?.find(lt => lt.storeId === column.storeId);
-      const storeProductCount = locationTotal?.productCount || 0;
+      // Use locationInventoryCounts for accurate per-location inventory counts
+      const locationCount = analytics?.locationInventoryCounts?.find(lc => lc.storeId === column.storeId);
+      const storeProductCount = locationCount?.count || 0;
       
       return (
         <div className="flex flex-col items-center">
-          {storeProductCount > 0 && (
-            <Badge variant="secondary" className="mb-1 text-xs">{storeProductCount}</Badge>
-          )}
+          <Badge variant="secondary" className="mb-1 text-xs px-2">
+            {storeProductCount}
+          </Badge>
           <div className="break-words">{column.storeName}</div>
           <div className="text-xs font-normal text-muted-foreground">Inv/Sales</div>
         </div>

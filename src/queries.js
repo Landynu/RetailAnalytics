@@ -1552,6 +1552,27 @@ export const getOrderingAnalytics = async ({
   const totalCount = filteredProducts.length;
   const hasMore = offset + limit < totalCount;
 
+  // Calculate strain counts from ALL filtered products (not just paginated)
+  const strainCounts = { Hybrid: 0, Sativa: 0, Indica: 0 };
+  filteredProducts.forEach(p => {
+    const strain = p.strainType;
+    if (strain && strain !== 'N/A' && strainCounts[strain] !== undefined) {
+      strainCounts[strain]++;
+    }
+  });
+
+  // Calculate per-location inventory counts from ALL filtered products
+  const locationInventoryCounts = stores.map(store => {
+    const productsWithInventory = filteredProducts.filter(p => 
+      p.locationInventory.some(loc => loc.storeId === store.id && loc.quantity > 0)
+    );
+    return {
+      storeId: store.id,
+      storeName: store.name,
+      count: productsWithInventory.length
+    };
+  });
+
   // Apply pagination FIRST
   const paginatedProducts = filteredProducts.slice(offset, offset + limit);
 
@@ -1747,6 +1768,8 @@ export const getOrderingAnalytics = async ({
     dateRange: { start: startDate.toISOString(), end: endDate.toISOString() },
     periodDays,
     lastUpdate: lastUpdate.toISOString(),
+    strainCounts, // Counts from ALL filtered products
+    locationInventoryCounts, // Per-location inventory counts from ALL filtered products
     filterOptions: {
       brands: smartBrands, // Smart brand list based on other filters
       categories: allCategories,
