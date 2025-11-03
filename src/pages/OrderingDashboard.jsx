@@ -2,108 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores } from 'wasp/client/operations';
 import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats } from 'wasp/client/operations';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Badge } from '../components/ui/badge';
 import LocationSelector from '../components/LocationSelector';
 import DateRangeFilter from '../components/DateRangeFilter';
 import FilterDropdown from '../components/FilterDropdown';
-import { ShoppingCart, Download, Trash2, ArrowUp, ArrowDown, Package, Tag, Eye, EyeOff, GripVertical, RotateCcw } from 'lucide-react';
+import { Package, Tag, RotateCcw } from 'lucide-react';
 import { useDebounce } from '../lib/useDebounce';
 import DataLoadingOverlay from '../components/DataLoadingOverlay';
-import Sparkline from '../components/Sparkline';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  horizontalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-
-const DEFAULT_COLUMNS = [
-  { id: 'name', label: 'Product', width: 'w-64', align: 'left', sortKey: 'name' },
-  { id: 'brand', label: 'Brand', width: 'w-32', align: 'left', sortKey: 'brand' },
-  { id: 'strainType', label: 'Type', width: 'w-24', align: 'left', sortKey: 'strainType' },
-  { id: 'format', label: 'Format', width: 'w-24', align: 'left', sortKey: 'format' },
-  { id: 'parentCategory', label: 'Category', width: 'w-32', align: 'left', sortKey: 'parentCategory' },
-  { id: 'wholesaleCost', label: 'Cost', width: 'w-24', align: 'right', sortKey: 'wholesaleCost' },
-  { id: 'retailPrice', label: 'Retail', width: 'w-24', align: 'right', sortKey: 'retailPrice' },
-  { id: 'margin', label: 'Margin', width: 'w-20', align: 'right', sortKey: 'margin' },
-  { id: 'locations', label: 'Locations', width: 'variable', align: 'center', sortKey: null },
-  { id: 'totalInventory', label: 'Total Inv', width: 'w-24', align: 'right', sortKey: 'totalInventory' },
-  { id: 'totalSales', label: 'Total Sales', width: 'w-24', align: 'right', sortKey: 'totalSales' },
-  { id: 'popularity', label: 'Popularity', width: 'w-28', align: 'center', sortKey: null },
-  { id: 'weeksLeft', label: 'Wks Left', width: 'w-24', align: 'center', sortKey: 'weeksLeft' },
-  { id: 'daysSinceLastSale', label: 'Days Since Sale', width: 'w-28', align: 'right', sortKey: 'daysSinceLastSale' },
-  { id: 'trend', label: 'Trend', width: 'w-20', align: 'center', sortKey: null },
-  { id: 'daysSinceLastPO', label: 'Days Since PO', width: 'w-28', align: 'right', sortKey: 'daysSinceLastPO' },
-  { id: 'suggestedQty', label: 'Suggested', width: 'w-28', align: 'right', sortKey: 'suggestedQty' },
-  { id: 'actions', label: 'Actions', width: 'w-28', align: 'center', sortKey: null },
-];
-
-const STORAGE_KEY = 'orderingDashboard_columnOrder';
-
-const DraggableHeader = ({ column, children, onSort, sortConfig, isLocation = false }) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: column.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const handleHeaderClick = (e) => {
-    if (!isLocation && column.sortKey && !e.target.closest('.drag-handle')) {
-      onSort(column.sortKey);
-    }
-  };
-
-  return (
-    <th
-      ref={setNodeRef}
-      style={style}
-      className={`px-3 py-3 font-semibold border bg-background ${column.width} ${
-        column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
-      } ${!isLocation && column.sortKey ? 'cursor-pointer hover:bg-muted/50' : ''} ${isDragging ? 'z-50' : ''}`}
-      onClick={handleHeaderClick}
-    >
-      <div className={`flex items-center gap-1 ${
-        column.align === 'right' ? 'justify-end' : column.align === 'center' ? 'justify-center' : ''
-      }`}>
-        <button
-          className="drag-handle cursor-grab active:cursor-grabbing hover:text-primary p-0.5 -ml-1"
-          {...attributes}
-          {...listeners}
-          onClick={(e) => e.stopPropagation()}
-          title="Drag to reorder column"
-        >
-          <GripVertical className="h-3 w-3" />
-        </button>
-        <span className="break-words">{children}</span>
-        {!isLocation && column.sortKey && sortConfig.key === column.sortKey && (
-          sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 flex-shrink-0" /> : <ArrowDown className="h-3 w-3 flex-shrink-0" />
-        )}
-      </div>
-    </th>
-  );
-};
+import { arrayMove } from '@dnd-kit/sortable';
+import { useColumnOrdering } from '../lib/useColumnOrdering';
+import OrderingFilters from '../components/OrderingFilters';
+import OrderingTableHeader from '../components/OrderingTableHeader';
+import ProductTableRow from '../components/ProductTableRow';
+import SalesMatrix from '../components/SalesMatrix';
 
 const OrderingDashboard = () => {
   const { data: stores } = useQuery(getUserStores);
@@ -112,17 +24,12 @@ const OrderingDashboard = () => {
   const [hiddenCategories, setHiddenCategories] = useState(new Set(['Accessories', 'VPT']));
   const [visibleHiddenCategories, setVisibleHiddenCategories] = useState(new Set());
   
-  const [columnOrder, setColumnOrder] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Failed to parse saved column order:', e);
-      }
-    }
-    return DEFAULT_COLUMNS.map(col => col.id);
-  });
+  const { 
+    columnOrder, 
+    setColumnOrder, 
+    orderedColumns, 
+    resetColumnOrder 
+  } = useColumnOrdering(stores || []);
   
   const [dateRange, setDateRange] = useState(() => {
     const end = new Date();
@@ -149,40 +56,6 @@ const OrderingDashboard = () => {
 
   const debouncedFilters = useDebounce(filters, 300);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(columnOrder));
-  }, [columnOrder]);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event) => {
-    const { active, over } = event;
-    if (active.id !== over?.id) {
-      setColumnOrder((items) => {
-        const oldIndex = items.indexOf(active.id);
-        const newIndex = items.indexOf(over.id);
-        return arrayMove(items, oldIndex, newIndex);
-      });
-    }
-  };
-
-  const resetColumnOrder = () => {
-    if (confirm('Reset column order to default?')) {
-      setColumnOrder(DEFAULT_COLUMNS.map(col => col.id));
-    }
-  };
-
-  const orderedColumns = columnOrder
-    .map(id => DEFAULT_COLUMNS.find(col => col.id === id))
-    .filter(Boolean);
-
   const includeHiddenCategories = visibleHiddenCategories.size > 0;
 
   const { data: analytics, isLoading: analyticsLoading, refetch: refetchAnalytics } = useQuery(
@@ -205,32 +78,39 @@ const OrderingDashboard = () => {
       const eligibleBrands = new Set(analytics.filterOptions.brands);
       const stillValid = filters.brands.filter(b => eligibleBrands.has(b));
       
-      // Only update if something changed to avoid infinite loop
       if (stillValid.length !== filters.brands.length) {
         setFilters(prev => ({ ...prev, brands: stillValid }));
       }
     }
   }, [analytics?.filterOptions?.brands]);
 
-  // Reset pagination when filters change (but keep existing data visible)
+  // Reset pagination when filters change
   useEffect(() => {
     setPagination({ offset: 0, limit: 100 });
-    // Don't clear allProducts - keep existing data visible during refetch
   }, [debouncedFilters, selectedStoreIds, dateRange, includeHiddenCategories]);
 
   // Accumulate products when pagination changes
   useEffect(() => {
     if (analytics?.products) {
       if (pagination.offset === 0) {
-        // First page - replace all products
         setAllProducts(analytics.products);
       } else {
-        // Subsequent pages - append products
         setAllProducts(prev => [...prev, ...analytics.products]);
       }
       setIsLoadingMore(false);
     }
   }, [analytics?.products, pagination.offset]);
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (active.id !== over?.id) {
+      setColumnOrder((items) => {
+        const oldIndex = items.indexOf(active.id);
+        const newIndex = items.indexOf(over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
 
   const handleAddToOrder = async (product) => {
     try {
@@ -282,26 +162,6 @@ const OrderingDashboard = () => {
     }
   };
 
-  const getLocationCellColor = (inventory, sales, weeksLeft) => {
-    if (inventory === 0 && sales > 0) return 'bg-red-100';
-    if (weeksLeft < 1) return 'bg-orange-100';
-    if (weeksLeft < 2) return 'bg-yellow-100';
-    if (inventory > 0 && sales > 0) return 'bg-green-50';
-    if (inventory === 0 && sales === 0) return 'bg-gray-50 text-gray-400';
-    return '';
-  };
-
-  const getHeatMapColor = (value, maxValue) => {
-    if (!value || !maxValue || maxValue === 0) return 'bg-gray-100';
-    const percentage = (value / maxValue) * 100;
-    if (percentage >= 75) return 'bg-emerald-200 text-emerald-900';
-    if (percentage >= 50) return 'bg-lime-200 text-lime-900';
-    if (percentage >= 35) return 'bg-yellow-200 text-yellow-900';
-    if (percentage >= 20) return 'bg-orange-200 text-orange-900';
-    if (percentage >= 10) return 'bg-rose-200 text-rose-900';
-    return 'bg-red-100 text-red-900';
-  };
-
   const handleSort = (key) => {
     let direction = 'desc';
     if (sortConfig.key === key && sortConfig.direction === 'desc') {
@@ -328,17 +188,13 @@ const OrderingDashboard = () => {
     const isAccessoryLike = ['Accessories', 'Accessory', 'VPT'].includes(category);
     
     if (isCurrentlyHidden) {
-      // Show the category
       newHidden.delete(category);
       if (isAccessoryLike) {
-        // If it's Accessories/VPT, mark it as visible so we fetch the data
         newVisible.add(category);
       }
     } else {
-      // Hide the category
       newHidden.add(category);
       if (isAccessoryLike) {
-        // If hiding Accessories/VPT, remove from visible set
         newVisible.delete(category);
       }
     }
@@ -378,37 +234,7 @@ const OrderingDashboard = () => {
 
   const maxTotalSales = sortedProducts.length > 0 ? Math.max(...sortedProducts.map(p => p.totalSales || 0)) : 0;
 
-  const SortableHeader = ({ column, children, align = "left", width }) => (
-    <th 
-      onClick={() => handleSort(column)}
-      className={`px-3 py-3 font-semibold border bg-background cursor-pointer hover:bg-muted/50 ${width} ${
-        align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
-      }`}
-    >
-      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
-        <span className="break-words">{children}</span>
-        {sortConfig.key === column && (
-          sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 flex-shrink-0" /> : <ArrowDown className="h-3 w-3 flex-shrink-0" />
-        )}
-      </div>
-    </th>
-  );
-
-  const getStrainColor = (strainType) => {
-    switch(strainType) {
-      case 'Sativa': return 'bg-green-500';
-      case 'Hybrid': return 'bg-purple-500';
-      case 'Indica': return 'bg-blue-500';
-      default: return 'bg-gray-400';
-    }
-  };
-
-  const cleanText = (text) => {
-    if (!text) return '';
-    return text.replace(/\s*>\s*/g, ' ').trim();
-  };
-
-  // Show skeleton loading only on initial page load (no data yet)
+  // Show skeleton loading only on initial page load
   const isInitialLoad = analyticsLoading && allProducts.length === 0;
   const isRefetching = analyticsLoading && allProducts.length > 0;
 
@@ -425,161 +251,17 @@ const OrderingDashboard = () => {
 
   return (
     <div className="flex h-screen overflow-hidden w-full">
-      <div className="w-72 border-r bg-card p-4 overflow-y-auto flex-shrink-0">
-        <div className="space-y-6">
-          <h2 className="text-lg font-semibold text-emerald-800">Filters</h2>
-          
-          <div className="mb-4">
-            <label className="text-sm font-medium mb-2 block text-emerald-800">Brands</label>
-            <div className="border rounded-lg p-2 bg-background max-h-64 overflow-y-auto space-y-1">
-              {(analytics?.filterOptions?.brands || []).map(brand => {
-                const isSelected = filters.brands.includes(brand);
-                return (
-                  <div
-                    key={brand}
-                    onClick={(e) => {
-                      if (e.ctrlKey || e.metaKey) {
-                        // Ctrl+click: Toggle this brand (multi-select)
-                        if (isSelected) {
-                          setFilters({ ...filters, brands: filters.brands.filter(b => b !== brand) });
-                        } else {
-                          setFilters({ ...filters, brands: [...filters.brands, brand] });
-                        }
-                      } else {
-                        // Normal click: Select only this brand (single-select)
-                        setFilters({ ...filters, brands: [brand] });
-                      }
-                    }}
-                    className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm ${
-                      isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
-                    }`}
-                  >
-                    <span>{brand}</span>
-                  </div>
-                );
-              })}
-            </div>
-            {filters.brands.length > 0 && (
-              <div className="mt-2 text-xs text-muted-foreground">
-                {filters.brands.length} selected
-              </div>
-            )}
-          </div>
-
-          <div className="mb-4">
-            <label className="text-sm font-medium mb-2 block text-emerald-800">
-              Categories
-              <span className="block text-xs font-normal text-muted-foreground mt-0.5">
-                👁️ = show/hide • Click name = filter
-              </span>
-            </label>
-            <div className="border rounded-lg p-2 bg-background max-h-64 overflow-y-auto space-y-1">
-              {(analytics?.filterOptions?.categories || []).map(cat => {
-                const isSelected = filters.categories.includes(cat);
-                const isHidden = hiddenCategories.has(cat);
-                
-                return (
-                  <div
-                    key={cat}
-                    className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-                      isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
-                    }`}
-                  >
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCategoryVisibilityToggle(cat);
-                      }}
-                      className={`flex-shrink-0 hover:scale-110 transition-transform ${
-                        isHidden ? 'text-muted-foreground' : 'text-foreground'
-                      }`}
-                      title={isHidden ? 'Hidden - Click to show in table' : 'Visible - Click to hide from table'}
-                    >
-                      {isHidden ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </button>
-                    <span
-                      onClick={(e) => {
-                        if (e.ctrlKey || e.metaKey) {
-                          // Ctrl+click: Toggle this category (multi-select)
-                          if (isSelected) {
-                            setFilters({ ...filters, categories: filters.categories.filter(c => c !== cat) });
-                          } else {
-                            setFilters({ ...filters, categories: [...filters.categories, cat] });
-                          }
-                        } else {
-                          // Normal click: Select only this category (single-select)
-                          setFilters({ ...filters, categories: [cat] });
-                        }
-                      }}
-                      className={`flex-1 cursor-pointer hover:underline ${
-                        isHidden ? 'opacity-50 line-through' : ''
-                      }`}
-                      title="Click to filter by this category"
-                    >
-                      {cat}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            {filters.categories.length > 0 && (
-              <div className="mt-2 text-xs text-muted-foreground">
-                {filters.categories.length} selected for filtering
-              </div>
-            )}
-            {hiddenCategories.size > 0 && (
-              <div className="mt-1 text-xs text-muted-foreground">
-                {hiddenCategories.size} hidden from view
-              </div>
-            )}
-          </div>
-
-          {(filters.brands.length > 0 || filters.categories.length > 0 || 
-            filters.subcategories.length > 0 || filters.units.length > 0 || filters.sizes.length > 0) && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setFilters({ brands: [], categories: [], subcategories: [], units: [], sizes: [] })}
-              className="w-full"
-            >
-              Clear All Filters
-            </Button>
-          )}
-
-          <div className="border-t pt-4">
-            <h3 className="text-sm font-semibold mb-2 text-emerald-800">Order Summary</h3>
-            <div className="text-sm text-muted-foreground mb-4">
-              {worksheet?.items?.length || 0} items in order
-            </div>
-            <div className="space-y-2">
-              <Button onClick={handleExportOrder} className="w-full" size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Export Order
-              </Button>
-              <Button variant="outline" onClick={handleClearOrder} className="w-full" size="sm">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Clear Order
-              </Button>
-            </div>
-          </div>
-
-          <div className="border-t pt-4">
-            <h3 className="text-sm font-semibold mb-2 text-emerald-800">Admin Tools</h3>
-            <div className="space-y-2">
-              <Button variant="secondary" onClick={handleEnrichFormats} className="w-full" size="sm">
-                🔄 Enrich Formats
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Updates format data for all products (multipacks, etc.)
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      <OrderingFilters
+        analytics={analytics}
+        filters={filters}
+        setFilters={setFilters}
+        hiddenCategories={hiddenCategories}
+        onCategoryVisibilityToggle={handleCategoryVisibilityToggle}
+        worksheet={worksheet}
+        onExportOrder={handleExportOrder}
+        onClearOrder={handleClearOrder}
+        onEnrichFormats={handleEnrichFormats}
+      />
 
       <div className="flex-1 overflow-y-auto min-w-0 relative">
         <DataLoadingOverlay 
@@ -646,237 +328,29 @@ const OrderingDashboard = () => {
 
           <div className="overflow-x-auto">
             {analytics && (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <table className="w-full border-collapse border">
-                <thead className="bg-background sticky top-0 z-10 border-b-2">
-                  <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
-                    <tr>
-                      {orderedColumns.map(column => {
-                        if (column.id === 'locations') {
-                          return analytics?.stores?.map(store => {
-                            const locationTotal = analytics.locationTotals?.find(lt => lt.storeName === store.name);
-                            const storeProductCount = locationTotal?.productCount || 0;
-                            const locationColId = `location-${store.id}`;
-                            
-                            return (
-                              <DraggableHeader
-                                key={locationColId}
-                                column={{ ...column, id: locationColId }}
-                                onSort={handleSort}
-                                sortConfig={sortConfig}
-                                isLocation={true}
-                              >
-                                <div className="flex flex-col items-center">
-                                  {storeProductCount > 0 && (
-                                    <Badge variant="secondary" className="mb-1 text-xs">{storeProductCount}</Badge>
-                                  )}
-                                  <div className="break-words">{store.name}</div>
-                                  <div className="text-xs font-normal text-muted-foreground">Inv/Sales</div>
-                                </div>
-                              </DraggableHeader>
-                            );
-                          });
-                        }
-
-                        if (column.id === 'popularity') {
-                          return (
-                            <DraggableHeader
-                              key={column.id}
-                              column={column}
-                              onSort={handleSort}
-                              sortConfig={sortConfig}
-                            >
-                              <div className="flex flex-col items-center">
-                                <div className="break-words">Popularity</div>
-                                <div className="text-xs font-normal text-muted-foreground">{analytics?.periodDays || 14} Days</div>
-                              </div>
-                            </DraggableHeader>
-                          );
-                        }
-
-                        if (column.id === 'trend') {
-                          return (
-                            <DraggableHeader
-                              key={column.id}
-                              column={column}
-                              onSort={handleSort}
-                              sortConfig={sortConfig}
-                            >
-                              <div className="flex flex-col items-center">
-                                <div className="break-words">Trend</div>
-                                <div className="text-xs font-normal text-muted-foreground">12 Wks</div>
-                              </div>
-                            </DraggableHeader>
-                          );
-                        }
-
-                        if (column.id === 'actions') {
-                          return (
-                            <DraggableHeader
-                              key={column.id}
-                              column={column}
-                              onSort={handleSort}
-                              sortConfig={sortConfig}
-                            >
-                              Actions
-                            </DraggableHeader>
-                          );
-                        }
-
-                        return (
-                          <DraggableHeader
-                            key={column.id}
-                            column={column}
-                            onSort={handleSort}
-                            sortConfig={sortConfig}
-                          >
-                            {column.label}
-                          </DraggableHeader>
-                        );
-                      })}
-                    </tr>
-                  </SortableContext>
-                </thead>
-              <tbody>
-                {sortedProducts.map((product) => (
-                  <tr key={product.id} className="hover:bg-muted/30 border-b">
-                    <td className="px-3 py-3 border w-64">
-                      <div className="flex items-start gap-2">
-                        {product.isTop10 && (
-                          <Badge variant="default" className="text-xs shrink-0">
-                            🏆 #{product.categoryRank}
-                          </Badge>
-                        )}
-                        <span className="font-medium text-emerald-900 break-words line-clamp-3">{product.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 border text-emerald-800 font-medium w-32">
-                      <div className="break-words text-base">{product.brand}</div>
-                    </td>
-                    <td className="px-3 py-3 border w-24">
-                      {product.strainType && product.strainType !== 'N/A' ? (
-                        <Badge className={`${getStrainColor(product.strainType)} text-white text-xs`}>
-                          {product.strainType}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-center border w-24">
-                      <span className="text-base font-medium">{cleanText(product.format) || '-'}</span>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground border w-32">
-                      <div className="break-words text-sm">
-                        {product.parentCategory}
-                        {product.subcategory && <><br/><span className="text-xs">› {cleanText(product.subcategory)}</span></>}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-right font-mono border w-24 text-base">
-                      ${(product.wholesaleCost || 0).toFixed(2)}
-                    </td>
-                    <td className="px-3 py-3 text-right font-mono border w-24 text-base">
-                      ${(product.retailPrice || 0).toFixed(2)}
-                    </td>
-                    <td className="px-3 py-3 text-right border w-20 text-base">
-                      {((product.margin || 0) * 100).toFixed(0)}%
-                    </td>
-                    {(analytics?.stores || []).map(store => {
-                      const inv = product.locationInventory.find(l => l.storeId === store.id);
-                      const sale = product.locationSales.find(s => s.storeId === store.id);
-                      const inventory = inv ? inv.quantity : 0;
-                      const sales = sale ? sale.units : 0;
-                      const localVelocity = sales / ((analytics?.periodDays || 14) / 7);
-                      const localWeeksLeft = localVelocity > 0 ? inventory / localVelocity : 999;
-                      
-                      return (
-                        <td 
-                          key={store.id} 
-                          className={`px-3 py-3 text-center border font-mono w-28 ${getLocationCellColor(inventory, sales, localWeeksLeft)}`}
-                        >
-                          <div className="font-semibold text-lg">{inventory}</div>
-                          <div className="text-sm text-muted-foreground">/ {sales}</div>
-                        </td>
-                      );
-                    })}
-                    <td className="px-3 py-3 text-right font-semibold border w-24 text-lg">
-                      {product.totalInventory}
-                    </td>
-                    <td className={`px-3 py-3 text-right border w-24 font-semibold text-lg ${getHeatMapColor(product.totalSales, maxTotalSales)}`}>
-                      {product.totalSales}
-                    </td>
-                    <td className={`px-3 py-3 text-center border w-28 ${getHeatMapColor(product.totalSales, maxTotalSales)}`}>
-                      <div className="flex items-center justify-center gap-1">
-                        <div className="text-base font-bold">
-                          {maxTotalSales > 0 ? Math.round((product.totalSales / maxTotalSales) * 100) : 0}%
-                        </div>
-                        {product.totalSales > maxTotalSales * 0.75 ? '🔥' : 
-                         product.totalSales > maxTotalSales * 0.5 ? '🌡️' : 
-                         product.totalSales > maxTotalSales * 0.25 ? '❄️' : '🧊'}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-center border w-24">
-                      <Badge className={
-                        product.weeksLeft < 2 ? 'bg-green-500' :
-                        product.weeksLeft < 3 ? 'bg-yellow-500' : 'bg-red-500'
-                      }>
-                        {product.weeksLeft < 999 ? product.weeksLeft.toFixed(1) : '∞'}w
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-3 text-right border w-28 text-base">
-                      {product.daysSinceLastSale !== null ? (
-                        <span className={product.daysSinceLastSale > 30 ? 'text-red-600 font-semibold' : ''}>
-                          {product.daysSinceLastSale}d
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-center border w-20">
-                      {product.sparklineData && product.sparklineData.length > 0 ? (
-                        <Sparkline data={product.sparklineData} width={60} height={20} />
-                      ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-right border w-28 text-base">
-                      {product.daysSinceLastPO !== null ? (
-                        <div className={product.daysSinceLastPO > 90 ? 'text-orange-600 font-semibold' : ''}>
-                          <span>{product.daysSinceLastPO}d</span>
-                          {product.lastPOQty && <span className="text-xs text-muted-foreground ml-1">({product.lastPOQty})</span>}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-right border w-28">
-                      {product.suggestedQty > 0 ? (
-                        <div>
-                          <div className="font-semibold text-lg">{product.suggestedQty}</div>
-                          <div className="text-sm text-muted-foreground">
-                            ({product.suggestedCases} cases)
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-center border w-28">
-                      {product.suggestedQty > 0 && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleAddToOrder(product)}
-                        >
-                          <ShoppingCart className="h-3 w-3 mr-1" />
-                          Add
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+                <OrderingTableHeader
+                  orderedColumns={orderedColumns}
+                  columnOrder={columnOrder}
+                  onDragEnd={handleDragEnd}
+                  onSort={handleSort}
+                  sortConfig={sortConfig}
+                  analytics={analytics}
+                  periodDays={analytics?.periodDays || 14}
+                />
+                <tbody>
+                  {sortedProducts.map((product) => (
+                    <ProductTableRow
+                      key={product.id}
+                      product={product}
+                      orderedColumns={orderedColumns}
+                      periodDays={analytics?.periodDays || 14}
+                      maxTotalSales={maxTotalSales}
+                      onAddToOrder={handleAddToOrder}
+                    />
+                  ))}
+                </tbody>
               </table>
-            </DndContext>
             )}
             
             {analytics?.hasMore && (
@@ -903,44 +377,10 @@ const OrderingDashboard = () => {
             )}
           </div>
 
-          {analytics?.salesMatrix && analytics.salesMatrix.length > 0 && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold text-emerald-800 mb-3">Top Selling Products by Location</h2>
-              <p className="text-sm text-emerald-700 mb-4">Units sold in the selected period</p>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse border">
-                  <thead className="bg-background sticky top-0">
-                    <tr>
-                      <th className="px-3 py-3 text-left font-semibold border">Product</th>
-                      <th className="px-3 py-3 text-left font-semibold border">Brand</th>
-                      <th className="px-3 py-3 text-left font-semibold border">Category</th>
-                      {(analytics?.stores || []).map(store => (
-                        <th key={store.id} className="px-3 py-3 text-right font-semibold border">
-                          {store.name}
-                        </th>
-                      ))}
-                      <th className="px-3 py-3 text-right font-semibold border">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analytics.salesMatrix.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-muted/30 border-b">
-                        <td className="px-3 py-3 font-medium border">{row.productName}</td>
-                        <td className="px-3 py-3 text-muted-foreground border">{row.brand}</td>
-                        <td className="px-3 py-3 text-muted-foreground text-sm border">{row.category}</td>
-                        {(analytics?.stores || []).map(store => (
-                          <td key={store.id} className="px-3 py-3 text-right border text-base">
-                            {row[store.name] || 0}
-                          </td>
-                        ))}
-                        <td className="px-3 py-3 text-right font-semibold border text-base">{row.total}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          <SalesMatrix 
+            salesMatrix={analytics?.salesMatrix} 
+            stores={analytics?.stores || []} 
+          />
         </div>
       </div>
     </div>
