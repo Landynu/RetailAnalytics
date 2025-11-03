@@ -76,6 +76,7 @@ model ProductCatalog {
     stockLevels    StockLevel[]
     movements      InventoryMovement[]
     worksheetItems OrderWorksheetItem[]
+    seasonality    ProductSeasonality?
     
     @@index([parentCategory])
     @@index([brand])

@@ -158,7 +158,7 @@ query getDailySalesAnalytics {
 
 query getOrderingAnalytics {
   fn: import { getOrderingAnalytics } from "@src/queries.js",
-  entities: [Store, ProductCatalog, StockLevel, InventoryMovement]
+  entities: [Store, ProductCatalog, StockLevel, InventoryMovement, WeeklySalesSummary]
 }
 
 query getOrCreateOrderWorksheet {

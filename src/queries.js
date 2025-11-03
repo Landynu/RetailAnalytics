@@ -1330,6 +1330,10 @@ export const getOrderingAnalytics = async ({
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
+  // Calculate 12 weeks ago for sparkline data
+  const twelveWeeksAgo = new Date();
+  twelveWeeksAgo.setDate(twelveWeeksAgo.getDate() - 84); // 12 weeks
+
   // Base filter: Only date range, stores, and 30-day activity
   // Exclude Accessories/VPT by default for performance (unless explicitly requested)
   const baseProductWhere = {
@@ -1398,7 +1402,7 @@ export const getOrderingAnalytics = async ({
     const daysSinceLastSale = lastSaleDate ? Math.floor((endDate - lastSaleDate) / (24 * 60 * 60 * 1000)) : null;
     
     // Days since last purchase order
-    const poMovements = product.movements.filter(m => m.type === 'purchase order');
+    const poMovements = product.movements.filter(m => m.type === 'purchase');
     const lastPODate = poMovements.length > 0 ? poMovements[0].date : null;
     const daysSinceLastPO = lastPODate ? Math.floor((endDate - lastPODate) / (24 * 60 * 60 * 1000)) : null;
     
@@ -1526,8 +1530,53 @@ export const getOrderingAnalytics = async ({
   const totalCount = filteredProducts.length;
   const hasMore = offset + limit < totalCount;
 
-  // Apply pagination
+  // Apply pagination FIRST
   const paginatedProducts = filteredProducts.slice(offset, offset + limit);
+
+  // Fetch sparkline data for paginated products ONLY (performance optimization)
+  const paginatedProductIds = paginatedProducts.map(p => p.id);
+  
+  // Get weekly sales summaries for sparklines (last 12 weeks)
+  const sparklineData = await context.entities.WeeklySalesSummary.findMany({
+    where: {
+      productId: { in: paginatedProductIds },
+      storeId: { in: storeIdList },
+      weekStart: { gte: twelveWeeksAgo }
+    },
+    select: {
+      productId: true,
+      weekStart: true,
+      unitsSold: true
+    },
+    orderBy: { weekStart: 'asc' }
+  });
+
+  // Organize sparkline data by product
+  const sparklineByProduct = {};
+  sparklineData.forEach(data => {
+    if (!sparklineByProduct[data.productId]) {
+      sparklineByProduct[data.productId] = [];
+    }
+    sparklineByProduct[data.productId].push({
+      week: data.weekStart,
+      units: data.unitsSold
+    });
+  });
+
+  // Attach sparkline data to paginated products
+  paginatedProducts.forEach(product => {
+    const productSparkline = sparklineByProduct[product.id] || [];
+    // Group by week and sum units across all stores
+    const weeklyTotals = {};
+    productSparkline.forEach(point => {
+      const weekKey = point.week.toISOString().split('T')[0];
+      weeklyTotals[weekKey] = (weeklyTotals[weekKey] || 0) + point.units;
+    });
+    // Convert to array of weekly values (last 12 weeks)
+    product.sparklineData = Object.keys(weeklyTotals)
+      .sort()
+      .map(week => weeklyTotals[week]);
+  });
 
   // Calculate sales matrix data (top 20 products by sales from ALL filtered products, not just paginated)
   const topProducts = [...filteredProducts]
