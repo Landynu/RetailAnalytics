@@ -15,14 +15,72 @@ import { Button } from '../components/ui/button';
 import { Plus, Package, DollarSign, Store as StoreIcon, Leaf, TrendingUp, Star } from 'lucide-react';
 import { useDebounce } from '../lib/useDebounce';
 
-// Default to last 14 days for performance
-const getDefault14DayRange = () => {
-  const end = new Date();
-  const start = new Date();
-  start.setDate(start.getDate() - 14);
-  return {
-    start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0]
+// Helper to calculate relative date ranges
+const getRelativeDateRange = (preset) => {
+  const now = new Date();
+  let start, end;
+  
+  switch (preset) {
+    case 'today':
+      start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'last7':
+      start = new Date(now);
+      start.setDate(start.getDate() - 7);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'last14':
+      start = new Date(now);
+      start.setDate(start.getDate() - 14);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'last30':
+      start = new Date(now);
+      start.setDate(start.getDate() - 30);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'last90':
+      start = new Date(now);
+      start.setDate(start.getDate() - 90);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'thisMonth':
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'lastMonth':
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(now.getFullYear(), now.getMonth(), 0); // Last day of previous month
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'thisYear':
+      start = new Date(now.getFullYear(), 0, 1);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      break;
+    default:
+      return null;
+  }
+  
+  return { 
+    start: start.toISOString(), 
+    end: end.toISOString(),
+    preset // Include preset identifier
   };
 };
 
@@ -33,7 +91,7 @@ const DEFAULT_FILTERS = {
   strainTypes: [],
   priceRange: null,
   stockStatus: null,
-  dateRange: getDefault14DayRange() // Default to last 14 days
+  dateRange: getRelativeDateRange('last14') // Default to last 14 days
 };
 
 // Version for localStorage - increment when DEFAULT_FILTERS structure changes
@@ -67,9 +125,13 @@ const DashboardPage = () => {
     const saved = localStorage.getItem('retailAnalyticsFilters');
     const loadedFilters = saved ? JSON.parse(saved) : DEFAULT_FILTERS;
     
-    // Ensure dateRange exists (backward compatibility)
-    if (!loadedFilters.dateRange) {
-      loadedFilters.dateRange = getDefault14DayRange();
+    // Recalculate relative date ranges on mount
+    if (loadedFilters.dateRange?.preset) {
+      console.log('🔄 Recalculating relative date range for preset:', loadedFilters.dateRange.preset);
+      loadedFilters.dateRange = getRelativeDateRange(loadedFilters.dateRange.preset);
+    } else if (!loadedFilters.dateRange) {
+      // Ensure dateRange exists (backward compatibility)
+      loadedFilters.dateRange = getRelativeDateRange('last14');
     }
     
     return loadedFilters;
@@ -83,7 +145,15 @@ const DashboardPage = () => {
     const saved = localStorage.getItem('showOnlyFavorites');
     return saved ? JSON.parse(saved) : false;
   });
-  const [showDailyTrends, setShowDailyTrends] = useState(false); // Default to weekly view
+  // Automatically determine if we should use daily (recent) or weekly (historical) data
+  const useDailyData = React.useMemo(() => {
+    if (!filters.dateRange?.end) return true; // Default to daily for current data
+    const dateRangeEnd = new Date(filters.dateRange.end);
+    const fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+    // Use daily data if the date range end is within the last 14 days
+    return dateRangeEnd >= fourteenDaysAgo;
+  }, [filters.dateRange]);
 
   // Persist hideAccessories setting
   useEffect(() => {
@@ -128,19 +198,22 @@ const DashboardPage = () => {
     { enabled: !focusedStoreId } // Only fetch when not viewing store detail
   );
 
-  // Fetch sales analytics with filters (weekly by default)
-  const { data: salesData, isLoading: salesLoading, refetch: refetchSales } = useQuery(
-    getGlobalSalesAnalytics,
-    { storeIds: selectedStoreIds, filters: effectiveFilters },
-    { enabled: !focusedStoreId && activeView === 'sales' && !showDailyTrends }
-  );
-
-  // Fetch daily sales analytics when daily view is active
+  // Fetch sales analytics - automatically use daily for recent data, weekly for historical
   const { data: dailySalesData, isLoading: dailySalesLoading } = useQuery(
     getDailySalesAnalytics,
     { storeIds: selectedStoreIds, filters: effectiveFilters },
-    { enabled: !focusedStoreId && activeView === 'sales' && showDailyTrends }
+    { enabled: !focusedStoreId && activeView === 'sales' && useDailyData }
   );
+
+  const { data: weeklySalesData, isLoading: weeklySalesLoading } = useQuery(
+    getGlobalSalesAnalytics,
+    { storeIds: selectedStoreIds, filters: effectiveFilters },
+    { enabled: !focusedStoreId && activeView === 'sales' && !useDailyData }
+  );
+
+  // Use the appropriate data source based on date range
+  const salesData = useDailyData ? dailySalesData : weeklySalesData;
+  const salesLoading = useDailyData ? dailySalesLoading : weeklySalesLoading;
 
   // React Query automatically refetches when parameters change, so we don't need manual refetch
   // Removed aggressive polling that was causing performance issues
@@ -457,10 +530,10 @@ const DashboardPage = () => {
         />
       ) : (
         <SalesAnalyticsDashboard 
-          salesData={showDailyTrends ? dailySalesData : salesData} 
-          loading={showDailyTrends ? dailySalesLoading : salesLoading}
-          showDaily={showDailyTrends}
-          onToggleDaily={() => setShowDailyTrends(!showDailyTrends)}
+          salesData={salesData} 
+          loading={salesLoading}
+          showDaily={useDailyData}
+          isAutomatic={true}
         />
       )}
 

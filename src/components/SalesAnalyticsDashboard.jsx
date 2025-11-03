@@ -10,7 +10,7 @@ const STRAIN_COLORS = {
   Indica: '#8b5cf6'
 };
 
-const SalesAnalyticsDashboard = ({ salesData, loading = false, showDaily = false, onToggleDaily }) => {
+const SalesAnalyticsDashboard = ({ salesData, loading = false, showDaily = false, onToggleDaily, isAutomatic = false }) => {
   const [showTopProductsBy, setShowTopProductsBy] = useState('revenue');
   const [showTopProductsView, setShowTopProductsView] = useState('total');
   const [showCategoryBy, setShowCategoryBy] = useState('revenue');
@@ -187,7 +187,7 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false, showDaily = false
                 </CardDescription>
               </div>
               <div className="flex gap-2">
-                {onToggleDaily && (
+                {!isAutomatic && onToggleDaily && (
                   <Button
                     variant={showDaily ? "default" : "outline"}
                     size="sm"

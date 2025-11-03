@@ -82,6 +82,7 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
       const end = new Date(customEnd);
       end.setHours(23, 59, 59, 999);
       
+      // Custom ranges don't include preset, so they won't be recalculated
       onChange({ start: start.toISOString(), end: end.toISOString() });
       setActivePreset('custom');
       setIsOpen(false);
@@ -99,7 +100,7 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
   const getDisplayText = () => {
     if (!dateRange) return 'All Time';
     
-    // Check if dateRange has a preset property
+    // Check if dateRange has a preset property (for relative ranges)
     if (dateRange.preset) {
       const presetLabels = {
         today: 'Today',
@@ -114,9 +115,9 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
       return presetLabels[dateRange.preset] || 'Custom Range';
     }
     
-    // Fallback to showing the date range
-    const start = new Date(dateRange.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const end = new Date(dateRange.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    // For custom date ranges, show the actual dates
+    const start = new Date(dateRange.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const end = new Date(dateRange.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     return `${start} - ${end}`;
   };
 
