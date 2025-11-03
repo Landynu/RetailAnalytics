@@ -1742,19 +1742,62 @@ export const getOrderingAnalytics = async ({
   }
   const allCategories = Array.from(allCategoriesSet).sort();
   
-  // Other filters: Get from products matching non-self filters
-  // For subcategories, also respect category filter
+  // Subcategories: Content-aware based on category/brand/size/count filters (but not subcategory itself)
   const subcategoryProducts = allProductMetrics.filter(p => {
     if (filters.categories && filters.categories.length > 0) {
       if (!filters.categories.includes(p.parentCategory)) return false;
     }
+    if (filters.brands && filters.brands.length > 0) {
+      if (!filters.brands.includes(p.brand)) return false;
+    }
+    if (filters.units && filters.units.length > 0) {
+      if (!filters.units.includes(p.unitCount)) return false;
+    }
+    if (filters.sizes && filters.sizes.length > 0) {
+      if (!filters.sizes.includes(p.unitSize)) return false;
+    }
+    // NO subcategory filter applied here
     return true;
   });
   const allSubcategories = [...new Set(subcategoryProducts.map(p => p.subcategory).filter(Boolean))].sort();
   
-  // Units and sizes: Use all products (no cross-filtering needed)
-  const allUnits = [...new Set(allProducts.map(p => p.unitCount).filter(Boolean))].sort((a, b) => a - b);
-  const allSizes = [...new Set(allProducts.map(p => p.unitSize).filter(Boolean))].sort();
+  // Units (Count): Content-aware based on category/subcategory/brand/size filters (but not units itself)
+  const unitsProducts = allProductMetrics.filter(p => {
+    if (filters.categories && filters.categories.length > 0) {
+      if (!filters.categories.includes(p.parentCategory)) return false;
+    }
+    if (filters.subcategories && filters.subcategories.length > 0) {
+      if (!filters.subcategories.includes(p.subcategory)) return false;
+    }
+    if (filters.brands && filters.brands.length > 0) {
+      if (!filters.brands.includes(p.brand)) return false;
+    }
+    if (filters.sizes && filters.sizes.length > 0) {
+      if (!filters.sizes.includes(p.unitSize)) return false;
+    }
+    // NO units filter applied here - that's the whole point!
+    return true;
+  });
+  const allUnits = [...new Set(unitsProducts.map(p => p.unitCount).filter(Boolean))].sort((a, b) => a - b);
+  
+  // Sizes: Content-aware based on category/subcategory/brand/count filters (but not sizes itself)
+  const sizesProducts = allProductMetrics.filter(p => {
+    if (filters.categories && filters.categories.length > 0) {
+      if (!filters.categories.includes(p.parentCategory)) return false;
+    }
+    if (filters.subcategories && filters.subcategories.length > 0) {
+      if (!filters.subcategories.includes(p.subcategory)) return false;
+    }
+    if (filters.brands && filters.brands.length > 0) {
+      if (!filters.brands.includes(p.brand)) return false;
+    }
+    if (filters.units && filters.units.length > 0) {
+      if (!filters.units.includes(p.unitCount)) return false;
+    }
+    // NO sizes filter applied here - that's the whole point!
+    return true;
+  });
+  const allSizes = [...new Set(sizesProducts.map(p => p.unitSize).filter(Boolean))].sort();
 
   return {
     products: paginatedProducts,

@@ -18,6 +18,7 @@ import OrderingFilters from '../components/OrderingFilters';
 import OrderingTableHeader from '../components/OrderingTableHeader';
 import ProductTableRow from '../components/ProductTableRow';
 import SalesMatrix from '../components/SalesMatrix';
+import ColumnVisibilityMenu from '../components/ColumnVisibilityMenu';
 
 const OrderingDashboard = () => {
   const { data: stores } = useQuery(getUserStores);
@@ -47,8 +48,14 @@ const OrderingDashboard = () => {
   const { 
     columnOrder, 
     setColumnOrder, 
-    orderedColumns, 
-    resetColumnOrder 
+    orderedColumns,
+    allColumnDefinitions,
+    resetColumnOrder,
+    resetColumnWidths,
+    resetColumnVisibility,
+    updateColumnWidth,
+    hiddenColumns,
+    toggleColumnVisibility
   } = useColumnOrdering(displayStores);
   
   const [dateRange, setDateRange] = useState(() => {
@@ -63,7 +70,8 @@ const OrderingDashboard = () => {
     categories: [],
     subcategories: [],
     units: [],
-    sizes: []
+    sizes: [],
+    distributors: []
   });
 
   const [pagination, setPagination] = useState({
@@ -263,12 +271,23 @@ const OrderingDashboard = () => {
       sorted.sort((a, b) => {
         let aVal = a[sortConfig.key];
         let bVal = b[sortConfig.key];
-        if (sortConfig.key === 'brand' || sortConfig.key === 'name') {
+        
+        // Special handling for distributor (which can be an array)
+        if (sortConfig.key === 'distributor') {
+          // Get first distributor alphabetically for products with multiple distributors
+          const aDistributors = a.distributors || [];
+          const bDistributors = b.distributors || [];
+          aVal = aDistributors.length > 0 ? 
+            aDistributors.map(d => d.name).sort()[0].toLowerCase() : '';
+          bVal = bDistributors.length > 0 ? 
+            bDistributors.map(d => d.name).sort()[0].toLowerCase() : '';
+        } else if (sortConfig.key === 'brand' || sortConfig.key === 'name') {
           aVal = (aVal || '').toLowerCase();
           bVal = (bVal || '').toLowerCase();
         }
-        if (aVal == null) return 1;
-        if (bVal == null) return -1;
+        
+        if (aVal == null || aVal === '') return 1;
+        if (bVal == null || bVal === '') return -1;
         if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
         if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
@@ -366,6 +385,19 @@ const OrderingDashboard = () => {
                 onChange={(values) => setFilters({ ...filters, subcategories: values })}
                 icon={Package}
               />
+              <FilterDropdown
+                label="Distributors"
+                options={analytics?.filterOptions?.distributors || []}
+                selectedValues={filters.distributors}
+                onChange={(values) => setFilters({ ...filters, distributors: values })}
+                icon={Package}
+              />
+              <ColumnVisibilityMenu
+                allColumns={allColumnDefinitions}
+                hiddenColumns={hiddenColumns}
+                onToggleColumn={toggleColumnVisibility}
+                onResetVisibility={resetColumnVisibility}
+              />
               <Button
                 variant="outline"
                 size="sm"
@@ -373,7 +405,16 @@ const OrderingDashboard = () => {
                 title="Reset column order to default"
               >
                 <RotateCcw className="h-4 w-4 mr-2" />
-                Reset Columns
+                Reset Order
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={resetColumnWidths}
+                title="Reset all column widths to default"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reset Widths
               </Button>
             </div>
           </div>
@@ -416,6 +457,7 @@ const OrderingDashboard = () => {
                   sortConfig={sortConfig}
                   analytics={analytics}
                   periodDays={analytics?.periodDays || 14}
+                  onColumnResize={updateColumnWidth}
                 />
                 <tbody>
                   {sortedProducts.map((product) => (

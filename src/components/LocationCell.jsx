@@ -1,6 +1,6 @@
 import React from 'react';
 
-const LocationCell = ({ product, storeId, periodDays }) => {
+const LocationCell = ({ column, product, storeId, periodDays }) => {
   const inv = product.locationInventory.find(l => l.storeId === storeId);
   const sale = product.locationSales.find(s => s.storeId === storeId);
   const inventory = inv ? inv.quantity : 0;
@@ -18,9 +18,15 @@ const LocationCell = ({ product, storeId, periodDays }) => {
     return '';
   };
 
+  const cellStyle = {
+    width: `${column.width}px`,
+    minWidth: `${column.minWidth || 70}px`,
+  };
+
   return (
     <td 
-      className={`px-3 py-3 text-center border font-mono w-28 ${getCellColor(inventory, sales, localWeeksLeft)}`}
+      style={cellStyle}
+      className={`px-3 py-3 text-center border font-mono ${getCellColor(inventory, sales, localWeeksLeft)}`}
     >
       <div className="font-semibold text-lg">{inventory}</div>
       <div className="text-sm text-muted-foreground">/ {sales}</div>

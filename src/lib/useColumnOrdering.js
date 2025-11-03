@@ -1,28 +1,52 @@
 import { useState, useEffect } from 'react';
 
+// Default widths in pixels
+const DEFAULT_WIDTHS = {
+  'name': 256,
+  'brand': 128,
+  'distributor': 140,
+  'strainType': 96,
+  'format': 96,
+  'parentCategory': 128,
+  'wholesaleCost': 96,
+  'retailPrice': 96,
+  'margin': 80,
+  'totalInventory': 96,
+  'totalSales': 96,
+  'popularity': 112,
+  'weeksLeft': 96,
+  'daysSinceLastSale': 112,
+  'trend': 80,
+  'daysSinceLastPO': 112,
+  'suggestedQty': 112,
+  'actions': 112,
+};
+
 const DEFAULT_COLUMNS = [
-  { id: 'name', label: 'Product', width: 'w-64', align: 'left', sortKey: 'name' },
-  { id: 'brand', label: 'Brand', width: 'w-32', align: 'left', sortKey: 'brand' },
-  { id: 'distributor', label: 'Distributor', width: 'w-48', align: 'left', sortKey: null },
-  { id: 'strainType', label: 'Type', width: 'w-24', align: 'left', sortKey: 'strainType' },
-  { id: 'format', label: 'Format', width: 'w-24', align: 'left', sortKey: 'format' },
-  { id: 'parentCategory', label: 'Category', width: 'w-32', align: 'left', sortKey: 'parentCategory' },
-  { id: 'wholesaleCost', label: 'Cost', width: 'w-24', align: 'right', sortKey: 'wholesaleCost' },
-  { id: 'retailPrice', label: 'Retail', width: 'w-24', align: 'right', sortKey: 'retailPrice' },
-  { id: 'margin', label: 'Margin', width: 'w-20', align: 'right', sortKey: 'margin' },
-  { id: 'locations', label: 'Locations', width: 'variable', align: 'center', sortKey: null, isLocationGroup: true },
-  { id: 'totalInventory', label: 'Total Inv', width: 'w-24', align: 'right', sortKey: 'totalInventory' },
-  { id: 'totalSales', label: 'Total Sales', width: 'w-24', align: 'right', sortKey: 'totalSales' },
-  { id: 'popularity', label: 'Popularity', width: 'w-28', align: 'center', sortKey: null },
-  { id: 'weeksLeft', label: 'Wks Left', width: 'w-24', align: 'center', sortKey: 'weeksLeft' },
-  { id: 'daysSinceLastSale', label: 'Days Since Sale', width: 'w-28', align: 'right', sortKey: 'daysSinceLastSale' },
-  { id: 'trend', label: 'Trend', width: 'w-20', align: 'center', sortKey: null },
-  { id: 'daysSinceLastPO', label: 'Days Since PO', width: 'w-28', align: 'right', sortKey: 'daysSinceLastPO' },
-  { id: 'suggestedQty', label: 'Suggested', width: 'w-28', align: 'right', sortKey: 'suggestedQty' },
-  { id: 'actions', label: 'Actions', width: 'w-28', align: 'center', sortKey: null },
+  { id: 'name', label: 'Product', align: 'left', sortKey: 'name', minWidth: 150 },
+  { id: 'brand', label: 'Brand', align: 'left', sortKey: 'brand', minWidth: 100 },
+  { id: 'distributor', label: 'Distributor', align: 'left', sortKey: 'distributor', minWidth: 100 },
+  { id: 'strainType', label: 'Type', align: 'left', sortKey: 'strainType', minWidth: 80 },
+  { id: 'format', label: 'Format', align: 'left', sortKey: 'format', minWidth: 80 },
+  { id: 'parentCategory', label: 'Category', align: 'left', sortKey: 'parentCategory', minWidth: 100 },
+  { id: 'wholesaleCost', label: 'Cost', align: 'right', sortKey: 'wholesaleCost', minWidth: 80 },
+  { id: 'retailPrice', label: 'Retail', align: 'right', sortKey: 'retailPrice', minWidth: 80 },
+  { id: 'margin', label: 'Margin', align: 'right', sortKey: 'margin', minWidth: 70 },
+  { id: 'locations', label: 'Locations', align: 'center', sortKey: null, isLocationGroup: true, minWidth: 112 },
+  { id: 'totalInventory', label: 'Total Inv', align: 'right', sortKey: 'totalInventory', minWidth: 80 },
+  { id: 'totalSales', label: 'Total Sales', align: 'right', sortKey: 'totalSales', minWidth: 80 },
+  { id: 'popularity', label: 'Popularity', align: 'center', sortKey: null, minWidth: 90 },
+  { id: 'weeksLeft', label: 'Wks Left', align: 'center', sortKey: 'weeksLeft', minWidth: 80 },
+  { id: 'daysSinceLastSale', label: 'Days Since Sale', align: 'right', sortKey: 'daysSinceLastSale', minWidth: 90 },
+  { id: 'trend', label: 'Trend', align: 'center', sortKey: null, minWidth: 70 },
+  { id: 'daysSinceLastPO', label: 'Days Since PO', align: 'right', sortKey: 'daysSinceLastPO', minWidth: 90 },
+  { id: 'suggestedQty', label: 'Suggested', align: 'right', sortKey: 'suggestedQty', minWidth: 90 },
+  { id: 'actions', label: 'Actions', align: 'center', sortKey: null, minWidth: 90 },
 ];
 
 const STORAGE_KEY = 'orderingDashboard_columnOrder';
+const WIDTHS_STORAGE_KEY = 'orderingDashboard_columnWidths';
+const VISIBILITY_STORAGE_KEY = 'orderingDashboard_columnVisibility';
 
 export const useColumnOrdering = (stores = []) => {
   const [columnOrder, setColumnOrder] = useState(() => {
@@ -35,6 +59,30 @@ export const useColumnOrdering = (stores = []) => {
       }
     }
     return DEFAULT_COLUMNS.map(col => col.id);
+  });
+
+  const [columnWidths, setColumnWidths] = useState(() => {
+    const saved = localStorage.getItem(WIDTHS_STORAGE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to parse saved column widths:', e);
+      }
+    }
+    return { ...DEFAULT_WIDTHS };
+  });
+
+  const [hiddenColumns, setHiddenColumns] = useState(() => {
+    const saved = localStorage.getItem(VISIBILITY_STORAGE_KEY);
+    if (saved) {
+      try {
+        return new Set(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to parse saved column visibility:', e);
+      }
+    }
+    return new Set();
   });
 
   // Generate column definitions including dynamic location columns
@@ -103,15 +151,46 @@ export const useColumnOrdering = (stores = []) => {
     }
   }, [stores]);
 
-  // Save to localStorage whenever order changes
+  // Save to localStorage whenever order, widths, or visibility changes
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(columnOrder));
   }, [columnOrder]);
 
-  // Get ordered columns with full definitions
+  useEffect(() => {
+    localStorage.setItem(WIDTHS_STORAGE_KEY, JSON.stringify(columnWidths));
+  }, [columnWidths]);
+
+  useEffect(() => {
+    localStorage.setItem(VISIBILITY_STORAGE_KEY, JSON.stringify([...hiddenColumns]));
+  }, [hiddenColumns]);
+
+  // Get ordered columns with full definitions, filtering out hidden columns
   const orderedColumns = columnOrder
     .map(id => allColumnDefinitions.find(col => col.id === id))
-    .filter(Boolean);
+    .filter(col => col && !hiddenColumns.has(col.id))
+    .map(col => ({
+      ...col,
+      width: columnWidths[col.id] || DEFAULT_WIDTHS[col.id] || 112
+    }));
+
+  const toggleColumnVisibility = (columnId) => {
+    setHiddenColumns(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(columnId)) {
+        newSet.delete(columnId);
+      } else {
+        newSet.add(columnId);
+      }
+      return newSet;
+    });
+  };
+
+  const updateColumnWidth = (columnId, width) => {
+    setColumnWidths(prev => ({
+      ...prev,
+      [columnId]: Math.max(width, 70) // Minimum 70px
+    }));
+  };
 
   const resetColumnOrder = () => {
     if (confirm('Reset column order to default?')) {
@@ -129,14 +208,32 @@ export const useColumnOrdering = (stores = []) => {
     }
   };
 
+  const resetColumnWidths = () => {
+    if (confirm('Reset all column widths to default?')) {
+      setColumnWidths({ ...DEFAULT_WIDTHS });
+    }
+  };
+
+  const resetColumnVisibility = () => {
+    if (confirm('Show all columns?')) {
+      setHiddenColumns(new Set());
+    }
+  };
+
   return {
     columnOrder,
     setColumnOrder,
     orderedColumns,
     allColumnDefinitions,
     resetColumnOrder,
+    resetColumnWidths,
+    resetColumnVisibility,
+    columnWidths,
+    updateColumnWidth,
+    hiddenColumns,
+    toggleColumnVisibility,
     DEFAULT_COLUMNS
   };
 };
 
-export { DEFAULT_COLUMNS };
+export { DEFAULT_COLUMNS, DEFAULT_WIDTHS };

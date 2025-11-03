@@ -11,36 +11,54 @@ const FilterDropdown = ({
   icon: Icon 
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [pendingValues, setPendingValues] = useState(selectedValues);
   const dropdownRef = useRef(null);
 
-  // Close dropdown when clicking outside
+  // Sync pending values when selectedValues changes externally
+  useEffect(() => {
+    setPendingValues(selectedValues);
+  }, [selectedValues]);
+
+  // Close dropdown when clicking outside - apply changes on close
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
+        handleApply();
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [pendingValues]);
 
   const handleToggleOption = (option) => {
-    const newValues = selectedValues.includes(option)
-      ? selectedValues.filter(v => v !== option)
-      : [...selectedValues, option];
-    onChange(newValues);
+    const newValues = pendingValues.includes(option)
+      ? pendingValues.filter(v => v !== option)
+      : [...pendingValues, option];
+    setPendingValues(newValues);
   };
 
   const handleClearAll = () => {
-    onChange([]);
-    setIsOpen(false);
+    setPendingValues([]);
   };
 
   const handleSelectAll = () => {
-    onChange(options);
+    setPendingValues(options);
+  };
+
+  const handleApply = () => {
+    if (JSON.stringify(pendingValues.sort()) !== JSON.stringify(selectedValues.sort())) {
+      onChange(pendingValues);
+    }
     setIsOpen(false);
   };
+
+  const handleCancel = () => {
+    setPendingValues(selectedValues);
+    setIsOpen(false);
+  };
+
+  const hasPendingChanges = JSON.stringify(pendingValues.sort()) !== JSON.stringify(selectedValues.sort());
 
   const getDisplayText = () => {
     if (selectedValues.length === 0) {
@@ -59,7 +77,7 @@ const FilterDropdown = ({
       <Button
         variant="outline"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 min-w-[180px] justify-between"
+        className={`flex items-center gap-2 min-w-[180px] justify-between ${hasPendingChanges ? 'ring-2 ring-orange-400' : ''}`}
         size="sm"
       >
         <div className="flex items-center gap-2">
@@ -67,6 +85,11 @@ const FilterDropdown = ({
           <span className="text-sm">{getDisplayText()}</span>
         </div>
         <div className="flex items-center gap-1">
+          {hasPendingChanges && (
+            <Badge variant="default" className="h-5 px-1.5 text-xs bg-orange-500">
+              *
+            </Badge>
+          )}
           {selectedValues.length > 0 && (
             <Badge variant="secondary" className="h-5 px-1.5 text-xs">
               {selectedValues.length}
@@ -80,7 +103,7 @@ const FilterDropdown = ({
         <div className="absolute z-50 mt-2 w-[280px] bg-background border rounded-lg shadow-lg max-h-[450px] flex flex-col">
           <div className="p-2 border-b flex items-center justify-between flex-shrink-0">
             <span className="text-sm font-semibold">{label}</span>
-            {selectedValues.length > 0 && (
+            {pendingValues.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -96,7 +119,7 @@ const FilterDropdown = ({
           <div className="overflow-y-auto p-2 space-y-1 flex-1 min-h-0" style={{ maxHeight: '350px' }}>
             {options.length > 0 ? (
               options.map(option => {
-                const isSelected = selectedValues.includes(option);
+                const isSelected = pendingValues.includes(option);
                 return (
                   <button
                     key={option}
@@ -118,19 +141,35 @@ const FilterDropdown = ({
           </div>
 
           {options.length > 0 && (
-            <div className="p-2 border-t bg-muted/50 flex-shrink-0">
+            <div className="p-2 border-t bg-muted/50 flex-shrink-0 space-y-2">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>{selectedValues.length} of {options.length} selected</span>
-                <div className="flex gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleSelectAll}
-                    className="h-6 text-xs"
-                  >
-                    Select All
-                  </Button>
-                </div>
+                <span>{pendingValues.length} of {options.length} selected</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSelectAll}
+                  className="h-6 text-xs"
+                >
+                  Select All
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCancel}
+                  className="flex-1 h-7 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleApply}
+                  className={`flex-1 h-7 text-xs ${hasPendingChanges ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
+                >
+                  Apply {hasPendingChanges && '*'}
+                </Button>
               </div>
             </div>
           )}

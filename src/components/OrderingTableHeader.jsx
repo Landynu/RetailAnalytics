@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { Badge } from './ui/badge';
 import { ArrowUp, ArrowDown, GripVertical } from 'lucide-react';
 import {
@@ -18,7 +18,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const DraggableHeader = ({ column, children, onSort, sortConfig }) => {
+const DraggableHeader = ({ column, children, onSort, sortConfig, onResizeStart }) => {
   const {
     attributes,
     listeners,
@@ -32,19 +32,27 @@ const DraggableHeader = ({ column, children, onSort, sortConfig }) => {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    width: `${column.width}px`,
+    minWidth: `${column.minWidth || 70}px`,
   };
 
   const handleHeaderClick = (e) => {
-    if (!column.isLocation && column.sortKey && !e.target.closest('.drag-handle')) {
+    if (!column.isLocation && column.sortKey && !e.target.closest('.drag-handle') && !e.target.closest('.resize-handle')) {
       onSort(column.sortKey);
     }
+  };
+
+  const handleResizeStart = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onResizeStart(column.id, e.clientX, column.width);
   };
 
   return (
     <th
       ref={setNodeRef}
       style={style}
-      className={`px-3 py-3 font-semibold border bg-background ${column.width} ${
+      className={`px-3 py-3 font-semibold border bg-background relative ${
         column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
       } ${!column.isLocation && column.sortKey ? 'cursor-pointer hover:bg-muted/50' : ''} ${isDragging ? 'z-50' : ''}`}
       onClick={handleHeaderClick}
@@ -61,10 +69,18 @@ const DraggableHeader = ({ column, children, onSort, sortConfig }) => {
         >
           <GripVertical className="h-3 w-3" />
         </button>
-        <span className="break-words">{children}</span>
+        <span className="break-words text-wrap">{children}</span>
         {!column.isLocation && column.sortKey && sortConfig.key === column.sortKey && (
           sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 flex-shrink-0" /> : <ArrowDown className="h-3 w-3 flex-shrink-0" />
         )}
+      </div>
+      {/* Resize handle */}
+      <div
+        className="resize-handle absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-emerald-500 group"
+        onMouseDown={handleResizeStart}
+        title="Drag to resize column"
+      >
+        <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-emerald-200 opacity-50" />
       </div>
     </th>
   );
@@ -77,8 +93,11 @@ const OrderingTableHeader = ({
   onSort, 
   sortConfig, 
   analytics,
-  periodDays 
+  periodDays,
+  onColumnResize
 }) => {
+  const [resizing, setResizing] = useState(null);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -87,6 +106,26 @@ const OrderingTableHeader = ({
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  const handleResizeStart = (columnId, startX, startWidth) => {
+    const initialState = { columnId, startX, startWidth };
+    setResizing(initialState);
+
+    const handleMouseMove = (e) => {
+      const delta = e.clientX - initialState.startX;
+      const newWidth = Math.max(initialState.startWidth + delta, 70);
+      onColumnResize(initialState.columnId, newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setResizing(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
 
   const renderHeaderContent = (column) => {
     if (column.isLocation) {
@@ -99,7 +138,7 @@ const OrderingTableHeader = ({
           <Badge variant="secondary" className="mb-1 text-xs px-2">
             {storeProductCount}
           </Badge>
-          <div className="break-words">{column.storeName}</div>
+          <div className="break-words text-wrap">{column.storeName}</div>
           <div className="text-xs font-normal text-muted-foreground">Inv/Sales</div>
         </div>
       );
@@ -108,7 +147,7 @@ const OrderingTableHeader = ({
     if (column.id === 'popularity') {
       return (
         <div className="flex flex-col items-center">
-          <div className="break-words">Popularity</div>
+          <div className="break-words text-wrap">Popularity</div>
           <div className="text-xs font-normal text-muted-foreground">{periodDays || 14} Days</div>
         </div>
       );
@@ -117,7 +156,7 @@ const OrderingTableHeader = ({
     if (column.id === 'trend') {
       return (
         <div className="flex flex-col items-center">
-          <div className="break-words">Trend</div>
+          <div className="break-words text-wrap">Trend</div>
           <div className="text-xs font-normal text-muted-foreground">12 Wks</div>
         </div>
       );
@@ -137,6 +176,7 @@ const OrderingTableHeader = ({
                 column={column}
                 onSort={onSort}
                 sortConfig={sortConfig}
+                onResizeStart={handleResizeStart}
               >
                 {renderHeaderContent(column)}
               </DraggableHeader>
