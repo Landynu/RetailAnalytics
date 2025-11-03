@@ -23,6 +23,39 @@ model User {
     orderWorksheets  OrderWorksheet[]
 }
 
+model Brand {
+    id            Int                 @id @default(autoincrement())
+    name          String              @unique
+    distributors  BrandDistributor[]
+    createdAt     DateTime            @default(now())
+    updatedAt     DateTime            @updatedAt
+    
+    @@index([name])
+}
+
+model Distributor {
+    id        Int                 @id @default(autoincrement())
+    name      String              @unique
+    isActive  Boolean             @default(true)
+    sortOrder Int                 @default(0)
+    brands    BrandDistributor[]
+    createdAt DateTime            @default(now())
+}
+
+model BrandDistributor {
+    id            Int         @id @default(autoincrement())
+    brandId       Int
+    brand         Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+    distributorId Int
+    distributor   Distributor @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+    isPrimary     Boolean     @default(false)
+    createdAt     DateTime    @default(now())
+    
+    @@unique([brandId, distributorId])
+    @@index([brandId])
+    @@index([distributorId])
+}
+
 model Store {
     id            Int     @id @default(autoincrement())
     name          String

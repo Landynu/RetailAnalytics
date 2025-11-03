@@ -1655,6 +1655,36 @@ export const getOrderingAnalytics = async ({
     lastUpdate: lastUpdate.toISOString()
   });
 
+  // Fetch brand-distributor mappings
+  const brandsWithDistributors = await context.entities.Brand.findMany({
+    include: {
+      distributors: {
+        include: { distributor: true },
+        orderBy: { isPrimary: 'desc' }
+      }
+    }
+  })
+
+  const brandDistributorMap = new Map()
+  brandsWithDistributors.forEach(brand => {
+    brandDistributorMap.set(brand.name, brand.distributors.map(bd => ({
+      id: bd.distributor.id,
+      name: bd.distributor.name,
+      isPrimary: bd.isPrimary
+    })))
+  })
+
+  // Attach distributor data to paginated products
+  paginatedProducts.forEach(product => {
+    product.distributors = brandDistributorMap.get(product.brand) || []
+  })
+
+  // Get all distributors for filter
+  const allDistributors = await context.entities.Distributor.findMany({
+    where: { isActive: true },
+    orderBy: { sortOrder: 'asc' }
+  })
+
   // Build smart brand filter list from products matching NON-brand filters
   // This ensures brands are context-aware of other filters but not self-filtering
   const filterOptionsProducts = allProductMetrics.filter(p => {
@@ -1726,6 +1756,40 @@ export const getOrderingAnalytics = async ({
     }
   };
 };
+
+export const getBrandDistributors = async (args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const brands = await context.entities.Brand.findMany({
+    include: {
+      distributors: {
+        include: {
+          distributor: true
+        },
+        orderBy: { isPrimary: 'desc' }
+      }
+    },
+    orderBy: { name: 'asc' }
+  })
+  
+  return brands.map(brand => ({
+    brandName: brand.name,
+    distributors: brand.distributors.map(bd => ({
+      id: bd.distributor.id,
+      name: bd.distributor.name,
+      isPrimary: bd.isPrimary
+    }))
+  }))
+}
+
+export const getDistributors = async (args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  return context.entities.Distributor.findMany({
+    where: { isActive: true },
+    orderBy: { sortOrder: 'asc' }
+  })
+}
 
 export const getGlobalAnalyticsFiltered = async ({
   storeIds = null,

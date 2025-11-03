@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { ShoppingCart } from 'lucide-react';
 import Sparkline from './Sparkline';
 import LocationCell from './LocationCell';
+import DistributorCell from './DistributorCell';
 
 const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, onAddToOrder }) => {
   const getStrainColor = (strainType) => {
@@ -196,6 +197,17 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
             ) : (
               <span className="text-muted-foreground">-</span>
             )}
+          </td>
+        );
+
+      case 'distributor':
+        return (
+          <td key={column.id} className="px-3 py-3 border w-48">
+            <DistributorCell 
+              brand={product.brand}
+              distributors={product.distributors || []}
+              allDistributors={column.allDistributors || []}
+            />
           </td>
         );
 

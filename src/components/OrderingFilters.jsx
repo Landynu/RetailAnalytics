@@ -11,7 +11,9 @@ const OrderingFilters = ({
   worksheet,
   onExportOrder,
   onClearOrder,
-  onEnrichFormats
+  onEnrichFormats,
+  onSeedDistributors,
+  onSyncBrands
 }) => {
   return (
     <div className="w-72 border-r bg-card p-4 overflow-y-auto flex-shrink-0">
@@ -155,6 +157,26 @@ const OrderingFilters = ({
         <div className="border-t pt-4">
           <h3 className="text-sm font-semibold mb-2 text-emerald-800">Admin Tools</h3>
           <div className="space-y-2">
+            {onSeedDistributors && (
+              <>
+                <Button variant="secondary" onClick={onSeedDistributors} className="w-full" size="sm">
+                  🏢 Seed Distributors
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  One-time: Creates 7 default distributors
+                </p>
+              </>
+            )}
+            {onSyncBrands && (
+              <>
+                <Button variant="secondary" onClick={onSyncBrands} className="w-full" size="sm">
+                  🏷️ Sync Brands
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Creates Brand records from product catalog
+                </p>
+              </>
+            )}
             <Button variant="secondary" onClick={onEnrichFormats} className="w-full" size="sm">
               🔄 Enrich Formats
             </Button>

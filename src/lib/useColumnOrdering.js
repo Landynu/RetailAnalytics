@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 const DEFAULT_COLUMNS = [
   { id: 'name', label: 'Product', width: 'w-64', align: 'left', sortKey: 'name' },
   { id: 'brand', label: 'Brand', width: 'w-32', align: 'left', sortKey: 'brand' },
+  { id: 'distributor', label: 'Distributor', width: 'w-48', align: 'left', sortKey: null },
   { id: 'strainType', label: 'Type', width: 'w-24', align: 'left', sortKey: 'strainType' },
   { id: 'format', label: 'Format', width: 'w-24', align: 'left', sortKey: 'format' },
   { id: 'parentCategory', label: 'Category', width: 'w-32', align: 'left', sortKey: 'parentCategory' },
@@ -114,7 +115,16 @@ export const useColumnOrdering = (stores = []) => {
 
   const resetColumnOrder = () => {
     if (confirm('Reset column order to default?')) {
-      const defaultOrder = DEFAULT_COLUMNS.map(col => col.id);
+      // Build default order with actual location columns instead of placeholder
+      let defaultOrder = DEFAULT_COLUMNS.map(col => col.id);
+      
+      // Replace 'locations' placeholder with actual store columns
+      const locationsIndex = defaultOrder.indexOf('locations');
+      if (locationsIndex !== -1 && stores.length > 0) {
+        const locationColumnIds = stores.map(s => `location-${s.id}`);
+        defaultOrder.splice(locationsIndex, 1, ...locationColumnIds);
+      }
+      
       setColumnOrder(defaultOrder);
     }
   };

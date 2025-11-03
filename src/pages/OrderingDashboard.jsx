@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from 'wasp/client/operations';
-import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores } from 'wasp/client/operations';
-import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats } from 'wasp/client/operations';
+import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores, getDistributors } from 'wasp/client/operations';
+import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats, seedDistributors, syncBrands } from 'wasp/client/operations';
 import { Button } from '../components/ui/button';
 import LocationSelector from '../components/LocationSelector';
 import DateRangeFilter from '../components/DateRangeFilter';
@@ -24,12 +24,30 @@ const OrderingDashboard = () => {
   const [hiddenCategories, setHiddenCategories] = useState(new Set(['Accessories', 'VPT']));
   const [visibleHiddenCategories, setVisibleHiddenCategories] = useState(new Set());
   
+  // Filter stores based on selection (null = favourites, array = specific stores)
+  const displayStores = React.useMemo(() => {
+    if (!stores) return [];
+    
+    if (selectedStoreIds === null || selectedStoreIds === undefined) {
+      // Default to favourites if available
+      const favourites = stores.filter(s => s.isFavourite && s.isActive);
+      return favourites.length > 0 ? favourites : stores.filter(s => s.isActive);
+    }
+    
+    if (Array.isArray(selectedStoreIds) && selectedStoreIds.length === 0) {
+      return []; // No stores selected
+    }
+    
+    // Return selected stores
+    return stores.filter(s => selectedStoreIds.includes(s.id));
+  }, [stores, selectedStoreIds]);
+  
   const { 
     columnOrder, 
     setColumnOrder, 
     orderedColumns, 
     resetColumnOrder 
-  } = useColumnOrdering(stores || []);
+  } = useColumnOrdering(displayStores);
   
   const [dateRange, setDateRange] = useState(() => {
     const end = new Date();
@@ -71,6 +89,7 @@ const OrderingDashboard = () => {
   );
 
   const { data: worksheet } = useQuery(getOrCreateOrderWorksheet);
+  const { data: allDistributors } = useQuery(getDistributors);
 
   // Auto-deselect brands that are no longer in the eligible brand list
   useEffect(() => {
@@ -158,6 +177,30 @@ const OrderingDashboard = () => {
         refetchAnalytics();
       } catch (error) {
         alert('Error enriching formats: ' + error.message);
+      }
+    }
+  };
+
+  const handleSeedDistributors = async () => {
+    if (confirm('This will create the 7 default distributors (Direct, Open Fields, Legacy Supply, etc). Continue?')) {
+      try {
+        const result = await seedDistributors();
+        alert(`Seed complete!\n${result.created} distributors created\n${result.total - result.created} already existed`);
+        refetchAnalytics();
+      } catch (error) {
+        alert('Error seeding distributors: ' + error.message);
+      }
+    }
+  };
+
+  const handleSyncBrands = async () => {
+    if (confirm('This will create Brand records from all products in your catalog. Continue?')) {
+      try {
+        const result = await syncBrands();
+        alert(`Brand sync complete!\n${result.created} new brands created\n${result.totalBrands} total brands`);
+        refetchAnalytics();
+      } catch (error) {
+        alert('Error syncing brands: ' + error.message);
       }
     }
   };
@@ -261,6 +304,8 @@ const OrderingDashboard = () => {
         onExportOrder={handleExportOrder}
         onClearOrder={handleClearOrder}
         onEnrichFormats={handleEnrichFormats}
+        onSeedDistributors={handleSeedDistributors}
+        onSyncBrands={handleSyncBrands}
       />
 
       <div className="flex-1 overflow-y-auto min-w-0 relative">
@@ -330,7 +375,9 @@ const OrderingDashboard = () => {
             {analytics && (
               <table className="w-full border-collapse border">
                 <OrderingTableHeader
-                  orderedColumns={orderedColumns}
+                  orderedColumns={orderedColumns.map(col => 
+                    col.id === 'distributor' ? { ...col, allDistributors: allDistributors || [] } : col
+                  )}
                   columnOrder={columnOrder}
                   onDragEnd={handleDragEnd}
                   onSort={handleSort}
@@ -343,7 +390,9 @@ const OrderingDashboard = () => {
                     <ProductTableRow
                       key={product.id}
                       product={product}
-                      orderedColumns={orderedColumns}
+                      orderedColumns={orderedColumns.map(col => 
+                        col.id === 'distributor' ? { ...col, allDistributors: allDistributors || [] } : col
+                      )}
                       periodDays={analytics?.periodDays || 14}
                       maxTotalSales={maxTotalSales}
                       onAddToOrder={handleAddToOrder}

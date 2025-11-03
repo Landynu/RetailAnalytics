@@ -158,7 +158,7 @@ query getDailySalesAnalytics {
 
 query getOrderingAnalytics {
   fn: import { getOrderingAnalytics } from "@src/queries.js",
-  entities: [Store, ProductCatalog, StockLevel, InventoryMovement, WeeklySalesSummary]
+  entities: [Store, ProductCatalog, StockLevel, InventoryMovement, WeeklySalesSummary, Brand, Distributor, BrandDistributor]
 }
 
 query getOrCreateOrderWorksheet {
@@ -204,6 +204,41 @@ action enrichProductFormats {
 action backfillWeeklySummaries {
   fn: import { backfillWeeklySummaries } from "@src/actions.js",
   entities: [Store, ProductCatalog, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary]
+}
+
+query getBrandDistributors {
+  fn: import { getBrandDistributors } from "@src/queries.js",
+  entities: [Brand, Distributor, BrandDistributor]
+}
+
+query getDistributors {
+  fn: import { getDistributors } from "@src/queries.js",
+  entities: [Distributor]
+}
+
+action updateBrandDistributors {
+  fn: import { updateBrandDistributors } from "@src/actions.js",
+  entities: [Brand, BrandDistributor, Distributor]
+}
+
+action createDistributor {
+  fn: import { createDistributor } from "@src/actions.js",
+  entities: [Distributor]
+}
+
+action deleteDistributor {
+  fn: import { deleteDistributor } from "@src/actions.js",
+  entities: [Distributor, BrandDistributor]
+}
+
+action syncBrands {
+  fn: import { syncBrands } from "@src/actions.js",
+  entities: [Brand, ProductCatalog]
+}
+
+action seedDistributors {
+  fn: import { seedDistributors } from "@src/actions.js",
+  entities: [Distributor]
 }
 
 route DashboardRoute { path: "/", to: DashboardPage }
