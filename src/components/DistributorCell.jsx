@@ -9,6 +9,8 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState(distributors.map(d => d.id));
   const [isLoading, setIsLoading] = useState(false);
+  // Optimistic update state
+  const [optimisticDistributors, setOptimisticDistributors] = useState(null);
   
   const handleToggle = (distId) => {
     const newSelected = selectedIds.includes(distId)
@@ -19,29 +21,48 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
   
   const handleSave = async () => {
     setIsLoading(true);
+    
+    // Optimistic update - show changes immediately
+    const newDistributors = selectedIds.map((id, index) => {
+      const dist = allDistributors.find(d => d.id === id);
+      return {
+        id: dist.id,
+        name: dist.name,
+        isPrimary: index === 0
+      };
+    });
+    setOptimisticDistributors(newDistributors);
+    setIsOpen(false);
+    
     try {
       await updateBrandDistributors({ 
         brandName: brand, 
         distributorIds: selectedIds 
       });
-      setIsOpen(false);
-      // The parent will refetch data automatically
+      // Clear optimistic state after successful save (real data will come from refetch)
+      setTimeout(() => setOptimisticDistributors(null), 500);
     } catch (error) {
+      // Revert optimistic update on error
+      setOptimisticDistributors(null);
       alert('Error updating distributors: ' + error.message);
+      setIsOpen(true);
     } finally {
       setIsLoading(false);
     }
   };
   
+  // Use optimistic state if available, otherwise use props
+  const displayDistributors = optimisticDistributors || distributors;
+  
   if (!isOpen) {
     return (
       <div className="flex items-center gap-2 flex-wrap min-w-[150px]">
-        {distributors.length > 0 ? (
-          distributors.map(d => (
+        {displayDistributors.length > 0 ? (
+          displayDistributors.map(d => (
             <Badge 
               key={d.id} 
               variant={d.isPrimary ? 'default' : 'outline'}
-              className="text-xs"
+              className={cn("text-xs", optimisticDistributors && "opacity-70")}
             >
               {d.name}
             </Badge>
@@ -54,6 +75,7 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
           size="sm"
           onClick={() => setIsOpen(true)}
           className="h-6 px-2"
+          disabled={isLoading}
         >
           <ChevronsUpDown className="h-3 w-3" />
         </Button>

@@ -208,7 +208,7 @@ action backfillWeeklySummaries {
 
 query getBrandDistributors {
   fn: import { getBrandDistributors } from "@src/queries.js",
-  entities: [Brand, Distributor, BrandDistributor]
+  entities: [Brand, Distributor, BrandDistributor, InventoryMovement, ProductCatalog]
 }
 
 query getDistributors {
@@ -274,5 +274,11 @@ page GlobalUploadPage {
 route OrderingRoute { path: "/ordering", to: OrderingPage }
 page OrderingPage {
   component: import OrderingDashboard from "@src/pages/OrderingDashboard.jsx",
+  authRequired: true
+}
+
+route BrandMappingRoute { path: "/brand-mapping", to: BrandMappingPage }
+page BrandMappingPage {
+  component: import BrandMapping from "@src/pages/BrandMapping.jsx",
   authRequired: true
 }
