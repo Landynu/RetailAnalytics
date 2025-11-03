@@ -36,6 +36,9 @@ export const Layout = () => {
                   <Link to="/brand-mapping" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
                     Brand Mapping
                   </Link>
+                  <Link to="/stores" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                    Stores
+                  </Link>
                 </nav>
               )}
             </div>

@@ -69,6 +69,7 @@ model Store {
     fontFamily    String?
     isActive      Boolean @default(true) // Disabled stores excluded from analytics
     isFavourite   Boolean @default(false) // Default filter selection
+    isPrimary     Boolean @default(false) // Primary store for ordering analytics
     user          User    @relation(fields: [userId], references: [id])
     userId        Int
     snapshots     InventorySnapshot[]

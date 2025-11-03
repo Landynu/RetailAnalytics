@@ -91,6 +91,11 @@ action toggleStoreFavourite {
   entities: [Store]
 }
 
+action toggleStorePrimary {
+  fn: import { toggleStorePrimary } from "@src/actions.js",
+  entities: [Store]
+}
+
 query getSalesTrends {
   fn: import { getSalesTrends } from "@src/queries.js",
   entities: [Store, ProductCatalog, StockLevel, InventorySnapshot]
@@ -280,5 +285,11 @@ page OrderingPage {
 route BrandMappingRoute { path: "/brand-mapping", to: BrandMappingPage }
 page BrandMappingPage {
   component: import BrandMapping from "@src/pages/BrandMapping.jsx",
+  authRequired: true
+}
+
+route StoresRoute { path: "/stores", to: StoresPage }
+page StoresPage {
+  component: import Stores from "@src/pages/Stores.jsx",
   authRequired: true
 }

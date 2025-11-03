@@ -1318,13 +1318,14 @@ export const getOrderingAnalytics = async ({
     storeWhere.id = { in: storeIds.map(id => parseInt(id)) };
   }
 
-  // Get user's active stores
+  // Get user's active stores (including isPrimary flag)
   const stores = await context.entities.Store.findMany({
     where: storeWhere,
-    select: { id: true, name: true, location: true }
+    select: { id: true, name: true, location: true, isPrimary: true }
   });
 
   const storeIdList = stores.map(s => s.id);
+  const primaryStore = stores.find(s => s.isPrimary);
 
   // 30-day activity filter: Only show products with recent activity
   const thirtyDaysAgo = new Date();
@@ -1560,6 +1561,20 @@ export const getOrderingAnalytics = async ({
       strainCounts[strain]++;
     }
   });
+
+  // Calculate primary store strain counts
+  const primaryStoreStrainCounts = { Hybrid: 0, Sativa: 0, Indica: 0 };
+  if (primaryStore) {
+    filteredProducts.forEach(p => {
+      const strain = p.strainType;
+      if (strain && strain !== 'N/A' && primaryStoreStrainCounts[strain] !== undefined) {
+        const primaryInventory = p.locationInventory.find(loc => loc.storeId === primaryStore.id);
+        if (primaryInventory && primaryInventory.quantity > 0) {
+          primaryStoreStrainCounts[strain]++;
+        }
+      }
+    });
+  }
 
   // Calculate per-location inventory counts from ALL filtered products
   const locationInventoryCounts = stores.map(store => {
@@ -1799,6 +1814,39 @@ export const getOrderingAnalytics = async ({
   });
   const allSizes = [...new Set(sizesProducts.map(p => p.unitSize).filter(Boolean))].sort();
 
+  // Calculate primary store category totals (if primary store exists)
+  // Initialize all categories with 0, ensuring at least Uncategorized exists
+  const primaryStoreCategoryTotals = { Uncategorized: 0 };
+  allCategories.forEach(cat => {
+    primaryStoreCategoryTotals[cat] = 0;
+  });
+  
+  if (primaryStore) {
+    filteredProducts.forEach(p => {
+      const cat = p.parentCategory || 'Uncategorized';
+      const primaryInventory = p.locationInventory.find(loc => loc.storeId === primaryStore.id);
+      if (primaryInventory && primaryInventory.quantity > 0) {
+        primaryStoreCategoryTotals[cat] = (primaryStoreCategoryTotals[cat] || 0) + 1;
+      }
+    });
+  }
+
+  // Calculate total category counts across all stores
+  // Initialize all categories with 0, ensuring at least Uncategorized exists
+  const totalCategoryTotals = { Uncategorized: 0 };
+  allCategories.forEach(cat => {
+    totalCategoryTotals[cat] = 0;
+  });
+  
+  filteredProducts.forEach(p => {
+    const cat = p.parentCategory || 'Uncategorized';
+    // Count product if it has inventory in ANY store
+    const hasInventory = p.locationInventory.some(loc => loc.quantity > 0);
+    if (hasInventory) {
+      totalCategoryTotals[cat] = (totalCategoryTotals[cat] || 0) + 1;
+    }
+  });
+
   return {
     products: paginatedProducts,
     totalCount,
@@ -1808,10 +1856,14 @@ export const getOrderingAnalytics = async ({
     salesMatrix,
     locationTotals,
     stores: stores.map(s => ({ id: s.id, name: s.name, location: s.location })),
+    primaryStore: primaryStore ? { id: primaryStore.id, name: primaryStore.name } : null,
+    primaryStoreCategoryTotals: allCategories.length > 0 ? primaryStoreCategoryTotals : { Uncategorized: 0 },
+    totalCategoryTotals: allCategories.length > 0 ? totalCategoryTotals : { Uncategorized: 0 },
     dateRange: { start: startDate.toISOString(), end: endDate.toISOString() },
     periodDays,
     lastUpdate: lastUpdate.toISOString(),
     strainCounts, // Counts from ALL filtered products
+    primaryStoreStrainCounts, // Primary store strain counts
     locationInventoryCounts, // Per-location inventory counts from ALL filtered products
     filterOptions: {
       brands: smartBrands, // Smart brand list based on other filters

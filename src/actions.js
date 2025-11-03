@@ -1497,6 +1497,45 @@ export const toggleStoreFavourite = async ({ storeId }, context) => {
   return updatedStore;
 };
 
+export const toggleStorePrimary = async ({ storeId }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  const store = await context.entities.Store.findUnique({
+    where: { id: parseInt(storeId) }
+  });
+
+  if (!store || store.userId !== context.user.id) {
+    throw new HttpError(403);
+  }
+
+  // Can only set primary on active stores
+  if (!store.isActive && !store.isPrimary) {
+    throw new HttpError(400, 'Cannot set a disabled store as primary');
+  }
+
+  // If setting as primary, unset all other stores for this user
+  if (!store.isPrimary) {
+    await context.entities.Store.updateMany({
+      where: {
+        userId: context.user.id,
+        isPrimary: true
+      },
+      data: {
+        isPrimary: false
+      }
+    });
+  }
+
+  const updatedStore = await context.entities.Store.update({
+    where: { id: parseInt(storeId) },
+    data: {
+      isPrimary: !store.isPrimary
+    }
+  });
+
+  return updatedStore;
+};
+
 // Ordering Actions
 
 export const getOrCreateOrderWorksheet = async (args, context) => {

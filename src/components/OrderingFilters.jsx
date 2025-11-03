@@ -60,12 +60,29 @@ const OrderingFilters = ({
             Categories
             <span className="block text-xs font-normal text-muted-foreground mt-0.5">
               👁️ = show/hide • Click name = filter
+              {analytics?.primaryStore && (
+                <span className="block mt-1">
+                  📍 Format: Primary ({analytics.primaryStore.name}) (Total)
+                </span>
+              )}
             </span>
           </label>
           <div className="border rounded-lg p-2 bg-background max-h-64 overflow-y-auto space-y-1">
             {(analytics?.filterOptions?.categories || []).map(cat => {
               const isSelected = filters.categories.includes(cat);
               const isHidden = hiddenCategories.has(cat);
+              const primaryCount = analytics?.primaryStoreCategoryTotals?.[cat] || 0;
+              const totalCount = analytics?.totalCategoryTotals?.[cat] || 0;
+              
+              // Build display label
+              let categoryLabel = cat;
+              if (analytics?.primaryStore && primaryCount > 0) {
+                // Show "Category: primary (total)" format
+                categoryLabel = `${cat}: ${primaryCount} (${totalCount})`;
+              } else if (totalCount > 0) {
+                // No primary store set, just show total
+                categoryLabel = `${cat}: ${totalCount}`;
+              }
               
               return (
                 <div
@@ -105,9 +122,11 @@ const OrderingFilters = ({
                     className={`flex-1 cursor-pointer hover:underline ${
                       isHidden ? 'opacity-50 line-through' : ''
                     }`}
-                    title="Click to filter by this category"
+                    title={analytics?.primaryStore && primaryCount > 0 
+                      ? `${primaryCount} in ${analytics.primaryStore.name}, total count varies by filter` 
+                      : 'Click to filter by this category'}
                   >
-                    {cat}
+                    {categoryLabel}
                   </span>
                 </div>
               );
