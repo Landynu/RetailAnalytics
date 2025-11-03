@@ -1371,7 +1371,17 @@ export const getOrderingAnalytics = async ({
       movements: {
         where: {
           storeId: { in: storeIdList },
-          date: { gte: startDate, lte: endDate }
+          OR: [
+            // Get sales within the date range
+            {
+              type: 'sale',
+              date: { gte: startDate, lte: endDate }
+            },
+            // Get ALL purchase order movements (not date filtered) for Days Since PO
+            {
+              type: 'purchase order'
+            }
+          ]
         },
         orderBy: { date: 'desc' }
       }
@@ -1402,9 +1412,20 @@ export const getOrderingAnalytics = async ({
     const daysSinceLastSale = lastSaleDate ? Math.floor((endDate - lastSaleDate) / (24 * 60 * 60 * 1000)) : null;
     
     // Days since last purchase order
-    const poMovements = product.movements.filter(m => m.type === 'purchase');
-    const lastPODate = poMovements.length > 0 ? poMovements[0].date : null;
+    const poMovements = product.movements.filter(m => m.type === 'purchase order');
+    const lastPO = poMovements.length > 0 ? poMovements[0] : null;
+    const lastPODate = lastPO ? lastPO.date : null;
+    const lastPOQty = lastPO ? Math.abs(lastPO.changeQty) : null;
     const daysSinceLastPO = lastPODate ? Math.floor((endDate - lastPODate) / (24 * 60 * 60 * 1000)) : null;
+    
+    // Debug logging for first 3 products to verify purchase movements
+    if (allProductMetrics.length < 3 && poMovements.length > 0) {
+      console.log(`📦 Product ${product.name}: Found ${poMovements.length} purchase movements`, {
+        lastPODate,
+        daysSinceLastPO,
+        lastPOQty
+      });
+    }
     
     // Suggested order quantity (2-week buffer)
     const twoWeekDemand = velocity * 2;
@@ -1459,6 +1480,7 @@ export const getOrderingAnalytics = async ({
       weeksLeft,
       daysSinceLastSale,
       daysSinceLastPO,
+      lastPOQty,
       suggestedQty,
       suggestedCases
     });
@@ -1609,6 +1631,17 @@ export const getOrderingAnalytics = async ({
     };
   });
 
+  // Get the latest movement timestamp for display
+  const latestMovement = await context.entities.InventoryMovement.findFirst({
+    where: {
+      storeId: { in: storeIdList }
+    },
+    orderBy: { date: 'desc' },
+    select: { date: true }
+  });
+
+  const lastUpdate = latestMovement?.date || new Date();
+
   console.log('📦 Ordering analytics result:', {
     totalProducts: allProducts.length,
     filteredProducts: filteredProducts.length,
@@ -1618,7 +1651,8 @@ export const getOrderingAnalytics = async ({
     totalCount,
     hasMore,
     periodDays,
-    dateRange: `${startDate.toISOString()} to ${endDate.toISOString()}`
+    dateRange: `${startDate.toISOString()} to ${endDate.toISOString()}`,
+    lastUpdate: lastUpdate.toISOString()
   });
 
   // Build smart brand filter list from products matching NON-brand filters
@@ -1682,6 +1716,7 @@ export const getOrderingAnalytics = async ({
     stores: stores.map(s => ({ id: s.id, name: s.name, location: s.location })),
     dateRange: { start: startDate.toISOString(), end: endDate.toISOString() },
     periodDays,
+    lastUpdate: lastUpdate.toISOString(),
     filterOptions: {
       brands: smartBrands, // Smart brand list based on other filters
       categories: allCategories,

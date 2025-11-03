@@ -31,20 +31,30 @@ const Sparkline = ({ data, width = 60, height = 20, color = '#10b981' }) => {
     stable: '#6b7280'
   };
 
+  const tooltipText = `12-week sales trend. ${
+    trend === 'up' ? '📈 Trending up' : 
+    trend === 'down' ? '📉 Trending down' : 
+    '➡️ Stable'
+  }`;
+
   return (
-    <svg 
-      width={width} 
-      height={height} 
-      className="inline-block"
+    <div 
+      className="inline-block" 
+      title={tooltipText}
       style={{ verticalAlign: 'middle' }}
     >
-      <polyline
-        fill="none"
-        stroke={trendColors[trend]}
-        strokeWidth="1.5"
-        points={points}
-      />
-    </svg>
+      <svg 
+        width={width} 
+        height={height}
+      >
+        <polyline
+          fill="none"
+          stroke={trendColors[trend]}
+          strokeWidth="1.5"
+          points={points}
+        />
+      </svg>
+    </div>
   );
 };
 

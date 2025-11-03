@@ -8,16 +8,122 @@ import { Badge } from '../components/ui/badge';
 import LocationSelector from '../components/LocationSelector';
 import DateRangeFilter from '../components/DateRangeFilter';
 import FilterDropdown from '../components/FilterDropdown';
-import { ShoppingCart, Download, Trash2, ArrowUp, ArrowDown, Package, Tag, Eye, EyeOff } from 'lucide-react';
+import { ShoppingCart, Download, Trash2, ArrowUp, ArrowDown, Package, Tag, Eye, EyeOff, GripVertical, RotateCcw } from 'lucide-react';
 import { useDebounce } from '../lib/useDebounce';
 import DataLoadingOverlay from '../components/DataLoadingOverlay';
+import Sparkline from '../components/Sparkline';
+import { formatRelativeTime } from '../lib/formatRelativeTime';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  horizontalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+const DEFAULT_COLUMNS = [
+  { id: 'name', label: 'Product', width: 'w-64', align: 'left', sortKey: 'name' },
+  { id: 'brand', label: 'Brand', width: 'w-32', align: 'left', sortKey: 'brand' },
+  { id: 'strainType', label: 'Type', width: 'w-24', align: 'left', sortKey: 'strainType' },
+  { id: 'format', label: 'Format', width: 'w-24', align: 'left', sortKey: 'format' },
+  { id: 'parentCategory', label: 'Category', width: 'w-32', align: 'left', sortKey: 'parentCategory' },
+  { id: 'wholesaleCost', label: 'Cost', width: 'w-24', align: 'right', sortKey: 'wholesaleCost' },
+  { id: 'retailPrice', label: 'Retail', width: 'w-24', align: 'right', sortKey: 'retailPrice' },
+  { id: 'margin', label: 'Margin', width: 'w-20', align: 'right', sortKey: 'margin' },
+  { id: 'locations', label: 'Locations', width: 'variable', align: 'center', sortKey: null },
+  { id: 'totalInventory', label: 'Total Inv', width: 'w-24', align: 'right', sortKey: 'totalInventory' },
+  { id: 'totalSales', label: 'Total Sales', width: 'w-24', align: 'right', sortKey: 'totalSales' },
+  { id: 'popularity', label: 'Popularity', width: 'w-28', align: 'center', sortKey: null },
+  { id: 'weeksLeft', label: 'Wks Left', width: 'w-24', align: 'center', sortKey: 'weeksLeft' },
+  { id: 'daysSinceLastSale', label: 'Days Since Sale', width: 'w-28', align: 'right', sortKey: 'daysSinceLastSale' },
+  { id: 'trend', label: 'Trend', width: 'w-20', align: 'center', sortKey: null },
+  { id: 'daysSinceLastPO', label: 'Days Since PO', width: 'w-28', align: 'right', sortKey: 'daysSinceLastPO' },
+  { id: 'suggestedQty', label: 'Suggested', width: 'w-28', align: 'right', sortKey: 'suggestedQty' },
+  { id: 'actions', label: 'Actions', width: 'w-28', align: 'center', sortKey: null },
+];
+
+const STORAGE_KEY = 'orderingDashboard_columnOrder';
+
+const DraggableHeader = ({ column, children, onSort, sortConfig, isLocation = false }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: column.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const handleHeaderClick = (e) => {
+    if (!isLocation && column.sortKey && !e.target.closest('.drag-handle')) {
+      onSort(column.sortKey);
+    }
+  };
+
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      className={`px-3 py-3 font-semibold border bg-background ${column.width} ${
+        column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
+      } ${!isLocation && column.sortKey ? 'cursor-pointer hover:bg-muted/50' : ''} ${isDragging ? 'z-50' : ''}`}
+      onClick={handleHeaderClick}
+    >
+      <div className={`flex items-center gap-1 ${
+        column.align === 'right' ? 'justify-end' : column.align === 'center' ? 'justify-center' : ''
+      }`}>
+        <button
+          className="drag-handle cursor-grab active:cursor-grabbing hover:text-primary p-0.5 -ml-1"
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          title="Drag to reorder column"
+        >
+          <GripVertical className="h-3 w-3" />
+        </button>
+        <span className="break-words">{children}</span>
+        {!isLocation && column.sortKey && sortConfig.key === column.sortKey && (
+          sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 flex-shrink-0" /> : <ArrowDown className="h-3 w-3 flex-shrink-0" />
+        )}
+      </div>
+    </th>
+  );
+};
 
 const OrderingDashboard = () => {
   const { data: stores } = useQuery(getUserStores);
   const [selectedStoreIds, setSelectedStoreIds] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
   const [hiddenCategories, setHiddenCategories] = useState(new Set(['Accessories', 'VPT']));
-  const [visibleHiddenCategories, setVisibleHiddenCategories] = useState(new Set()); // Track which hidden categories are shown
+  const [visibleHiddenCategories, setVisibleHiddenCategories] = useState(new Set());
+  
+  const [columnOrder, setColumnOrder] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to parse saved column order:', e);
+      }
+    }
+    return DEFAULT_COLUMNS.map(col => col.id);
+  });
+  
   const [dateRange, setDateRange] = useState(() => {
     const end = new Date();
     const start = new Date();
@@ -43,7 +149,40 @@ const OrderingDashboard = () => {
 
   const debouncedFilters = useDebounce(filters, 300);
 
-  // Determine if we should include hidden categories in the query
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(columnOrder));
+  }, [columnOrder]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (active.id !== over?.id) {
+      setColumnOrder((items) => {
+        const oldIndex = items.indexOf(active.id);
+        const newIndex = items.indexOf(over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+
+  const resetColumnOrder = () => {
+    if (confirm('Reset column order to default?')) {
+      setColumnOrder(DEFAULT_COLUMNS.map(col => col.id));
+    }
+  };
+
+  const orderedColumns = columnOrder
+    .map(id => DEFAULT_COLUMNS.find(col => col.id === id))
+    .filter(Boolean);
+
   const includeHiddenCategories = visibleHiddenCategories.size > 0;
 
   const { data: analytics, isLoading: analyticsLoading, refetch: refetchAnalytics } = useQuery(
@@ -457,6 +596,11 @@ const OrderingDashboard = () => {
                   Analysis for {analytics?.periodDays || 14} days • Showing {sortedProducts.length} of {analytics?.totalCount || 0} products
                   {analytics?.hasMore && <span className="ml-2 text-sm">(Load more below)</span>}
                 </p>
+                {analytics?.lastUpdate && (
+                  <p className="text-xs text-emerald-600 mt-1">
+                    Last inventory update: {formatRelativeTime(analytics.lastUpdate)}
+                  </p>
+                )}
               </div>
             </div>
             
@@ -488,50 +632,111 @@ const OrderingDashboard = () => {
                 onChange={(values) => setFilters({ ...filters, subcategories: values })}
                 icon={Package}
               />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={resetColumnOrder}
+                title="Reset column order to default"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reset Columns
+              </Button>
             </div>
           </div>
 
           <div className="overflow-x-auto">
             {analytics && (
-            <table className="w-full border-collapse border">
-              <thead className="bg-background sticky top-0 z-10 border-b-2">
-                <tr>
-                  <SortableHeader column="name" width="w-64">Product</SortableHeader>
-                  <SortableHeader column="brand" width="w-32">Brand</SortableHeader>
-                  <SortableHeader column="strainType" width="w-24">Type</SortableHeader>
-                  <SortableHeader column="format" width="w-24">Format</SortableHeader>
-                  <SortableHeader column="parentCategory" width="w-32">Category</SortableHeader>
-                  <SortableHeader column="wholesaleCost" align="right" width="w-24">Cost</SortableHeader>
-                  <SortableHeader column="retailPrice" align="right" width="w-24">Retail</SortableHeader>
-                  <SortableHeader column="margin" align="right" width="w-20">Margin</SortableHeader>
-                  {analytics?.stores?.map(store => {
-                    // Get total count from backend data (already accounts for all filtered products)
-                    const locationTotal = analytics.locationTotals?.find(lt => lt.storeName === store.name);
-                    const storeProductCount = locationTotal?.productCount || 0;
-                    
-                    return (
-                      <th key={store.id} className="px-3 py-3 text-center font-semibold border bg-background w-28">
-                        {storeProductCount > 0 && (
-                          <Badge variant="secondary" className="mb-1 text-xs">{storeProductCount}</Badge>
-                        )}
-                        <div className="break-words">{store.name}</div>
-                        <div className="text-xs font-normal text-muted-foreground">Inv/Sales</div>
-                      </th>
-                    );
-                  })}
-                  <SortableHeader column="totalInventory" align="right" width="w-24">Total Inv</SortableHeader>
-                  <SortableHeader column="totalSales" align="right" width="w-24">Total Sales</SortableHeader>
-                  <th className="px-3 py-3 text-center font-semibold border bg-background w-28">
-                    <div className="break-words">Popularity</div>
-                    <div className="text-xs font-normal text-muted-foreground">{analytics?.periodDays || 14} Days</div>
-                  </th>
-                  <SortableHeader column="weeksLeft" align="center" width="w-24">Wks Left</SortableHeader>
-                  <SortableHeader column="daysSinceLastSale" align="right" width="w-28">Days Since Sale</SortableHeader>
-                  <SortableHeader column="daysSinceLastPO" align="right" width="w-28">Days Since PO</SortableHeader>
-                  <SortableHeader column="suggestedQty" align="right" width="w-28">Suggested</SortableHeader>
-                  <th className="px-3 py-3 text-center font-semibold border bg-background w-28">Actions</th>
-                </tr>
-              </thead>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <table className="w-full border-collapse border">
+                <thead className="bg-background sticky top-0 z-10 border-b-2">
+                  <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
+                    <tr>
+                      {orderedColumns.map(column => {
+                        if (column.id === 'locations') {
+                          return analytics?.stores?.map(store => {
+                            const locationTotal = analytics.locationTotals?.find(lt => lt.storeName === store.name);
+                            const storeProductCount = locationTotal?.productCount || 0;
+                            const locationColId = `location-${store.id}`;
+                            
+                            return (
+                              <DraggableHeader
+                                key={locationColId}
+                                column={{ ...column, id: locationColId }}
+                                onSort={handleSort}
+                                sortConfig={sortConfig}
+                                isLocation={true}
+                              >
+                                <div className="flex flex-col items-center">
+                                  {storeProductCount > 0 && (
+                                    <Badge variant="secondary" className="mb-1 text-xs">{storeProductCount}</Badge>
+                                  )}
+                                  <div className="break-words">{store.name}</div>
+                                  <div className="text-xs font-normal text-muted-foreground">Inv/Sales</div>
+                                </div>
+                              </DraggableHeader>
+                            );
+                          });
+                        }
+
+                        if (column.id === 'popularity') {
+                          return (
+                            <DraggableHeader
+                              key={column.id}
+                              column={column}
+                              onSort={handleSort}
+                              sortConfig={sortConfig}
+                            >
+                              <div className="flex flex-col items-center">
+                                <div className="break-words">Popularity</div>
+                                <div className="text-xs font-normal text-muted-foreground">{analytics?.periodDays || 14} Days</div>
+                              </div>
+                            </DraggableHeader>
+                          );
+                        }
+
+                        if (column.id === 'trend') {
+                          return (
+                            <DraggableHeader
+                              key={column.id}
+                              column={column}
+                              onSort={handleSort}
+                              sortConfig={sortConfig}
+                            >
+                              <div className="flex flex-col items-center">
+                                <div className="break-words">Trend</div>
+                                <div className="text-xs font-normal text-muted-foreground">12 Wks</div>
+                              </div>
+                            </DraggableHeader>
+                          );
+                        }
+
+                        if (column.id === 'actions') {
+                          return (
+                            <DraggableHeader
+                              key={column.id}
+                              column={column}
+                              onSort={handleSort}
+                              sortConfig={sortConfig}
+                            >
+                              Actions
+                            </DraggableHeader>
+                          );
+                        }
+
+                        return (
+                          <DraggableHeader
+                            key={column.id}
+                            column={column}
+                            onSort={handleSort}
+                            sortConfig={sortConfig}
+                          >
+                            {column.label}
+                          </DraggableHeader>
+                        );
+                      })}
+                    </tr>
+                  </SortableContext>
+                </thead>
               <tbody>
                 {sortedProducts.map((product) => (
                   <tr key={product.id} className="hover:bg-muted/30 border-b">
@@ -626,11 +831,19 @@ const OrderingDashboard = () => {
                         <span className="text-muted-foreground">-</span>
                       )}
                     </td>
+                    <td className="px-3 py-3 text-center border w-20">
+                      {product.sparklineData && product.sparklineData.length > 0 ? (
+                        <Sparkline data={product.sparklineData} width={60} height={20} />
+                      ) : (
+                        <span className="text-muted-foreground text-xs">-</span>
+                      )}
+                    </td>
                     <td className="px-3 py-3 text-right border w-28 text-base">
                       {product.daysSinceLastPO !== null ? (
-                        <span className={product.daysSinceLastPO > 90 ? 'text-orange-600 font-semibold' : ''}>
-                          {product.daysSinceLastPO}d
-                        </span>
+                        <div className={product.daysSinceLastPO > 90 ? 'text-orange-600 font-semibold' : ''}>
+                          <span>{product.daysSinceLastPO}d</span>
+                          {product.lastPOQty && <span className="text-xs text-muted-foreground ml-1">({product.lastPOQty})</span>}
+                        </div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
                       )}
@@ -662,7 +875,8 @@ const OrderingDashboard = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </DndContext>
             )}
             
             {analytics?.hasMore && (
