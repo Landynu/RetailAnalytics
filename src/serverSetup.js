@@ -1,4 +1,7 @@
 import express from 'express';
+// Import cache module to initialize Redis connection on server startup
+// The cache module will handle connection lazily, so just importing it is enough
+import './cache.js';
 
 export const serverMiddlewareFn = (middlewareConfig) => {
   // Configure Express to handle larger payloads for CSV uploads

@@ -116,6 +116,9 @@ model ProductCatalog {
     @@index([brand])
     @@index([status])
     @@index([parentCategory, brand])
+    @@index([parentCategory, brand, unitCount, unitSize])
+    @@index([parentCategory, subcategory])
+    @@index([brand, parentCategory])
 }
 
 model Category {
@@ -173,6 +176,9 @@ model InventoryMovement {
     @@index([storeId, date])
     @@index([productId, date])
     @@index([storeId, type, date])
+    @@index([productId, storeId, type, date])
+    @@index([storeId, productId, type, date])
+    @@index([productId, type, date])
 }
 
 model UnmatchedRecord {
@@ -280,6 +286,8 @@ model WeeklySalesSummary {
   @@unique([weekStart, storeId, productId])
   @@index([weekStart, storeId])
   @@index([weekStart, productId])
+  @@index([productId, storeId, weekStart])
+  @@index([storeId, weekStart, productId])
 }
 
 model WeeklyCategorySummary {

@@ -1,6 +1,7 @@
 import csvParser from 'csv-parser';
 import { Readable } from 'stream';
 import { HttpError } from 'wasp/server';
+import { invalidateCachePattern, warmOrderingAnalyticsCache } from './cache.js';
 
 export const uploadInventory = async ({ storeId, csvData, autoCreateStores = false }, context) => {
   if (!context.user) { throw new HttpError(401) };
@@ -1036,6 +1037,32 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   console.log(`[${ts()}] ⚠️  Skipped: ${skippedRows.length}`);
   console.log(`[${ts()}] ⚡ Average: ${(totalCreated / parseFloat(duration)).toFixed(0)} records/second\n`);
 
+  // Invalidate cache after inventory update
+  await invalidateCachePattern('cache:base:*');
+  await invalidateCachePattern('cache:recent_sales:*');
+  await invalidateCachePattern('cache:recent_sales_movements:*');
+  await invalidateCachePattern('cache:older_sales:*');
+  await invalidateCachePattern('cache:filter_options:*');
+  await invalidateCachePattern('cache:sparklines:*');
+  await invalidateCachePattern('cache:sales_totals:*');
+  await invalidateCachePattern('cache:products_paginated:*');
+  await invalidateCachePattern('cache:purchase_orders:*');
+  await invalidateCachePattern('cache:rankings:*');
+  
+  // Warm cache after upload (fire-and-forget)
+  const stores = await context.entities.Store.findMany({
+    where: { userId: context.user.id, isActive: true },
+    select: { id: true }
+  });
+  if (stores.length > 0) {
+    const storeIds = stores.map(s => s.id);
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
+    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(err => 
+      console.warn('Cache warming failed after upload:', err.message)
+    );
+  }
+
   if (skippedRows.length > 0) {
     console.log(`[${ts()}] ⚠️  Top reasons for skipped rows:`);
     const reasons = {};
@@ -1280,6 +1307,24 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
         }
       })
     ));
+  }
+
+  // Invalidate and warm cache after product catalog update
+  await invalidateCachePattern('cache:base:*');
+  await invalidateCachePattern('cache:filter_options:*');
+  
+  // Warm cache after upload (fire-and-forget)
+  const stores = await context.entities.Store.findMany({
+    where: { userId: context.user.id, isActive: true },
+    select: { id: true }
+  });
+  if (stores.length > 0) {
+    const storeIds = stores.map(s => s.id);
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
+    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(err => 
+      console.warn('Cache warming failed after product catalog upload:', err.message)
+    );
   }
 
   return {
@@ -2136,6 +2181,16 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
   }
   
   console.log(`✅ Backfill complete! Processed ${weeksProcessed} weeks for ${stores.length} stores`);
+  
+  // Invalidate cache after backfilling weekly summaries
+  await invalidateCachePattern('cache:base:*');
+  await invalidateCachePattern('cache:recent_sales:*');
+  await invalidateCachePattern('cache:recent_sales_movements:*');
+  await invalidateCachePattern('cache:older_sales:*');
+  await invalidateCachePattern('cache:sparklines:*');
+  await invalidateCachePattern('cache:rankings:*');
+  await invalidateCachePattern('cache:sales_totals:*');
+  await invalidateCachePattern('cache:products_paginated:*');
   
   return {
     success: true,
