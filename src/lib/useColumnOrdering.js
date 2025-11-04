@@ -11,6 +11,7 @@ const DEFAULT_WIDTHS = {
   'wholesaleCost': 96,
   'retailPrice': 96,
   'margin': 80,
+  'categoryRank': 90,
   'totalInventory': 96,
   'totalSales': 96,
   'popularity': 112,
@@ -25,6 +26,7 @@ const DEFAULT_WIDTHS = {
 const DEFAULT_COLUMNS = [
   { id: 'name', label: 'Product', align: 'left', sortKey: 'name', minWidth: 150 },
   { id: 'brand', label: 'Brand', align: 'left', sortKey: 'brand', minWidth: 100 },
+  { id: 'categoryRank', label: 'Rank', align: 'center', sortKey: 'categoryRank', minWidth: 80 },
   { id: 'distributor', label: 'Distributor', align: 'left', sortKey: 'distributor', minWidth: 100 },
   { id: 'strainType', label: 'Type', align: 'left', sortKey: 'strainType', minWidth: 80 },
   { id: 'format', label: 'Format', align: 'left', sortKey: 'format', minWidth: 80 },
@@ -53,7 +55,19 @@ export const useColumnOrdering = (stores = []) => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const savedOrder = JSON.parse(saved);
+        
+        // Check if categoryRank is missing and add it after brand
+        if (!savedOrder.includes('categoryRank')) {
+          const brandIndex = savedOrder.indexOf('brand');
+          if (brandIndex !== -1) {
+            const newOrder = [...savedOrder];
+            newOrder.splice(brandIndex + 1, 0, 'categoryRank');
+            return newOrder;
+          }
+        }
+        
+        return savedOrder;
       } catch (e) {
         console.error('Failed to parse saved column order:', e);
       }

@@ -5,6 +5,7 @@ import { ShoppingCart } from 'lucide-react';
 import Sparkline from './Sparkline';
 import LocationCell from './LocationCell';
 import DistributorCell from './DistributorCell';
+import { formatRelativeTime } from '../lib/formatRelativeTime';
 
 const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, onAddToOrder }) => {
   const getStrainColor = (strainType) => {
@@ -42,14 +43,23 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
       case 'name':
         return (
           <td key={column.id} style={cellStyle} className="px-3 py-3 border">
-            <div className="flex items-start gap-2">
-              {product.isTop10 && (
-                <Badge variant="default" className="text-xs shrink-0">
-                  🏆 #{product.categoryRank}
-                </Badge>
-              )}
-              <span className="font-medium text-emerald-900 break-words">{product.name}</span>
-            </div>
+            <span className="font-medium text-emerald-900 break-words">{product.name}</span>
+          </td>
+        );
+
+      case 'categoryRank':
+        return (
+          <td key={column.id} style={cellStyle} className="px-3 py-3 text-center border">
+            {product.categoryRank && product.categoryTotal ? (
+              <div className="flex items-center justify-center gap-1">
+                {product.isTop10 && <span className="text-base">🏆</span>}
+                <span className="font-semibold text-base">
+                  {product.categoryRank}/{product.categoryTotal}
+                </span>
+              </div>
+            ) : (
+              <span className="text-muted-foreground">-</span>
+            )}
           </td>
         );
 
@@ -156,10 +166,10 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
           <td key={column.id} style={cellStyle} className="px-3 py-3 text-right border text-base">
             {product.daysSinceLastSale !== null ? (
               <span className={product.daysSinceLastSale > 30 ? 'text-red-600 font-semibold' : ''}>
-                {product.daysSinceLastSale}d
+                {product.daysSinceLastSale} {product.daysSinceLastSale === 1 ? 'day' : 'days'}
               </span>
             ) : (
-              <span className="text-muted-foreground">-</span>
+              <span className="text-muted-foreground">Never</span>
             )}
           </td>
         );

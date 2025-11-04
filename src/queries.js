@@ -1373,7 +1373,7 @@ export const getOrderingAnalytics = async ({
         where: {
           storeId: { in: storeIdList },
           OR: [
-            // Get sales within the date range
+            // Get sales within the date range (for velocity calculations)
             {
               type: 'sale',
               date: { gte: startDate, lte: endDate }
@@ -1388,6 +1388,60 @@ export const getOrderingAnalytics = async ({
       }
     }
   });
+
+  // Hybrid approach for last sale dates:
+  // 1. Check InventoryMovement for recent sales (last 14 days) for precise dates
+  // 2. Use WeeklySalesSummary for older sales for performance
+  
+  const productIds = allProducts.map(p => p.id);
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+  
+  // Get recent sales from movements (precise dates for last 14 days)
+  const recentSales = await context.entities.InventoryMovement.findMany({
+    where: {
+      storeId: { in: storeIdList },
+      productId: { in: productIds },
+      type: 'sale',
+      date: { gte: fourteenDaysAgo }
+    },
+    select: {
+      productId: true,
+      date: true
+    },
+    orderBy: { date: 'desc' }
+  });
+
+  // Build map of product -> most recent sale date from movements
+  const lastSaleMap = new Map();
+  recentSales.forEach(movement => {
+    if (!lastSaleMap.has(movement.productId)) {
+      lastSaleMap.set(movement.productId, movement.date);
+    }
+  });
+
+  // Get older sales from weekly summaries (for products not in recent sales)
+  const remainingProductIds = productIds.filter(id => !lastSaleMap.has(id));
+  if (remainingProductIds.length > 0) {
+    const olderSaleData = await context.entities.WeeklySalesSummary.findMany({
+      where: {
+        storeId: { in: storeIdList },
+        productId: { in: remainingProductIds },
+        unitsSold: { gt: 0 }
+      },
+      select: {
+        productId: true,
+        weekStart: true
+      },
+      orderBy: { weekStart: 'desc' }
+    });
+
+    olderSaleData.forEach(summary => {
+      if (!lastSaleMap.has(summary.productId)) {
+        lastSaleMap.set(summary.productId, summary.weekStart);
+      }
+    });
+  }
 
   // Calculate metrics for ALL products (for rankings)
   const allProductMetrics = [];
@@ -1408,9 +1462,9 @@ export const getOrderingAnalytics = async ({
     // Calculate weeks of inventory left
     const weeksLeft = velocity > 0 ? totalInventory / velocity : 999;
     
-    // Days since last sale
-    const lastSaleDate = salesMovements.length > 0 ? salesMovements[0].date : null;
-    const daysSinceLastSale = lastSaleDate ? Math.floor((endDate - lastSaleDate) / (24 * 60 * 60 * 1000)) : null;
+    // Days since last sale - use unfiltered last sale data from summary table
+    const actualLastSaleDate = lastSaleMap.get(product.id);
+    const daysSinceLastSale = actualLastSaleDate ? Math.floor((endDate - actualLastSaleDate) / (24 * 60 * 60 * 1000)) : null;
     
     // Days since last purchase order
     const poMovements = product.movements.filter(m => m.type === 'purchase order');
@@ -1487,21 +1541,23 @@ export const getOrderingAnalytics = async ({
     });
   }
 
-  // Calculate category rankings using ALL products (not filtered)
-  const categoryGroups = {};
+  // Calculate subcategory rankings using ALL products (not filtered)
+  const subcategoryGroups = {};
   allProductMetrics.forEach(p => {
-    const cat = p.parentCategory || 'Uncategorized';
-    if (!categoryGroups[cat]) categoryGroups[cat] = [];
-    categoryGroups[cat].push(p);
+    const subcat = p.subcategory || 'Uncategorized';
+    if (!subcategoryGroups[subcat]) subcategoryGroups[subcat] = [];
+    subcategoryGroups[subcat].push(p);
   });
 
-  // Assign ranks based on full dataset
+  // Assign ranks based on full dataset (by subcategory)
   const rankingsMap = new Map();
-  Object.keys(categoryGroups).forEach(cat => {
-    categoryGroups[cat].sort((a, b) => b.totalSales - a.totalSales);
-    categoryGroups[cat].forEach((p, idx) => {
+  Object.keys(subcategoryGroups).forEach(subcat => {
+    subcategoryGroups[subcat].sort((a, b) => b.totalSales - a.totalSales);
+    const subcategoryTotal = subcategoryGroups[subcat].length;
+    subcategoryGroups[subcat].forEach((p, idx) => {
       rankingsMap.set(p.id, {
         categoryRank: idx + 1,
+        categoryTotal: subcategoryTotal,
         isTop10: idx < 10
       });
     });
@@ -1542,6 +1598,7 @@ export const getOrderingAnalytics = async ({
     const ranking = rankingsMap.get(p.id);
     if (ranking) {
       p.categoryRank = ranking.categoryRank;
+      p.categoryTotal = ranking.categoryTotal;
       p.isTop10 = ranking.isTop10;
     }
   });
