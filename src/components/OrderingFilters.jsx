@@ -13,52 +13,64 @@ const OrderingFilters = ({
   onClearOrder,
   onEnrichFormats,
   onSeedDistributors,
-  onSyncBrands,
-  brandScrollPosition,
-  onBrandScrollChange
+  onSyncBrands
 }) => {
   const brandScrollRef = useRef(null);
   const brandRefsMap = useRef({});
   const prevBrandsRef = useRef([]);
-  const prevScrollPositionRef = useRef(0);
+  const savedScrollPositionRef = useRef(0);
+  const isUserScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef(null);
 
   const brands = analytics?.filterOptions?.brands || [];
   
-  // Only update if brands actually changed (deep comparison)
+  // Check if brands actually changed (deep comparison)
   const brandsChanged = JSON.stringify(brands) !== JSON.stringify(prevBrandsRef.current);
-  const scrollPositionChanged = brandScrollPosition !== prevScrollPositionRef.current;
 
-  // Track scroll position and notify parent
+  // Save scroll position when user scrolls
   useEffect(() => {
     const handleScroll = () => {
-      if (brandScrollRef.current && onBrandScrollChange) {
-        onBrandScrollChange(brandScrollRef.current.scrollTop);
+      if (brandScrollRef.current) {
+        isUserScrollingRef.current = true;
+        savedScrollPositionRef.current = brandScrollRef.current.scrollTop;
+        
+        // Clear existing timeout
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+        
+        // Mark as not scrolling after 150ms of no scroll events
+        scrollTimeoutRef.current = setTimeout(() => {
+          isUserScrollingRef.current = false;
+        }, 150);
       }
     };
 
     const scrollElement = brandScrollRef.current;
     if (scrollElement) {
       scrollElement.addEventListener('scroll', handleScroll);
-      return () => scrollElement.removeEventListener('scroll', handleScroll);
+      return () => {
+        scrollElement.removeEventListener('scroll', handleScroll);
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+      };
     }
-  }, [onBrandScrollChange]);
+  }, []);
 
-  // Restore scroll position from parent state (only when brands actually change or scroll position updates)
+  // Restore scroll position only when brands list actually changes (not during user scrolling)
   useEffect(() => {
-    if (brandScrollRef.current && brandScrollPosition > 0 && (brandsChanged || scrollPositionChanged)) {
-      brandScrollRef.current.scrollTop = brandScrollPosition;
+    if (brandsChanged && !isUserScrollingRef.current && brandScrollRef.current) {
+      // Only restore if we have a saved position and brands list changed
+      if (savedScrollPositionRef.current > 0) {
+        brandScrollRef.current.scrollTop = savedScrollPositionRef.current;
+      }
       prevBrandsRef.current = brands;
-      prevScrollPositionRef.current = brandScrollPosition;
     }
-  }, [brands, brandScrollPosition, brandsChanged, scrollPositionChanged]);
+  }, [brands, brandsChanged]);
 
   const handleBrandClick = (brand, e) => {
     const isSelected = filters.brands.includes(brand);
-    
-    // Save current scroll position before changing filter
-    if (brandScrollRef.current && onBrandScrollChange) {
-      onBrandScrollChange(brandScrollRef.current.scrollTop);
-    }
     
     // Apply the filter
     if (e.ctrlKey || e.metaKey) {
@@ -89,15 +101,23 @@ const OrderingFilters = ({
     const newBrand = brands[newIndex];
     setFilters({ ...filters, brands: [newBrand] });
 
-    // Scroll to center the new selection
+    // Scroll to center the new selection (only when using navigation buttons)
     requestAnimationFrame(() => {
       const brandElement = brandRefsMap.current[newBrand];
-      if (brandElement) {
+      if (brandElement && brandScrollRef.current) {
+        // Temporarily disable user scrolling flag to allow programmatic scroll
+        isUserScrollingRef.current = false;
         brandElement.scrollIntoView({
           behavior: 'smooth',
           block: 'center',
           inline: 'nearest'
         });
+        // Update saved position after scroll completes
+        setTimeout(() => {
+          if (brandScrollRef.current) {
+            savedScrollPositionRef.current = brandScrollRef.current.scrollTop;
+          }
+        }, 300);
       }
     });
   };

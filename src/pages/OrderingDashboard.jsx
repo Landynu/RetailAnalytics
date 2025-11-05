@@ -81,7 +81,6 @@ const OrderingDashboard = () => {
 
   const [allProducts, setAllProducts] = useState([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [brandScrollPosition, setBrandScrollPosition] = useState(0);
 
   const debouncedFilters = useDebounce(filters, 300);
 
@@ -328,8 +327,6 @@ const OrderingDashboard = () => {
         onEnrichFormats={handleEnrichFormats}
         onSeedDistributors={handleSeedDistributors}
         onSyncBrands={handleSyncBrands}
-        brandScrollPosition={brandScrollPosition}
-        onBrandScrollChange={setBrandScrollPosition}
       />
 
       <div className="flex-1 overflow-y-auto min-w-0 relative">

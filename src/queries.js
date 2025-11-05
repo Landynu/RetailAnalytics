@@ -1752,14 +1752,16 @@ export const getOrderingAnalytics = async ({
     // Purchase orders already fetched in parallel above with sales queries
     // Build base purchase order map (all products)
     const baseLastPOMap = new Map();
-    allPOs.forEach(po => {
-      if (!baseLastPOMap.has(po.productId)) {
-        baseLastPOMap.set(po.productId, {
-          date: po.date,
-          qty: Math.abs(po.changeQty)
-        });
-      }
-    });
+    if (allPOs && Array.isArray(allPOs)) {
+      allPOs.forEach(po => {
+        if (!baseLastPOMap.has(po.productId)) {
+          baseLastPOMap.set(po.productId, {
+            date: po.date,
+            qty: Math.abs(po.changeQty)
+          });
+        }
+      });
+    }
 
     // Cache the base lastPOMap (non-blocking)
     const basePOsToCache = {
