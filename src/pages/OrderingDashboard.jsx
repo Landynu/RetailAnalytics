@@ -65,7 +65,6 @@ const OrderingDashboard = () => {
     resetColumnOrder,
     resetColumnWidths,
     resetColumnVisibility,
-    updateColumnWidth,
     hiddenColumns,
     toggleColumnVisibility
   } = useColumnOrdering(displayStores);
@@ -558,6 +557,38 @@ const OrderingDashboard = () => {
     return counts;
   }, [sortedProducts]);
 
+  // Calculate filtered location inventory counts (content-aware badges)
+  const filteredLocationInventoryCounts = React.useMemo(() => {
+    if (!displayStores || displayStores.length === 0 || !sortedProducts || sortedProducts.length === 0) {
+      return [];
+    }
+
+    const counts = new Map();
+    
+    // Initialize all stores with 0
+    displayStores.forEach(store => {
+      counts.set(store.id, 0);
+    });
+
+    // Count products with inventory at each location
+    sortedProducts.forEach(product => {
+      if (product.locationInventory) {
+        product.locationInventory.forEach(loc => {
+          if (loc.quantity > 0 && counts.has(loc.storeId)) {
+            counts.set(loc.storeId, counts.get(loc.storeId) + 1);
+          }
+        });
+      }
+    });
+
+    // Convert to array format matching locationInventoryCounts structure
+    return displayStores.map(store => ({
+      storeId: store.id,
+      storeName: store.name,
+      count: counts.get(store.id) || 0
+    }));
+  }, [sortedProducts, displayStores]);
+
   // Determine loading states for progressive rendering
   const isInitialPageLoad = isLoadingInitialPage && allProducts.length === 0;
   const isShowingInitialPage = hasInitialPageLoaded && !hasFullDataLoaded && isLoadingFullData;
@@ -755,7 +786,7 @@ const OrderingDashboard = () => {
                         sortConfig={sortConfig}
                         analytics={allAnalyticsData}
                         periodDays={allAnalyticsData?.periodDays || 14}
-                        onColumnResize={updateColumnWidth}
+                        filteredLocationCounts={filteredLocationInventoryCounts}
                       />
                       <tbody className="relative">
                         {sortedProducts.length === 0 && isInitialPageLoad ? (
