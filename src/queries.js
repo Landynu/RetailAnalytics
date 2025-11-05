@@ -1561,6 +1561,9 @@ export const getOrderingAnalytics = async ({
     [baseSalesTotalsKey, basePOsKey, baseRankingsKey],
     ['base:sales_totals', 'base:purchase_orders', 'base:rankings']
   );
+  
+  // If cached purchase orders exist but are empty, treat as cache miss to force refresh
+  const hasValidPOCache = cachedBasePOs && cachedBasePOs.lastPOMap && Object.keys(cachedBasePOs.lastPOMap).length > 0;
   let salesMap = null;
   let completeWeeksSet = null;
   let weeklySalesData = null;
@@ -1585,13 +1588,35 @@ export const getOrderingAnalytics = async ({
         salesMap.set(productId, baseSalesMap.get(productId));
       }
     });
-  } else {
+  }
+  
+  // Get all base product IDs (now that baseProducts is guaranteed to exist)
+  const allBaseProductIds = baseProducts ? baseProducts.map(p => p.id) : [];
+  
+  // Always fetch purchase orders if cache is invalid or missing
+  if (!hasValidPOCache && allBaseProductIds.length > 0) {
+    console.log(`[QUERY] Purchase orders | Cache invalid or empty, fetching fresh data for ${allBaseProductIds.length} products`);
+    allPOs = await timedQuery('purchase_orders', () =>
+      context.entities.InventoryMovement.findMany({
+        where: {
+          storeId: { in: storeIdList },
+          productId: { in: allBaseProductIds },
+          type: 'purchase order'
+        },
+        select: { productId: true, date: true, changeQty: true },
+        orderBy: { date: 'desc' }
+      }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
+    );
+    console.log(`[QUERY] Purchase orders | Fetched ${allPOs?.length || 0} PO records from DB`);
+  }
+  
+  if (!cachedBaseSales) {
     // Need to fetch from database - but we need ALL products, not just filtered ones
     // Fetch base data for all products matching baseProductWhere
-    const allBaseProductIds = baseProducts.map(p => p.id);
     
     // Parallelize ALL base data queries: sales, purchase orders, and rankings
-    const [salesQueryResults, allPOs, allRankingsSalesData] = await Promise.all([
+    // Note: Purchase orders already fetched above if cache was invalid
+    const [salesQueryResults, freshPOs, allRankingsSalesData] = await Promise.all([
       // Sales queries (weekly + movements)
       Promise.all([
         // Get sales totals from WeeklySalesSummary (complete weeks only, exclude current incomplete week)
@@ -1623,8 +1648,8 @@ export const getOrderingAnalytics = async ({
           }), { productIds: allBaseProductIds.length, stores: storeIdList.length, dateRange: `${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}` }
         ) : Promise.resolve([])
       ]),
-      // Purchase orders (independent, can run in parallel)
-      allBaseProductIds.length > 0 ? timedQuery('purchase_orders', () =>
+      // Purchase orders (only fetch if not already fetched above)
+      hasValidPOCache || allPOs ? Promise.resolve(allPOs || []) : (allBaseProductIds.length > 0 ? timedQuery('purchase_orders', () =>
         context.entities.InventoryMovement.findMany({
           where: {
             storeId: { in: storeIdList },
@@ -1634,7 +1659,7 @@ export const getOrderingAnalytics = async ({
           select: { productId: true, date: true, changeQty: true },
           orderBy: { date: 'desc' }
         }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
-      ) : Promise.resolve([]),
+      ) : Promise.resolve([])),
       // Rankings sales (independent, can run in parallel)
       allBaseProductIds.length > 0 ? timedQuery('rankings_sales', () =>
         context.entities.WeeklySalesSummary.groupBy({
@@ -1731,39 +1756,52 @@ export const getOrderingAnalytics = async ({
 
   // Get purchase orders (base cache - already checked above)
   let lastPOMap = new Map();
+  let baseLastPOMap = new Map();
   
-  if (cachedBasePOs) {
+  // Check if we should use cached PO data or fetch fresh
+  const useCachedPOs = cachedBasePOs && cachedBasePOs.lastPOMap && Object.keys(cachedBasePOs.lastPOMap).length > 0;
+  
+  if (useCachedPOs) {
     // Reconstruct base lastPOMap from cache, then filter to filtered products
-    const baseLastPOMap = new Map();
     if (cachedBasePOs.lastPOMap) {
       Object.entries(cachedBasePOs.lastPOMap).forEach(([productId, poData]) => {
-        baseLastPOMap.set(parseInt(productId), {
+        const pid = parseInt(productId);
+        baseLastPOMap.set(pid, {
           date: new Date(poData.date),
           qty: poData.qty
         });
       });
     }
     
-    // Filter to only include filtered products
+    console.log(`[QUERY] Purchase orders | Cached base POs: ${baseLastPOMap.size} | Sample product IDs in cache: ${Array.from(baseLastPOMap.keys()).slice(0, 5).join(', ')}`);
+    console.log(`[QUERY] Purchase orders | Sample filtered product IDs: ${allFilteredProductIds.slice(0, 5).join(', ')}`);
+    
+    // Filter to only include filtered products (when loadAll=true, this includes all filtered products)
+    // Ensure product IDs are integers for comparison
     allFilteredProductIds.forEach(productId => {
-      if (baseLastPOMap.has(productId)) {
-        lastPOMap.set(productId, baseLastPOMap.get(productId));
+      const pid = parseInt(productId);
+      if (baseLastPOMap.has(pid)) {
+        lastPOMap.set(pid, baseLastPOMap.get(pid));
       }
     });
   } else {
     // Purchase orders already fetched in parallel above with sales queries
     // Build base purchase order map (all products)
-    const baseLastPOMap = new Map();
     if (allPOs && Array.isArray(allPOs)) {
       allPOs.forEach(po => {
-        if (!baseLastPOMap.has(po.productId)) {
-          baseLastPOMap.set(po.productId, {
-            date: po.date,
+        // Keep only the most recent purchase order per product (already ordered by date desc)
+        const pid = parseInt(po.productId);
+        if (!baseLastPOMap.has(pid)) {
+          baseLastPOMap.set(pid, {
+            date: po.date instanceof Date ? po.date : new Date(po.date),
             qty: Math.abs(po.changeQty)
           });
         }
       });
     }
+
+    console.log(`[QUERY] Purchase orders | Fresh POs from DB: ${baseLastPOMap.size} | Sample product IDs: ${Array.from(baseLastPOMap.keys()).slice(0, 5).join(', ')}`);
+    console.log(`[QUERY] Purchase orders | Sample filtered product IDs: ${allFilteredProductIds.slice(0, 5).join(', ')}`);
 
     // Cache the base lastPOMap (non-blocking)
     const basePOsToCache = {
@@ -1778,13 +1816,17 @@ export const getOrderingAnalytics = async ({
       console.warn(`Cache write failed for base:purchase_orders:`, err.message)
     );
     
-    // Filter to only include filtered products
+    // Filter to only include filtered products (when loadAll=true, this includes all filtered products)
+    // Ensure product IDs are integers for comparison
     allFilteredProductIds.forEach(productId => {
-      if (baseLastPOMap.has(productId)) {
-        lastPOMap.set(productId, baseLastPOMap.get(productId));
+      const pid = parseInt(productId);
+      if (baseLastPOMap.has(pid)) {
+        lastPOMap.set(pid, baseLastPOMap.get(pid));
       }
     });
   }
+  
+  console.log(`[QUERY] Purchase orders | Final lastPOMap size: ${lastPOMap.size} | filtered products: ${allFilteredProductIds.length} | Base PO map size: ${baseLastPOMap.size}`);
 
   // Get recent sales and location counts in parallel
   // Note: Purchase orders are already handled above via base cache (cachedBasePOs)
@@ -1986,9 +2028,9 @@ export const getOrderingAnalytics = async ({
     
     // Days since last purchase order (from separate PO query)
     const lastPOData = lastPOMap.get(product.id);
-    const lastPODate = lastPOData ? lastPOData.date : null;
+    const lastPODate = lastPOData ? (lastPOData.date instanceof Date ? lastPOData.date : new Date(lastPOData.date)) : null;
     const lastPOQty = lastPOData ? lastPOData.qty : null;
-    const daysSinceLastPO = lastPODate ? Math.floor((endDate - lastPODate) / (24 * 60 * 60 * 1000)) : null;
+    const daysSinceLastPO = lastPODate && !isNaN(lastPODate.getTime()) ? Math.floor((endDate - lastPODate) / (24 * 60 * 60 * 1000)) : null;
     
     // Suggested order quantity (2-week buffer)
     const twoWeekDemand = velocity * 2;

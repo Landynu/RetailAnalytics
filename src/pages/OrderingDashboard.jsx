@@ -416,6 +416,47 @@ const OrderingDashboard = () => {
 
   const maxTotalSales = sortedProducts.length > 0 ? Math.max(...sortedProducts.map(p => p.totalSales || 0)) : 0;
 
+  // Calculate strain counts from filtered products with inventory at primary store
+  const primaryStoreStrainCounts = React.useMemo(() => {
+    const counts = { Hybrid: 0, Sativa: 0, Indica: 0 };
+    const primaryStoreId = allAnalyticsData?.primaryStore?.id;
+    
+    if (!primaryStoreId) return counts;
+    
+    sortedProducts.forEach(product => {
+      // Check if product has inventory at primary store
+      const hasInventoryAtPrimary = product.locationInventory?.some(
+        loc => loc.storeId === primaryStoreId && loc.quantity > 0
+      );
+      
+      if (hasInventoryAtPrimary) {
+        const strain = product.strainType;
+        if (strain && strain !== 'N/A' && counts[strain] !== undefined) {
+          counts[strain]++;
+        }
+      }
+    });
+    return counts;
+  }, [sortedProducts, allAnalyticsData?.primaryStore?.id]);
+
+  // Calculate total strain counts from filtered products with inventory at any location
+  const totalStrainCounts = React.useMemo(() => {
+    const counts = { Hybrid: 0, Sativa: 0, Indica: 0 };
+    
+    sortedProducts.forEach(product => {
+      // Check if product has inventory at any location
+      const hasInventory = product.locationInventory?.some(loc => loc.quantity > 0);
+      
+      if (hasInventory) {
+        const strain = product.strainType;
+        if (strain && strain !== 'N/A' && counts[strain] !== undefined) {
+          counts[strain]++;
+        }
+      }
+    });
+    return counts;
+  }, [sortedProducts]);
+
   // Show skeleton loading only on initial page load
   const isInitialLoad = analyticsLoading && allProducts.length === 0;
   // No refetching during filter changes - filters are client-side now
@@ -533,38 +574,47 @@ const OrderingDashboard = () => {
 
           {/* Strain Classification Cards */}
           <div className="grid grid-cols-3 gap-4">
-            <Card className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
-              <div className="text-center">
-                <div className="text-purple-600 font-semibold text-sm mb-1">Hybrid</div>
-                <div className="text-3xl font-bold text-purple-800">
-                  {allAnalyticsData?.primaryStore && allAnalyticsData?.primaryStoreStrainCounts?.Hybrid > 0
-                    ? `${allAnalyticsData.primaryStoreStrainCounts.Hybrid} (${allAnalyticsData.strainCounts.Hybrid || 0})`
-                    : allAnalyticsData?.strainCounts?.Hybrid || 0
-                  }
-                </div>
-                <div className="text-purple-600 text-xs mt-1">products</div>
-              </div>
-            </Card>
+            {/* Sativa */}
             <Card className="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200">
               <div className="text-center">
                 <div className="text-emerald-600 font-semibold text-sm mb-1">Sativa</div>
                 <div className="text-3xl font-bold text-emerald-800">
-                  {allAnalyticsData?.primaryStore && allAnalyticsData?.primaryStoreStrainCounts?.Sativa > 0
-                    ? `${allAnalyticsData.primaryStoreStrainCounts.Sativa} (${allAnalyticsData.strainCounts.Sativa || 0})`
-                    : allAnalyticsData?.strainCounts?.Sativa || 0
-                  }
+                  {primaryStoreStrainCounts.Sativa}
+                  {totalStrainCounts.Sativa > primaryStoreStrainCounts.Sativa && (
+                    <span className="text-base font-normal text-emerald-700 ml-2">
+                      ({totalStrainCounts.Sativa})
+                    </span>
+                  )}
                 </div>
                 <div className="text-emerald-600 text-xs mt-1">products</div>
               </div>
             </Card>
+            {/* Hybrid */}
+            <Card className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+              <div className="text-center">
+                <div className="text-purple-600 font-semibold text-sm mb-1">Hybrid</div>
+                <div className="text-3xl font-bold text-purple-800">
+                  {primaryStoreStrainCounts.Hybrid}
+                  {totalStrainCounts.Hybrid > primaryStoreStrainCounts.Hybrid && (
+                    <span className="text-base font-normal text-purple-700 ml-2">
+                      ({totalStrainCounts.Hybrid})
+                    </span>
+                  )}
+                </div>
+                <div className="text-purple-600 text-xs mt-1">products</div>
+              </div>
+            </Card>
+            {/* Indica */}
             <Card className="p-4 bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
               <div className="text-center">
                 <div className="text-amber-600 font-semibold text-sm mb-1">Indica</div>
                 <div className="text-3xl font-bold text-amber-800">
-                  {allAnalyticsData?.primaryStore && allAnalyticsData?.primaryStoreStrainCounts?.Indica > 0
-                    ? `${allAnalyticsData.primaryStoreStrainCounts.Indica} (${allAnalyticsData.strainCounts.Indica || 0})`
-                    : allAnalyticsData?.strainCounts?.Indica || 0
-                  }
+                  {primaryStoreStrainCounts.Indica}
+                  {totalStrainCounts.Indica > primaryStoreStrainCounts.Indica && (
+                    <span className="text-base font-normal text-amber-700 ml-2">
+                      ({totalStrainCounts.Indica})
+                    </span>
+                  )}
                 </div>
                 <div className="text-amber-600 text-xs mt-1">products</div>
               </div>
