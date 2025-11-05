@@ -250,6 +250,138 @@ export const analyzeInventoryExport = async ({ csvData, autoCreateStores = true 
   };
 };
 
+// Helper function to sync categories in background (optimized with bulk operations)
+async function syncCategoriesInBackground(context, updatedProducts) {
+  const syncStartTime = Date.now();
+  const syncStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+  console.log(`[${syncStartTimestamp}] 🔄 Background category sync: Processing ${updatedProducts.length} products...`);
+  
+  try {
+    // Fetch all products that need category syncing
+    const gtins = updatedProducts.map(p => p.gtin).filter(Boolean);
+    if (gtins.length === 0) {
+      console.log(`[${syncStartTimestamp}] ⚠️ No products to sync (no GTINs)`);
+      return;
+    }
+    
+    const productsToSync = await context.entities.ProductCatalog.findMany({
+      where: { gtin: { in: gtins } },
+      select: { id: true, gtin: true, parentCategory: true, subcategory: true }
+    });
+    
+    if (productsToSync.length === 0) {
+      console.log(`[${syncStartTimestamp}] ⚠️ No products found in database to sync`);
+      return;
+    }
+    
+    // Fetch ALL category definitions and subcategories once (bulk load)
+    const allCategoryDefs = await context.entities.CategoryDefinition.findMany({
+      where: { isActive: true },
+      include: {
+        subcategories: {
+          where: { isActive: true }
+        }
+      }
+    });
+    
+    // Build lookup maps for fast matching
+    const categoryMap = new Map(); // category name -> CategoryDefinition
+    const subcategoryMap = new Map(); // "categoryId:subcategoryName" -> CategorySubcategory
+    
+    allCategoryDefs.forEach(cat => {
+      categoryMap.set(cat.name.toLowerCase().trim(), cat);
+      cat.subcategories.forEach(sub => {
+        const key = `${cat.id}:${sub.name.toLowerCase().trim()}`;
+        subcategoryMap.set(key, sub);
+      });
+    });
+    
+    const syncTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[${syncTimestamp}] Loaded ${allCategoryDefs.length} category definitions, processing ${productsToSync.length} products...`);
+    
+    // Process products in batches and collect updates
+    const categoryUpdates = []; // { productId, categoryDefinitionId, subcategoryId }
+    const batchSize = 100;
+    let processed = 0;
+    
+    for (let i = 0; i < productsToSync.length; i += batchSize) {
+      const batch = productsToSync.slice(i, i + batchSize);
+      
+      for (const product of batch) {
+        if (!product.parentCategory) continue;
+        
+        const categoryName = product.parentCategory.toLowerCase().trim();
+        const categoryDef = categoryMap.get(categoryName);
+        
+        if (categoryDef) {
+          const update = {
+            productId: product.id,
+            categoryDefinitionId: categoryDef.id,
+            subcategoryId: null
+          };
+          
+          // Try to match subcategory
+          if (product.subcategory && categoryDef.subcategories) {
+            const subcategoryName = product.subcategory.toLowerCase().trim();
+            const subKey = `${categoryDef.id}:${subcategoryName}`;
+            const subcategoryDef = subcategoryMap.get(subKey);
+            
+            if (subcategoryDef) {
+              update.subcategoryId = subcategoryDef.id;
+            }
+          }
+          
+          categoryUpdates.push(update);
+        }
+      }
+      
+      processed += batch.length;
+      if (processed % 500 === 0 || processed === productsToSync.length) {
+        const progressTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+        const percentage = ((processed / productsToSync.length) * 100).toFixed(1);
+        console.log(`[${progressTimestamp}] Category sync: Processed ${processed}/${productsToSync.length} products (${percentage}%) - ${categoryUpdates.length} matches found`);
+      }
+    }
+    
+    // Bulk update products in batches
+    if (categoryUpdates.length > 0) {
+      const updateTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+      console.log(`[${updateTimestamp}] Applying ${categoryUpdates.length} category updates in batches...`);
+      
+      const updateBatchSize = 100;
+      for (let i = 0; i < categoryUpdates.length; i += updateBatchSize) {
+        const batch = categoryUpdates.slice(i, i + updateBatchSize);
+        
+        await Promise.all(batch.map(update =>
+          context.entities.ProductCatalog.update({
+            where: { id: update.productId },
+            data: {
+              categoryDefinitionId: update.categoryDefinitionId,
+              subcategoryId: update.subcategoryId
+            }
+          })
+        ));
+        
+        if ((i + updateBatchSize) % 500 === 0 || i + updateBatchSize >= categoryUpdates.length) {
+          const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+          const totalUpdated = Math.min(i + updateBatchSize, categoryUpdates.length);
+          const percentage = ((totalUpdated / categoryUpdates.length) * 100).toFixed(1);
+          console.log(`[${batchTimestamp}] Updated: ${totalUpdated}/${categoryUpdates.length} products (${percentage}%)`);
+        }
+      }
+    }
+    
+    const syncDuration = ((Date.now() - syncStartTime) / 1000).toFixed(2);
+    const syncCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[${syncCompleteTimestamp}] ✅ Background category sync complete: ${categoryUpdates.length} products updated in ${syncDuration}s`);
+    
+  } catch (error) {
+    const errorTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.error(`[${errorTimestamp}] ❌ Background category sync error:`, error.message);
+    throw error;
+  }
+}
+
 export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }, context) => {
   if (!context.user) { throw new HttpError(401) }
 
@@ -521,8 +653,12 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   const newProducts = [];
   const existingProductsToUpdate = [];
   const unchangedProducts = [];
+  
+  const categorizeTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+  console.log(`[${categorizeTimestamp}] Categorizing ${products.length} products...`);
 
-  for (const product of products) {
+  for (let i = 0; i < products.length; i++) {
+    const product = products[i];
     const existing = existingProductsMap.get(product.gtin);
     if (!existing) {
       newProducts.push({
@@ -579,7 +715,17 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         unchangedProducts.push(product);
       }
     }
+    
+    // Log progress every 1000 products
+    if ((i + 1) % 1000 === 0 || i === products.length - 1) {
+      const progressTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+      const percentage = (((i + 1) / products.length) * 100).toFixed(1);
+      console.log(`[${progressTimestamp}] Categorized ${i + 1}/${products.length} products (${percentage}%) - ${newProducts.length} new, ${existingProductsToUpdate.length} to update, ${unchangedProducts.length} unchanged`);
+    }
   }
+  
+  const categorizeCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+  console.log(`[${categorizeCompleteTimestamp}] ✓ Categorization complete: ${newProducts.length} new, ${existingProductsToUpdate.length} to update, ${unchangedProducts.length} unchanged`);
 
   // Helper to truncate long text fields
   const truncateField = (text, maxLength = 1000) => {
@@ -590,6 +736,8 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   // Batch create new products - PostgreSQL can handle much larger batches
   let createdProducts = [];
   if (newProducts.length > 0) {
+    const createStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[${createStartTimestamp}] Creating ${newProducts.length} new products in batches...`);
     const chunkSize = 1000; // Increased from 100 for PostgreSQL
     for (let i = 0; i < newProducts.length; i += chunkSize) {
       const chunk = newProducts.slice(i, i + chunkSize).map(p => ({
@@ -599,11 +747,19 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         imageMigrationStatus: p.imageUrl ? 'PENDING' : null
       }));
       
+      const batchStartTime = Date.now();
       try {
         await context.entities.ProductCatalog.createMany({
           data: chunk,
           skipDuplicates: true // PostgreSQL supports this
         });
+        
+        const batchEndTime = Date.now();
+        const batchDuration = ((batchEndTime - batchStartTime) / 1000).toFixed(2);
+        const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+        const totalProcessed = Math.min(i + chunkSize, newProducts.length);
+        const percentage = ((totalProcessed / newProducts.length) * 100).toFixed(1);
+        console.log(`[${batchTimestamp}] Created batch: ${totalProcessed}/${newProducts.length} products (${percentage}%) - ${batchDuration}s`);
       } catch (error) {
         console.error(`Error in product creation batch: ${error.message}`);
         // If batch fails, try smaller chunks
@@ -622,18 +778,28 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       }
     }
     
+    const createCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[${createCompleteTimestamp}] ✓ Product creation complete, fetching IDs...`);
+    
     // Fetch the created products to get their IDs
     createdProducts = await context.entities.ProductCatalog.findMany({
       where: { gtin: { in: newProducts.map(p => p.gtin) } }
     });
+    
+    const fetchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[${fetchTimestamp}] ✓ Fetched ${createdProducts.length} product IDs`);
   }
 
   // Batch update existing products - PostgreSQL handles this well
   // Preserve enriched fields (thc, cbd, cannabinoidProfile, strainType, classificationId, format, distributorId, description, imageUrl, categoryDefinitionId, subcategoryId)
   if (existingProductsToUpdate.length > 0) {
+    const updateStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[${updateStartTimestamp}] Updating ${existingProductsToUpdate.length} existing products in batches...`);
     const chunkSize = 500; // Increased from 50 for PostgreSQL
     for (let i = 0; i < existingProductsToUpdate.length; i += chunkSize) {
       const chunk = existingProductsToUpdate.slice(i, i + chunkSize);
+      const batchStartTime = Date.now();
+      
       await Promise.all(chunk.map(async product => {
         // Fetch existing product to preserve enriched fields
         const existing = await context.entities.ProductCatalog.findUnique({
@@ -716,55 +882,49 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           }
         });
       }));
+      
+      const batchEndTime = Date.now();
+      const batchDuration = ((batchEndTime - batchStartTime) / 1000).toFixed(2);
+      const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+      const totalProcessed = Math.min(i + chunkSize, existingProductsToUpdate.length);
+      const percentage = ((totalProcessed / existingProductsToUpdate.length) * 100).toFixed(1);
+      console.log(`[${batchTimestamp}] Updated batch: ${totalProcessed}/${existingProductsToUpdate.length} products (${percentage}%) - ${batchDuration}s`);
     }
     
-    // After updating products, attempt to sync CSV category strings to category definitions
-    const updatedProducts = await context.entities.ProductCatalog.findMany({
-      where: { gtin: { in: existingProductsToUpdate.map(p => p.gtin) } },
-      select: { id: true, gtin: true, parentCategory: true, subcategory: true }
-    });
+    const updateCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[${updateCompleteTimestamp}] ✓ Product updates complete`);
     
-    // Sync categories to definitions
-    for (const updatedProduct of updatedProducts) {
-      if (updatedProduct.parentCategory) {
-        const categoryDef = await context.entities.CategoryDefinition.findFirst({
-          where: { name: updatedProduct.parentCategory }
-        });
-        
-        if (categoryDef) {
-          await context.entities.ProductCatalog.update({
-            where: { id: updatedProduct.id },
-            data: { categoryDefinitionId: categoryDef.id }
-          });
-          
-          // If subcategory matches, update that too
-          if (updatedProduct.subcategory) {
-            const subcategoryDef = await context.entities.CategorySubcategory.findFirst({
-              where: {
-                categoryId: categoryDef.id,
-                name: updatedProduct.subcategory
-              }
-            });
-            
-            if (subcategoryDef) {
-              await context.entities.ProductCatalog.update({
-                where: { id: updatedProduct.id },
-                data: { subcategoryId: subcategoryDef.id }
-              });
-            }
-          }
-        }
-      }
+    // Category syncing will be done in background - don't block upload response
+    const updatedProducts = existingProductsToUpdate.map(p => ({
+      gtin: p.gtin,
+      parentCategory: p.parentCategory,
+      subcategory: p.subcategory
+    }));
+    
+    // Fire-and-forget: Sync categories in background
+    if (updatedProducts.length > 0) {
+      const syncStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+      console.log(`[${syncStartTimestamp}] 🔄 Starting background category sync for ${updatedProducts.length} products...`);
+      
+      // Run in background (don't await)
+      syncCategoriesInBackground(context, updatedProducts).catch(err => {
+        const errorTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+        console.error(`[${errorTimestamp}] ❌ Background category sync failed:`, err.message);
+      });
     }
   }
 
   // Update lastSeen for unchanged products
   if (unchangedProducts.length > 0) {
+    const unchangedTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[${unchangedTimestamp}] Updating lastSeen for ${unchangedProducts.length} unchanged products...`);
     const unchangedGtins = unchangedProducts.map(p => p.gtin);
     await context.entities.ProductCatalog.updateMany({
       where: { gtin: { in: unchangedGtins } },
       data: { lastSeen: new Date() }
     });
+    const unchangedCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[${unchangedCompleteTimestamp}] ✓ Updated lastSeen for ${unchangedProducts.length} products`);
   }
   
   const productTimestamp = new Date().toISOString().split('T')[1].split('.')[0];

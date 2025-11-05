@@ -2,7 +2,7 @@ import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Loader2, Clock, Terminal, Database } from 'lucide-react';
 
-const UploadProgressModal = ({ isOpen, uploadType, fileSize }) => {
+const UploadProgressModal = ({ isOpen, onClose, uploadType, fileSize }) => {
   // Calculate estimated time based on file size
   const estimateTime = (sizeInMB) => {
     if (sizeInMB < 1) return '10-30 seconds';
@@ -24,7 +24,7 @@ const UploadProgressModal = ({ isOpen, uploadType, fileSize }) => {
   const typeLabel = getTypeLabel(uploadType);
 
   return (
-    <Dialog open={isOpen}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center text-xl">
@@ -32,7 +32,7 @@ const UploadProgressModal = ({ isOpen, uploadType, fileSize }) => {
             Processing {typeLabel}
           </DialogTitle>
           <DialogDescription>
-            Your data is being processed on the server. You can close this window - processing will continue in the background.
+            Your data is being processed on the server. You can close this dialog (click outside or press ESC) - processing will continue in the background. Check the server console for detailed progress logs.
           </DialogDescription>
         </DialogHeader>
 

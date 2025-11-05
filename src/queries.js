@@ -1959,7 +1959,7 @@ export const getOrderingAnalytics = async ({
       Object.entries(cachedBaseSales.salesMap).forEach(([productId, sales]) => {
         fullBaseSalesMap.set(parseInt(productId), sales);
       });
-    } else if (salesMap) {
+    } else if (salesMap && allRankingsSalesData) {
       // Rankings sales data already fetched in parallel above with sales queries
       // Use the data we already have
 

@@ -423,6 +423,15 @@ export async function warmOrderingAnalyticsCache(context, storeIds, startDate, e
     return;
   }
   
+  // Validate required entities exist
+  const requiredEntities = ['WeeklySalesSummary', 'ProductCatalog', 'InventoryMovement'];
+  for (const entityName of requiredEntities) {
+    if (!context.entities[entityName]) {
+      console.error(`[CACHE] ❌ Cache warm failed: Missing entity '${entityName}' in context.entities`);
+      return;
+    }
+  }
+  
   try {
     // Calculate date ranges
     const thirtyDaysAgo = new Date();

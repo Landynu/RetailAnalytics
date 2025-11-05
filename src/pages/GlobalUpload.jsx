@@ -435,37 +435,47 @@ const GlobalUploadPage = () => {
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Tab Navigation */}
-          <div className="flex space-x-1 bg-muted p-1 rounded-lg">
+          <div className="flex space-x-1 border-b border-border">
             <Button
               variant={activeTab === 'export' ? 'default' : 'ghost'}
-              size="sm"
+              size="default"
               onClick={() => setActiveTab('export')}
-              className="flex items-center flex-1"
+              className={`flex items-center flex-1 rounded-b-none ${
+                activeTab === 'export' 
+                  ? 'bg-primary text-primary-foreground shadow-sm border-b-2 border-b-primary' 
+                  : 'hover:bg-muted/50'
+              }`}
             >
               <Database className="h-4 w-4 mr-2" />
               Inventory Export
             </Button>
             <Button
               variant={activeTab === 'logs' ? 'default' : 'ghost'}
-              size="sm"
+              size="default"
               onClick={() => setActiveTab('logs')}
-              className="flex items-center flex-1"
+              className={`flex items-center flex-1 rounded-b-none ${
+                activeTab === 'logs' 
+                  ? 'bg-primary text-primary-foreground shadow-sm border-b-2 border-b-primary' 
+                  : 'hover:bg-muted/50'
+              }`}
             >
               <TrendingUp className="h-4 w-4 mr-2" />
               Inventory Logs
             </Button>
             <Button
               variant={activeTab === 'catalog' ? 'default' : 'ghost'}
-              size="sm"
+              size="default"
               onClick={() => setActiveTab('catalog')}
-              className="flex items-center flex-1"
+              className={`flex items-center flex-1 rounded-b-none ${
+                activeTab === 'catalog' 
+                  ? 'bg-primary text-primary-foreground shadow-sm border-b-2 border-b-primary' 
+                  : 'hover:bg-muted/50'
+              }`}
             >
               <Store className="h-4 w-4 mr-2" />
               Product Catalog
             </Button>
           </div>
-
-          <Separator />
 
           {/* Export Tab */}
           {activeTab === 'export' && (
@@ -513,19 +523,26 @@ const GlobalUploadPage = () => {
                   Expected columns: Product Name, Barcode, Category, Brand, Retail price, Wholesale cost, and location columns
                 </p>
               </div>
-              <Button onClick={handleExportUpload} disabled={isLoading || (!exportData.trim() && !exportFile)} className="flex items-center">
-                {isLoading ? (
-                  <>
-                    <div className="animate-spin h-4 w-4 mr-2 border-2 border-current border-t-transparent rounded-full" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Database className="h-4 w-4 mr-2" />
-                    Process Inventory Export
-                  </>
-                )}
-              </Button>
+              <div className="flex justify-end pt-4">
+                <Button 
+                  onClick={handleExportUpload} 
+                  disabled={isLoading || (!exportData.trim() && !exportFile)} 
+                  size="lg"
+                  className="flex items-center bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-8 py-6 text-base shadow-lg"
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="animate-spin h-5 w-5 mr-2 border-2 border-current border-t-transparent rounded-full" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Database className="h-5 w-5 mr-2" />
+                      Process Inventory Export
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           )}
 
@@ -574,19 +591,26 @@ const GlobalUploadPage = () => {
                     Expected columns: Date, Type, SKU, Barcode, Product, Employee, Location, Opening, Change, Closing, Notes
                   </p>
                 </div>
-                <Button onClick={handleLogsUpload} disabled={isLoading || (!logsData.trim() && !logsFile)} className="flex items-center">
-                  {isLoading ? (
-                    <>
-                      <div className="animate-spin h-4 w-4 mr-2 border-2 border-current border-t-transparent rounded-full" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <TrendingUp className="h-4 w-4 mr-2" />
-                      Process Single File
-                    </>
-                  )}
-                </Button>
+                <div className="flex justify-end pt-4">
+                  <Button 
+                    onClick={handleLogsUpload} 
+                    disabled={isLoading || (!logsData.trim() && !logsFile)} 
+                    size="lg"
+                    className="flex items-center bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-8 py-6 text-base shadow-lg"
+                  >
+                    {isLoading ? (
+                      <>
+                        <div className="animate-spin h-5 w-5 mr-2 border-2 border-current border-t-transparent rounded-full" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <TrendingUp className="h-5 w-5 mr-2" />
+                        Process Single File
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
 
               <Separator />
@@ -718,16 +742,17 @@ const GlobalUploadPage = () => {
                       <Button 
                         onClick={processBulkLogs} 
                         disabled={isBulkProcessing || bulkLogsFiles.length === 0}
-                        className="flex items-center"
+                        size="lg"
+                        className="flex items-center bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-8 py-6 text-base shadow-lg"
                       >
                         {isBulkProcessing ? (
                           <>
-                            <div className="animate-spin h-4 w-4 mr-2 border-2 border-current border-t-transparent rounded-full" />
+                            <div className="animate-spin h-5 w-5 mr-2 border-2 border-current border-t-transparent rounded-full" />
                             Processing {bulkProgress.current}/{bulkProgress.total}...
                           </>
                         ) : (
                           <>
-                            <Upload className="h-4 w-4 mr-2" />
+                            <Upload className="h-5 w-5 mr-2" />
                             Upload All Files ({bulkLogsFiles.length})
                           </>
                         )}
@@ -828,19 +853,26 @@ const GlobalUploadPage = () => {
                   Expected columns: Product Name, Barcode, Category, Brand, Retail price, Wholesale cost, Description, Image URL
                 </p>
               </div>
-              <Button onClick={handleCatalogUpload} disabled={isLoading || (!catalogData.trim() && !catalogFile)} className="flex items-center">
-                {isLoading ? (
-                  <>
-                    <div className="animate-spin h-4 w-4 mr-2 border-2 border-current border-t-transparent rounded-full" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Store className="h-4 w-4 mr-2" />
-                    Process Product Catalog
-                  </>
-                )}
-              </Button>
+              <div className="flex justify-end pt-4">
+                <Button 
+                  onClick={handleCatalogUpload} 
+                  disabled={isLoading || (!catalogData.trim() && !catalogFile)} 
+                  size="lg"
+                  className="flex items-center bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-8 py-6 text-base shadow-lg"
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="animate-spin h-5 w-5 mr-2 border-2 border-current border-t-transparent rounded-full" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Store className="h-5 w-5 mr-2" />
+                      Process Product Catalog
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           )}
 
@@ -871,6 +903,7 @@ const GlobalUploadPage = () => {
 
       <UploadProgressModal
         isOpen={showProgressModal}
+        onClose={() => setShowProgressModal(false)}
         uploadType={uploadType}
         fileSize={currentFileSize}
       />
