@@ -188,7 +188,7 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
       case 'daysSinceLastPO':
         return (
           <td key={column.id} style={cellStyle} className="px-3 py-3 text-right border text-base">
-            {product.daysSinceLastPO !== null ? (
+            {product.daysSinceLastPO !== null && product.daysSinceLastPO !== undefined ? (
               <div className={product.daysSinceLastPO > 90 ? 'text-orange-600 font-semibold' : ''}>
                 <span>{product.daysSinceLastPO}d</span>
                 {product.lastPOQty && <span className="text-xs text-muted-foreground ml-1">({product.lastPOQty})</span>}

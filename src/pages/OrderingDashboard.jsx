@@ -9,10 +9,22 @@ import LocationSelector from '../components/LocationSelector';
 import DateRangeFilter from '../components/DateRangeFilter';
 import FilterDropdown from '../components/FilterDropdown';
 import { Package, Tag, RotateCcw } from 'lucide-react';
-import { useDebounce } from '../lib/useDebounce';
 import DataLoadingOverlay from '../components/DataLoadingOverlay';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 import { arrayMove } from '@dnd-kit/sortable';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  horizontalListSortingStrategy,
+} from '@dnd-kit/sortable';
 import { useColumnOrdering } from '../lib/useColumnOrdering';
 import OrderingFilters from '../components/OrderingFilters';
 import OrderingTableHeader from '../components/OrderingTableHeader';
@@ -74,26 +86,20 @@ const OrderingDashboard = () => {
     distributors: []
   });
 
-  const [pagination, setPagination] = useState({
-    offset: 0,
-    limit: 100
-  });
-
   const [allProducts, setAllProducts] = useState([]);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-
-  const debouncedFilters = useDebounce(filters, 300);
+  const [allAnalyticsData, setAllAnalyticsData] = useState(null);
 
   const includeHiddenCategories = visibleHiddenCategories.size > 0;
 
+  // Only refetch when storeIds, dateRange, or includeHiddenCategories changes
+  // Filters are handled client-side, so they don't trigger refetch
   const { data: analytics, isLoading: analyticsLoading, refetch: refetchAnalytics } = useQuery(
     getOrderingAnalytics,
     { 
       storeIds: selectedStoreIds, 
       dateRange, 
-      filters: debouncedFilters,
-      limit: pagination.limit,
-      offset: pagination.offset,
+      filters: {}, // Empty filters - we'll filter client-side
+      loadAll: true, // Load all products at once
       includeHiddenCategories
     }
   );
@@ -101,34 +107,54 @@ const OrderingDashboard = () => {
   const { data: worksheet } = useQuery(getOrCreateOrderWorksheet);
   const { data: allDistributors } = useQuery(getDistributors);
 
-  // Auto-deselect brands that are no longer in the eligible brand list
+  // Store all analytics data when loaded
   useEffect(() => {
-    if (analytics?.filterOptions?.brands) {
-      const eligibleBrands = new Set(analytics.filterOptions.brands);
-      const stillValid = filters.brands.filter(b => eligibleBrands.has(b));
-      
-      if (stillValid.length !== filters.brands.length) {
-        setFilters(prev => ({ ...prev, brands: stillValid }));
-      }
+    if (analytics) {
+      setAllAnalyticsData(analytics);
+      setAllProducts(analytics.products || []);
     }
-  }, [analytics?.filterOptions?.brands]);
+  }, [analytics]);
 
-  // Reset pagination when filters change
-  useEffect(() => {
-    setPagination({ offset: 0, limit: 100 });
-  }, [debouncedFilters, selectedStoreIds, dateRange, includeHiddenCategories]);
-
-  // Accumulate products when pagination changes
-  useEffect(() => {
-    if (analytics?.products) {
-      if (pagination.offset === 0) {
-        setAllProducts(analytics.products);
-      } else {
-        setAllProducts(prev => [...prev, ...analytics.products]);
+  // Client-side filtering function (matches backend filterProductsInMemory logic)
+  const filterProductsClientSide = React.useCallback((products, filters) => {
+    return products.filter(product => {
+      if (filters.brands && filters.brands.length > 0) {
+        if (!filters.brands.includes(product.brand)) return false;
       }
-      setIsLoadingMore(false);
-    }
-  }, [analytics?.products, pagination.offset]);
+      if (filters.categories && filters.categories.length > 0) {
+        if (!filters.categories.includes(product.parentCategory)) return false;
+      }
+      if (filters.subcategories && filters.subcategories.length > 0) {
+        if (!filters.subcategories.includes(product.subcategory)) return false;
+      }
+      if (filters.units && filters.units.length > 0) {
+        if (!filters.units.includes(product.unitCount)) return false;
+      }
+      if (filters.sizes && filters.sizes.length > 0) {
+        if (!filters.sizes.includes(product.unitSize)) return false;
+      }
+      if (filters.distributors && filters.distributors.length > 0) {
+        const productDistributors = (product.distributors || []).map(d => d.name);
+        const hasMatchingDistributor = filters.distributors.some(distName => 
+          productDistributors.includes(distName)
+        );
+        if (!hasMatchingDistributor) return false;
+      }
+      return true;
+    });
+  }, []);
+
+  // Apply client-side filtering
+  const filteredProducts = React.useMemo(() => {
+    if (!allProducts || allProducts.length === 0) return [];
+    return filterProductsClientSide(allProducts, filters);
+  }, [allProducts, filters, filterProductsClientSide]);
+
+  // DnD sensors for column reordering
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
@@ -223,15 +249,86 @@ const OrderingDashboard = () => {
     setSortConfig({ key, direction });
   };
 
-  const handleLoadMore = async () => {
-    if (analytics?.hasMore && !isLoadingMore) {
-      setIsLoadingMore(true);
-      setPagination(prev => ({
-        ...prev,
-        offset: prev.offset + prev.limit
-      }));
+  // Calculate filter options from all loaded products client-side
+  const filterOptions = React.useMemo(() => {
+    if (!allProducts || allProducts.length === 0) {
+      return {
+        brands: [],
+        categories: [],
+        subcategories: [],
+        units: [],
+        sizes: [],
+        distributors: []
+      };
     }
-  };
+
+    // Start with all products, then apply filters one at a time to build context-aware options
+    const baseProducts = allProducts;
+    
+    // Build brand options (excluding current brand filter)
+    const brandFiltered = filterProductsClientSide(baseProducts, {
+      categories: filters.categories,
+      subcategories: filters.subcategories,
+      units: filters.units,
+      sizes: filters.sizes,
+      distributors: filters.distributors
+    });
+    const brands = [...new Set(brandFiltered.map(p => p.brand).filter(Boolean))].sort();
+
+    // Build category options (from all products)
+    const categories = [...new Set(baseProducts.map(p => p.parentCategory).filter(Boolean))].sort();
+
+    // Build subcategory options (excluding current subcategory filter)
+    const subcategoryFiltered = filterProductsClientSide(baseProducts, {
+      categories: filters.categories,
+      brands: filters.brands,
+      units: filters.units,
+      sizes: filters.sizes,
+      distributors: filters.distributors
+    });
+    const subcategories = [...new Set(subcategoryFiltered.map(p => p.subcategory).filter(Boolean))].sort();
+
+    // Build units options (excluding current units filter)
+    const unitsFiltered = filterProductsClientSide(baseProducts, {
+      categories: filters.categories,
+      subcategories: filters.subcategories,
+      brands: filters.brands,
+      sizes: filters.sizes,
+      distributors: filters.distributors
+    });
+    const units = [...new Set(unitsFiltered.map(p => p.unitCount).filter(Boolean))].sort((a, b) => a - b);
+
+    // Build sizes options (excluding current sizes filter)
+    const sizesFiltered = filterProductsClientSide(baseProducts, {
+      categories: filters.categories,
+      subcategories: filters.subcategories,
+      brands: filters.brands,
+      units: filters.units,
+      distributors: filters.distributors
+    });
+    const sizes = [...new Set(sizesFiltered.map(p => p.unitSize).filter(Boolean))].sort();
+
+    // Build distributors options from all products
+    const allDistributors = new Set();
+    baseProducts.forEach(product => {
+      (product.distributors || []).forEach(dist => {
+        allDistributors.add(dist.name);
+      });
+    });
+    const distributors = Array.from(allDistributors).sort();
+
+    return { brands, categories, subcategories, units, sizes, distributors };
+  }, [allProducts, filters, filterProductsClientSide]);
+
+  // Merge filter options with analytics filter options (for categories that need it)
+  const mergedFilterOptions = React.useMemo(() => {
+    if (!allAnalyticsData) return filterOptions;
+    return {
+      ...filterOptions,
+      categories: allAnalyticsData.filterOptions?.categories || filterOptions.categories,
+      distributors: allAnalyticsData.filterOptions?.distributors || filterOptions.distributors
+    };
+  }, [filterOptions, allAnalyticsData]);
 
   const handleCategoryVisibilityToggle = (category) => {
     const newHidden = new Set(hiddenCategories);
@@ -256,9 +353,30 @@ const OrderingDashboard = () => {
     setVisibleHiddenCategories(newVisible);
   };
 
+  // Preserve scroll position during filter changes
+  const scrollContainerRef = React.useRef(null);
+  const scrollPositionRef = React.useRef(0);
+
+  React.useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      scrollPositionRef.current = container.scrollTop;
+    }
+  }, [filters]);
+
+  React.useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (container && scrollPositionRef.current > 0) {
+      // Restore scroll position after filtering
+      requestAnimationFrame(() => {
+        container.scrollTop = scrollPositionRef.current;
+      });
+    }
+  }, [filteredProducts]);
+
   const sortedProducts = React.useMemo(() => {
-    if (!allProducts || allProducts.length === 0) return [];
-    let sorted = [...allProducts];
+    if (!filteredProducts || filteredProducts.length === 0) return [];
+    let sorted = [...filteredProducts];
     
     // Filter out products from hidden categories
     if (hiddenCategories.size > 0) {
@@ -294,13 +412,13 @@ const OrderingDashboard = () => {
       });
     }
     return sorted;
-  }, [allProducts, sortConfig, hiddenCategories]);
+  }, [filteredProducts, sortConfig, hiddenCategories]);
 
   const maxTotalSales = sortedProducts.length > 0 ? Math.max(...sortedProducts.map(p => p.totalSales || 0)) : 0;
 
   // Show skeleton loading only on initial page load
   const isInitialLoad = analyticsLoading && allProducts.length === 0;
-  const isRefetching = analyticsLoading && allProducts.length > 0;
+  // No refetching during filter changes - filters are client-side now
 
   if (isInitialLoad) {
     return (
@@ -316,7 +434,7 @@ const OrderingDashboard = () => {
   return (
     <div className="flex h-screen overflow-hidden w-full">
       <OrderingFilters
-        analytics={analytics}
+        analytics={allAnalyticsData ? { ...allAnalyticsData, filterOptions: mergedFilterOptions } : null}
         filters={filters}
         setFilters={setFilters}
         hiddenCategories={hiddenCategories}
@@ -329,24 +447,18 @@ const OrderingDashboard = () => {
         onSyncBrands={handleSyncBrands}
       />
 
-      <div className="flex-1 overflow-y-auto min-w-0 relative">
-        <DataLoadingOverlay 
-          isLoading={isRefetching} 
-          message="Applying filters..."
-          productCount={analytics?.totalCount}
-        />
+      <div className="flex-1 overflow-y-auto min-w-0 relative" ref={scrollContainerRef}>
         <div className="p-4 space-y-4 w-full">
           <div>
             <div className="flex items-center justify-between gap-4 mb-4">
               <div>
                 <h1 className="text-3xl font-bold text-emerald-800">Ordering Intelligence</h1>
                 <p className="text-emerald-700 mt-1">
-                  Analysis for {analytics?.periodDays || 14} days • Showing {sortedProducts.length} of {analytics?.totalCount || 0} products
-                  {analytics?.hasMore && <span className="ml-2 text-sm">(Load more below)</span>}
+                  Analysis for {allAnalyticsData?.periodDays || 14} days • Showing {sortedProducts.length} of {allProducts.length} products
                 </p>
-                {analytics?.lastUpdate && (
+                {allAnalyticsData?.lastUpdate && (
                   <p className="text-xs text-emerald-600 mt-1">
-                    Last inventory update: {formatRelativeTime(analytics.lastUpdate)}
+                    Last inventory update: {formatRelativeTime(allAnalyticsData.lastUpdate)}
                   </p>
                 )}
               </div>
@@ -360,34 +472,34 @@ const OrderingDashboard = () => {
                   onChange={setSelectedStoreIds}
                 />
                 <Badge variant="secondary" className="h-8 px-3 text-sm font-semibold">
-                  {analytics?.totalCount || 0} Products
+                  {sortedProducts.length} Products
                 </Badge>
               </div>
               <DateRangeFilter dateRange={dateRange} onChange={setDateRange} />
               <FilterDropdown
                 label="Units"
-                options={analytics?.filterOptions?.units || []}
+                options={mergedFilterOptions.units || []}
                 selectedValues={filters.units}
                 onChange={(values) => setFilters({ ...filters, units: values })}
                 icon={Package}
               />
               <FilterDropdown
                 label="Size"
-                options={analytics?.filterOptions?.sizes || []}
+                options={mergedFilterOptions.sizes || []}
                 selectedValues={filters.sizes}
                 onChange={(values) => setFilters({ ...filters, sizes: values })}
                 icon={Tag}
               />
               <FilterDropdown
                 label="Subcategories"
-                options={analytics?.filterOptions?.subcategories || []}
+                options={mergedFilterOptions.subcategories || []}
                 selectedValues={filters.subcategories}
                 onChange={(values) => setFilters({ ...filters, subcategories: values })}
                 icon={Package}
               />
               <FilterDropdown
                 label="Distributors"
-                options={analytics?.filterOptions?.distributors || []}
+                options={mergedFilterOptions.distributors || []}
                 selectedValues={filters.distributors}
                 onChange={(values) => setFilters({ ...filters, distributors: values })}
                 icon={Package}
@@ -425,9 +537,9 @@ const OrderingDashboard = () => {
               <div className="text-center">
                 <div className="text-purple-600 font-semibold text-sm mb-1">Hybrid</div>
                 <div className="text-3xl font-bold text-purple-800">
-                  {analytics?.primaryStore && analytics?.primaryStoreStrainCounts?.Hybrid > 0
-                    ? `${analytics.primaryStoreStrainCounts.Hybrid} (${analytics.strainCounts.Hybrid || 0})`
-                    : analytics?.strainCounts?.Hybrid || 0
+                  {allAnalyticsData?.primaryStore && allAnalyticsData?.primaryStoreStrainCounts?.Hybrid > 0
+                    ? `${allAnalyticsData.primaryStoreStrainCounts.Hybrid} (${allAnalyticsData.strainCounts.Hybrid || 0})`
+                    : allAnalyticsData?.strainCounts?.Hybrid || 0
                   }
                 </div>
                 <div className="text-purple-600 text-xs mt-1">products</div>
@@ -437,9 +549,9 @@ const OrderingDashboard = () => {
               <div className="text-center">
                 <div className="text-emerald-600 font-semibold text-sm mb-1">Sativa</div>
                 <div className="text-3xl font-bold text-emerald-800">
-                  {analytics?.primaryStore && analytics?.primaryStoreStrainCounts?.Sativa > 0
-                    ? `${analytics.primaryStoreStrainCounts.Sativa} (${analytics.strainCounts.Sativa || 0})`
-                    : analytics?.strainCounts?.Sativa || 0
+                  {allAnalyticsData?.primaryStore && allAnalyticsData?.primaryStoreStrainCounts?.Sativa > 0
+                    ? `${allAnalyticsData.primaryStoreStrainCounts.Sativa} (${allAnalyticsData.strainCounts.Sativa || 0})`
+                    : allAnalyticsData?.strainCounts?.Sativa || 0
                   }
                 </div>
                 <div className="text-emerald-600 text-xs mt-1">products</div>
@@ -449,9 +561,9 @@ const OrderingDashboard = () => {
               <div className="text-center">
                 <div className="text-amber-600 font-semibold text-sm mb-1">Indica</div>
                 <div className="text-3xl font-bold text-amber-800">
-                  {analytics?.primaryStore && analytics?.primaryStoreStrainCounts?.Indica > 0
-                    ? `${analytics.primaryStoreStrainCounts.Indica} (${analytics.strainCounts.Indica || 0})`
-                    : analytics?.strainCounts?.Indica || 0
+                  {allAnalyticsData?.primaryStore && allAnalyticsData?.primaryStoreStrainCounts?.Indica > 0
+                    ? `${allAnalyticsData.primaryStoreStrainCounts.Indica} (${allAnalyticsData.strainCounts.Indica || 0})`
+                    : allAnalyticsData?.strainCounts?.Indica || 0
                   }
                 </div>
                 <div className="text-amber-600 text-xs mt-1">products</div>
@@ -460,64 +572,60 @@ const OrderingDashboard = () => {
           </div>
 
           <div className="overflow-x-auto">
-            {analytics && (
-              <table className="w-full border-collapse border">
-                <OrderingTableHeader
-                  orderedColumns={orderedColumns.map(col => 
-                    col.id === 'distributor' ? { ...col, allDistributors: allDistributors || [] } : col
-                  )}
-                  columnOrder={columnOrder}
-                  onDragEnd={handleDragEnd}
-                  onSort={handleSort}
-                  sortConfig={sortConfig}
-                  analytics={analytics}
-                  periodDays={analytics?.periodDays || 14}
-                  onColumnResize={updateColumnWidth}
-                />
-                <tbody>
-                  {sortedProducts.map((product) => (
-                    <ProductTableRow
-                      key={product.id}
-                      product={product}
-                      orderedColumns={orderedColumns.map(col => 
-                        col.id === 'distributor' ? { ...col, allDistributors: allDistributors || [] } : col
-                      )}
-                      periodDays={analytics?.periodDays || 14}
-                      maxTotalSales={maxTotalSales}
-                      onAddToOrder={handleAddToOrder}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            )}
-            
-            {analytics?.hasMore && (
-              <div className="flex justify-center py-6">
-                <Button 
-                  onClick={handleLoadMore}
-                  disabled={isLoadingMore}
-                  size="lg"
-                  variant="outline"
-                  className="w-64"
-                >
-                  {isLoadingMore ? (
-                    <>
-                      <span className="animate-spin mr-2">⏳</span>
-                      Loading More...
-                    </>
-                  ) : (
-                    <>
-                      Load More Products ({analytics.totalCount - allProducts.length} remaining)
-                    </>
-                  )}
-                </Button>
-              </div>
+            {allAnalyticsData && (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
+                  <div className="relative">
+                    <table className="w-full border-collapse border">
+                      <OrderingTableHeader
+                        orderedColumns={orderedColumns.map(col => 
+                          col.id === 'distributor' ? { ...col, allDistributors: allDistributors || [] } : col
+                        )}
+                        columnOrder={columnOrder}
+                        onSort={handleSort}
+                        sortConfig={sortConfig}
+                        analytics={allAnalyticsData}
+                        periodDays={allAnalyticsData?.periodDays || 14}
+                        onColumnResize={updateColumnWidth}
+                      />
+                      <tbody className="relative">
+                        {isInitialLoad ? (
+                          <tr>
+                            <td colSpan={orderedColumns.length} className="p-8 text-center relative" style={{ height: '400px' }}>
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <DataLoadingOverlay 
+                                  isLoading={true} 
+                                  message="Loading products..."
+                                  productCount={allProducts.length}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          sortedProducts.map((product) => (
+                            <ProductTableRow
+                              key={product.id}
+                              product={product}
+                              orderedColumns={orderedColumns.map(col => 
+                                col.id === 'distributor' ? { ...col, allDistributors: allDistributors || [] } : col
+                              )}
+                              periodDays={allAnalyticsData?.periodDays || 14}
+                              maxTotalSales={maxTotalSales}
+                              onAddToOrder={handleAddToOrder}
+                            />
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </SortableContext>
+              </DndContext>
             )}
           </div>
 
           <SalesMatrix 
-            salesMatrix={analytics?.salesMatrix} 
-            stores={analytics?.stores || []} 
+            salesMatrix={allAnalyticsData?.salesMatrix} 
+            stores={allAnalyticsData?.stores || []} 
           />
         </div>
       </div>

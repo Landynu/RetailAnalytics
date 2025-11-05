@@ -1346,7 +1346,8 @@ export const getOrderingAnalytics = async ({
   filters = {},
   limit = 100,
   offset = 0,
-  includeHiddenCategories = false
+  includeHiddenCategories = false,
+  loadAll = false
 }, context) => {
   if (!context.user) { throw new HttpError(401) }
   
@@ -1512,11 +1513,12 @@ export const getOrderingAnalytics = async ({
   const filteredProducts = filterProductsInMemory(baseProducts, filters);
   const totalCount = filteredProducts.length;
   
-  // Apply pagination in-memory
-  const paginatedProducts = filteredProducts.slice(offset, offset + limit);
+  // Apply pagination in-memory (skip if loadAll is true)
+  const paginatedProducts = loadAll ? filteredProducts : filteredProducts.slice(offset, offset + limit);
   const products = paginatedProducts;
   
-  const productIds = products.map(p => p.id);
+  // When loadAll is true, use all filtered products for metrics calculation
+  const productIds = loadAll ? filteredProducts.map(p => p.id) : products.map(p => p.id);
   const allFilteredProductIds = filteredProducts.map(p => p.id);
 
   // Get sales totals and purchase orders in parallel (both need productIds)
@@ -2082,7 +2084,7 @@ export const getOrderingAnalytics = async ({
   filteredProductMetrics.sort((a, b) => b.velocity - a.velocity);
 
   // Total count already calculated at database level
-  const hasMore = offset + limit < totalCount;
+  const hasMore = loadAll ? false : offset + limit < totalCount;
 
   // Calculate strain counts and sparkline data in parallel
   // Use filtered product IDs from memory instead of database queries

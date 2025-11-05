@@ -2,19 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Badge } from './ui/badge';
 import { ArrowUp, ArrowDown, GripVertical } from 'lucide-react';
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
   useSortable,
-  horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -89,7 +77,6 @@ const DraggableHeader = ({ column, children, onSort, sortConfig, onResizeStart }
 const OrderingTableHeader = ({ 
   orderedColumns, 
   columnOrder, 
-  onDragEnd, 
   onSort, 
   sortConfig, 
   analytics,
@@ -97,15 +84,6 @@ const OrderingTableHeader = ({
   onColumnResize
 }) => {
   const [resizing, setResizing] = useState(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
 
   const handleResizeStart = (columnId, startX, startWidth) => {
     const initialState = { columnId, startX, startWidth };
@@ -166,26 +144,37 @@ const OrderingTableHeader = ({
   };
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <thead className="bg-background sticky top-0 z-10 border-b-2">
-        <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
-          <tr>
-            {orderedColumns.map(column => (
-              <DraggableHeader
-                key={column.id}
-                column={column}
-                onSort={onSort}
-                sortConfig={sortConfig}
-                onResizeStart={handleResizeStart}
-              >
-                {renderHeaderContent(column)}
-              </DraggableHeader>
-            ))}
-          </tr>
-        </SortableContext>
-      </thead>
-    </DndContext>
+    <thead className="bg-background sticky top-0 z-10 border-b-2">
+      <tr>
+        {orderedColumns.map(column => (
+          <DraggableHeader
+            key={column.id}
+            column={column}
+            onSort={onSort}
+            sortConfig={sortConfig}
+            onResizeStart={handleResizeStart}
+          >
+            {renderHeaderContent(column)}
+          </DraggableHeader>
+        ))}
+      </tr>
+    </thead>
   );
 };
 
-export default OrderingTableHeader;
+// Memoize component to prevent re-renders when only product data changes
+export default React.memo(OrderingTableHeader, (prevProps, nextProps) => {
+  // Return true if props are equal (skip re-render), false if different (should re-render)
+  const columnOrderEqual = prevProps.columnOrder === nextProps.columnOrder;
+  const sortConfigEqual = JSON.stringify(prevProps.sortConfig) === JSON.stringify(nextProps.sortConfig);
+  const orderedColumnsEqual = prevProps.orderedColumns === nextProps.orderedColumns;
+  const locationCountsEqual = JSON.stringify(prevProps.analytics?.locationInventoryCounts) === JSON.stringify(nextProps.analytics?.locationInventoryCounts);
+  const periodDaysEqual = prevProps.periodDays === nextProps.periodDays;
+  const callbacksEqual = (
+    prevProps.onDragEnd === nextProps.onDragEnd &&
+    prevProps.onSort === nextProps.onSort &&
+    prevProps.onColumnResize === nextProps.onColumnResize
+  );
+  
+  return columnOrderEqual && sortConfigEqual && orderedColumnsEqual && locationCountsEqual && periodDaysEqual && callbacksEqual;
+});

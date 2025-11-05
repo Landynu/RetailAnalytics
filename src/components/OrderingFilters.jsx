@@ -341,4 +341,22 @@ const OrderingFilters = ({
   );
 };
 
-export default OrderingFilters;
+// Memoize component to prevent re-renders when only data changes
+export default React.memo(OrderingFilters, (prevProps, nextProps) => {
+  // Return true if props are equal (skip re-render), false if different (should re-render)
+  const filtersEqual = prevProps.filters === nextProps.filters;
+  const hiddenCategoriesEqual = prevProps.hiddenCategories === nextProps.hiddenCategories;
+  const worksheetEqual = prevProps.worksheet?.items?.length === nextProps.worksheet?.items?.length;
+  const filterOptionsEqual = JSON.stringify(prevProps.analytics?.filterOptions) === JSON.stringify(nextProps.analytics?.filterOptions);
+  const callbacksEqual = (
+    prevProps.setFilters === nextProps.setFilters &&
+    prevProps.onCategoryVisibilityToggle === nextProps.onCategoryVisibilityToggle &&
+    prevProps.onExportOrder === nextProps.onExportOrder &&
+    prevProps.onClearOrder === nextProps.onClearOrder &&
+    prevProps.onEnrichFormats === nextProps.onEnrichFormats &&
+    prevProps.onSeedDistributors === nextProps.onSeedDistributors &&
+    prevProps.onSyncBrands === nextProps.onSyncBrands
+  );
+  
+  return filtersEqual && hiddenCategoriesEqual && worksheetEqual && filterOptionsEqual && callbacksEqual;
+});
