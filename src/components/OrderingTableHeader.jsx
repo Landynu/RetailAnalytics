@@ -45,16 +45,16 @@ const DraggableHeader = ({ column, children, onSort, sortConfig }) => {
     <th
       ref={setNodeRef}
       style={style}
-      className={`group px-3 py-3 font-semibold border bg-background relative ${
+      className={`group px-4 py-4 font-semibold text-sm border-r border-b border-slate-300/50 bg-gradient-to-b from-[#14b8a6]/10 via-[#0ea5e9]/5 to-[#2563eb]/10 text-slate-800 relative ${
         column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
-      } ${!column.isLocation && column.sortKey ? 'cursor-pointer hover:bg-muted/50' : ''} ${isDragging ? 'z-50' : ''}`}
+      } ${!column.isLocation && column.sortKey ? 'cursor-pointer hover:from-[#14b8a6]/15 hover:via-[#0ea5e9]/10 hover:to-[#2563eb]/15 transition-all duration-200' : ''} ${isDragging ? 'z-50' : ''}`}
       onClick={handleHeaderClick}
     >
       <div className={`flex items-center gap-1 ${
         column.align === 'right' ? 'justify-end' : column.align === 'center' ? 'justify-center' : ''
       }`}>
         <button
-          className="drag-handle absolute left-2 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing hover:text-primary p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          className="drag-handle absolute left-2 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing hover:text-teal-600 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10"
           {...attributes}
           {...listeners}
           onClick={(e) => e.stopPropagation()}
@@ -62,9 +62,9 @@ const DraggableHeader = ({ column, children, onSort, sortConfig }) => {
         >
           <GripVertical className="h-3 w-3" />
         </button>
-        <span className="break-words text-wrap flex-1">{children}</span>
+        <span className="break-words text-wrap flex-1 font-medium">{children}</span>
         {!column.isLocation && column.sortKey && sortConfig.key === column.sortKey && (
-          sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 flex-shrink-0" /> : <ArrowDown className="h-3 w-3 flex-shrink-0" />
+          sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4 flex-shrink-0 text-teal-600" /> : <ArrowDown className="h-4 w-4 flex-shrink-0 text-teal-600" />
         )}
       </div>
     </th>
@@ -131,7 +131,7 @@ const OrderingTableHeader = ({
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <thead className="bg-background border-b-2">
+      <thead className="sticky top-0 z-20">
         <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
           <tr>
             {orderedColumns.map(column => (

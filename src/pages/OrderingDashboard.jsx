@@ -607,7 +607,7 @@ const OrderingDashboard = () => {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden w-full">
+    <div className="flex h-screen overflow-hidden w-full bg-gradient-to-br from-[#f9fafb] via-white to-[#eef2f7]">
       <OrderingFilters
         analytics={allAnalyticsData ? { ...allAnalyticsData, filterOptions: mergedFilterOptions } : null}
         filters={filters}
@@ -623,20 +623,22 @@ const OrderingDashboard = () => {
       />
 
       <div className="flex-1 overflow-y-auto min-w-0 relative" ref={scrollContainerRef}>
-        <div className="p-4 space-y-4 w-full">
+        <div className="p-6 space-y-6 w-full">
           <div>
             <div className="flex items-center justify-between gap-4 mb-4">
               <div>
                 <div className="flex items-center gap-3">
-                  <h1 className="text-3xl font-bold text-emerald-800">Ordering Intelligence</h1>
+                  <h1 className="text-4xl font-semibold bg-gradient-to-r from-[#14b8a6] via-[#0ea5e9] to-[#2563eb] bg-clip-text text-transparent">
+                    Ordering Intelligence
+                  </h1>
                   {isLoadingFullData && hasInitialPageLoaded && (
-                    <Badge variant="secondary" className="h-7 px-3 text-xs font-medium flex items-center gap-2 bg-blue-50 text-blue-700 border-blue-200">
+                    <Badge variant="secondary" className="h-7 px-3 text-xs font-medium flex items-center gap-2 bg-blue-50 text-blue-700 border-blue-200 shadow-sm rounded-lg">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       Loading complete analytics...
                     </Badge>
                   )}
                 </div>
-                <p className="text-emerald-700 mt-1">
+                <p className="text-slate-700 mt-2 font-medium">
                   Analysis for {allAnalyticsData?.periodDays || 14} days • Showing {sortedProducts.length} of {allProducts.length} products
                   {isLoadingFullData && hasInitialPageLoaded && (fullAnalytics?.totalCount || initialAnalytics?.totalCount) && (
                     <span className="text-blue-600 ml-2">
@@ -645,7 +647,7 @@ const OrderingDashboard = () => {
                   )}
                 </p>
                 {allAnalyticsData?.lastUpdate && (
-                  <p className="text-xs text-emerald-600 mt-1">
+                  <p className="text-xs text-slate-500 mt-1.5">
                     Last inventory update: {formatRelativeTime(allAnalyticsData.lastUpdate)}
                   </p>
                 )}
@@ -654,56 +656,56 @@ const OrderingDashboard = () => {
           </div>
 
           {/* Strain Classification Cards */}
-          <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-3 gap-4 mb-6">
             {/* Sativa */}
-            <Card className="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200">
+            <Card className="p-5 bg-gradient-to-br from-teal-50 via-teal-100/50 to-teal-100 border border-teal-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] hover:shadow-md transition-all duration-200 rounded-xl">
               <div className="text-center">
-                <div className="text-emerald-600 font-semibold text-sm mb-1">Sativa</div>
-                <div className="text-3xl font-bold text-emerald-800">
+                <div className="text-teal-700 font-semibold text-sm mb-2 uppercase tracking-wide">Sativa</div>
+                <div className="text-4xl font-bold text-teal-800">
                   {primaryStoreStrainCounts.Sativa}
                   {totalStrainCounts.Sativa > primaryStoreStrainCounts.Sativa && (
-                    <span className="text-base font-normal text-emerald-700 ml-2">
+                    <span className="text-lg font-normal text-teal-700 ml-2">
                       ({totalStrainCounts.Sativa})
                     </span>
                   )}
                 </div>
-                <div className="text-emerald-600 text-xs mt-1">products</div>
+                <div className="text-teal-600 text-xs mt-2 font-medium">products</div>
               </div>
             </Card>
             {/* Hybrid */}
-            <Card className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+            <Card className="p-5 bg-gradient-to-br from-blue-50 via-blue-100/50 to-blue-100 border border-blue-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] hover:shadow-md transition-all duration-200 rounded-xl">
               <div className="text-center">
-                <div className="text-purple-600 font-semibold text-sm mb-1">Hybrid</div>
-                <div className="text-3xl font-bold text-purple-800">
+                <div className="text-blue-700 font-semibold text-sm mb-2 uppercase tracking-wide">Hybrid</div>
+                <div className="text-4xl font-bold text-blue-800">
                   {primaryStoreStrainCounts.Hybrid}
                   {totalStrainCounts.Hybrid > primaryStoreStrainCounts.Hybrid && (
-                    <span className="text-base font-normal text-purple-700 ml-2">
+                    <span className="text-lg font-normal text-blue-700 ml-2">
                       ({totalStrainCounts.Hybrid})
                     </span>
                   )}
                 </div>
-                <div className="text-purple-600 text-xs mt-1">products</div>
+                <div className="text-blue-600 text-xs mt-2 font-medium">products</div>
               </div>
             </Card>
             {/* Indica */}
-            <Card className="p-4 bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
+            <Card className="p-5 bg-gradient-to-br from-amber-50 via-amber-100/50 to-amber-100 border border-amber-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] hover:shadow-md transition-all duration-200 rounded-xl">
               <div className="text-center">
-                <div className="text-amber-600 font-semibold text-sm mb-1">Indica</div>
-                <div className="text-3xl font-bold text-amber-800">
+                <div className="text-amber-700 font-semibold text-sm mb-2 uppercase tracking-wide">Indica</div>
+                <div className="text-4xl font-bold text-amber-800">
                   {primaryStoreStrainCounts.Indica}
                   {totalStrainCounts.Indica > primaryStoreStrainCounts.Indica && (
-                    <span className="text-base font-normal text-amber-700 ml-2">
+                    <span className="text-lg font-normal text-amber-700 ml-2">
                       ({totalStrainCounts.Indica})
                     </span>
                   )}
                 </div>
-                <div className="text-amber-600 text-xs mt-1">products</div>
+                <div className="text-amber-600 text-xs mt-2 font-medium">products</div>
               </div>
             </Card>
           </div>
 
           {/* Filters - Sticky */}
-          <div className="sticky top-0 z-10 bg-background pb-4 pt-2 -mt-4">
+          <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm pb-4 pt-3 -mt-6 border-b border-slate-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] rounded-lg">
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <LocationSelector
@@ -711,7 +713,7 @@ const OrderingDashboard = () => {
                   selectedIds={selectedStoreIds}
                   onChange={setSelectedStoreIds}
                 />
-                <Badge variant="secondary" className="h-8 px-3 text-sm font-semibold">
+                <Badge variant="secondary" className="h-8 px-3 text-sm font-semibold bg-gradient-to-r from-teal-50 to-blue-50 text-teal-800 border-teal-200/50 rounded-lg shadow-sm">
                   {sortedProducts.length} Products
                 </Badge>
               </div>
@@ -755,6 +757,7 @@ const OrderingDashboard = () => {
                 size="sm"
                 onClick={resetColumnOrder}
                 title="Reset column order to default"
+                className="border-slate-300 hover:bg-slate-50 rounded-lg transition-colors"
               >
                 <RotateCcw className="h-4 w-4 mr-2" />
                 Reset Order
@@ -764,6 +767,7 @@ const OrderingDashboard = () => {
                 size="sm"
                 onClick={resetColumnWidths}
                 title="Reset all column widths to default"
+                className="border-slate-300 hover:bg-slate-50 rounded-lg transition-colors"
               >
                 <RotateCcw className="h-4 w-4 mr-2" />
                 Reset Widths
@@ -771,12 +775,12 @@ const OrderingDashboard = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-xl border border-slate-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] bg-white">
             {allAnalyticsData && (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
                   <div className="relative">
-                    <table className="w-full border-collapse border">
+                    <table className="w-full border-collapse">
                       <OrderingTableHeader
                         orderedColumns={orderedColumns.map(col => 
                           col.id === 'distributor' ? { ...col, allDistributors: allDistributors || [] } : col
@@ -802,7 +806,7 @@ const OrderingDashboard = () => {
                             </td>
                           </tr>
                         ) : (
-                          sortedProducts.map((product) => (
+                          sortedProducts.map((product, index) => (
                             <ProductTableRow
                               key={product.id}
                               product={product}
@@ -813,6 +817,7 @@ const OrderingDashboard = () => {
                               maxTotalSales={maxTotalSales}
                               onAddToOrder={handleAddToOrder}
                               isLoadingTrends={isLoadingFullData && hasInitialPageLoaded}
+                              rowIndex={index}
                             />
                           ))
                         )}
