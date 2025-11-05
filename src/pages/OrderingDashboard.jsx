@@ -461,6 +461,60 @@ const OrderingDashboard = () => {
     return sorted;
   }, [filteredProducts, sortConfig, hiddenCategories]);
 
+  // Calculate filtered salesMatrix from filtered products (respects client-side filters)
+  const filteredSalesMatrix = React.useMemo(() => {
+    if (!allAnalyticsData?.salesMatrix || !sortedProducts || sortedProducts.length === 0) {
+      return null;
+    }
+
+    // Get stores from analytics
+    const stores = allAnalyticsData.stores || [];
+    
+    // Create a map of product IDs to their sales data from the original salesMatrix
+    const salesMatrixMap = new Map();
+    allAnalyticsData.salesMatrix.forEach(row => {
+      // Find the product ID by matching name (since we don't have ID in salesMatrix)
+      const product = sortedProducts.find(p => p.name === row.productName);
+      if (product) {
+        salesMatrixMap.set(product.id, row);
+      }
+    });
+
+    // Build sales matrix from filtered products only
+    // Take top 20 by totalSales from filtered products
+    const topFilteredProducts = sortedProducts
+      .filter(p => p.totalSales > 0) // Only products with sales
+      .sort((a, b) => b.totalSales - a.totalSales)
+      .slice(0, 20);
+
+    const filteredMatrix = topFilteredProducts.map(product => {
+      // Get sales data from original matrix or use product's locationSales
+      const matrixRow = salesMatrixMap.get(product.id);
+      
+      if (matrixRow) {
+        // Use data from original salesMatrix
+        return matrixRow;
+      } else {
+        // Build from product's locationSales data
+        const salesByLocation = {};
+        stores.forEach(store => {
+          const locationSale = product.locationSales?.find(ls => ls.storeId === store.id);
+          salesByLocation[store.name] = locationSale?.units || 0;
+        });
+        
+        return {
+          productName: product.name,
+          brand: product.brand,
+          category: product.parentCategory,
+          ...salesByLocation,
+          total: product.totalSales
+        };
+      }
+    });
+
+    return filteredMatrix.length > 0 ? filteredMatrix : null;
+  }, [allAnalyticsData?.salesMatrix, allAnalyticsData?.stores, sortedProducts]);
+
   const maxTotalSales = sortedProducts.length > 0 ? Math.max(...sortedProducts.map(p => p.totalSales || 0)) : 0;
 
   // Calculate strain counts from filtered products with inventory at primary store
@@ -737,7 +791,7 @@ const OrderingDashboard = () => {
           </div>
 
           <SalesMatrix 
-            salesMatrix={allAnalyticsData?.salesMatrix} 
+            salesMatrix={filteredSalesMatrix || allAnalyticsData?.salesMatrix} 
             stores={allAnalyticsData?.stores || []}
             isLoading={isLoadingFullData && hasInitialPageLoaded && !allAnalyticsData?.salesMatrix}
           />
