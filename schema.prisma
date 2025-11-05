@@ -39,6 +39,7 @@ model Distributor {
     isActive  Boolean             @default(true)
     sortOrder Int                 @default(0)
     brands    BrandDistributor[]
+    products  ProductCatalog[]
     createdAt DateTime            @default(now())
 }
 
@@ -96,6 +97,7 @@ model ProductCatalog {
     weight         Float?
     thc            Float?
     cbd            Float?
+    cannabinoidProfile Json? // Flexible tracking of other cannabinoids and terpenes
     retailPrice    Float?   // From CSV Retail price column
     wholesaleCost  Float?   // From CSV Wholesale cost column
     margin         Float?   // Calculated: (retail - wholesale) / retail
@@ -107,6 +109,15 @@ model ProductCatalog {
     caseSize       Int?     @default(12) // Units per case for ordering
     reorderPoint   Int?     // Custom reorder threshold
     orderingNotes  String?  // Notes for purchasing decisions
+    distributorId  Int?     // Optional direct product-distributor link
+    distributor    Distributor? @relation(fields: [distributorId], references: [id])
+    classificationId Int?   // Reference to Classification model
+    classification Classification? @relation(fields: [classificationId], references: [id])
+    categoryDefinitionId Int? // Reference to CategoryDefinition
+    categoryDefinition CategoryDefinition? @relation(fields: [categoryDefinitionId], references: [id])
+    subcategoryId  Int?     // Reference to CategorySubcategory
+    subcategoryDef CategorySubcategory? @relation(fields: [subcategoryId], references: [id])
+    enrichments    ProductEnrichment[]
     stockLevels    StockLevel[]
     movements      InventoryMovement[]
     worksheetItems OrderWorksheetItem[]
@@ -119,6 +130,9 @@ model ProductCatalog {
     @@index([parentCategory, brand, unitCount, unitSize])
     @@index([parentCategory, subcategory])
     @@index([brand, parentCategory])
+    @@index([classificationId])
+    @@index([categoryDefinitionId])
+    @@index([subcategoryId])
 }
 
 model Category {
@@ -357,4 +371,42 @@ model ProductSeasonality {
   
   @@index([trend])
   @@index([seasonalityScore])
+}
+
+model Classification {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique // Sativa, Hybrid, Indica, Blend, CBD
+  displayOrder Int     @default(0)
+  isActive    Boolean  @default(true)
+  products    ProductCatalog[]
+}
+
+model CategoryDefinition {
+  id          Int      @id @default(autoincrement())
+  name        String   // e.g., "Flower", "Edibles"
+  displayOrder Int     @default(0)
+  isActive    Boolean  @default(true)
+  subcategories CategorySubcategory[]
+  products    ProductCatalog[]
+}
+
+model CategorySubcategory {
+  id          Int      @id @default(autoincrement())
+  categoryId  Int
+  category    CategoryDefinition @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name        String   // e.g., "Dried Flower", "Gummies"
+  displayOrder Int     @default(0)
+  isActive    Boolean  @default(true)
+  products    ProductCatalog[]
+}
+
+model ProductEnrichment {
+  id          Int      @id @default(autoincrement())
+  productId   Int
+  product     ProductCatalog @relation(fields: [productId], references: [id], onDelete: Cascade)
+  enrichedBy  Int?     // userId
+  field       String   // Which field was enriched
+  oldValue    String?
+  newValue    String?
+  enrichedAt  DateTime @default(now())
 }

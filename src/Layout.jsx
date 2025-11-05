@@ -36,6 +36,12 @@ export const Layout = () => {
                   <Link to="/brand-mapping" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
                     Brand Mapping
                   </Link>
+                  <Link to="/product-catalog" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                    Product Catalog
+                  </Link>
+                  <Link to="/categories" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                    Categories
+                  </Link>
                   <Link to="/stores" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
                     Stores
                   </Link>

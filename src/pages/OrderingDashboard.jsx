@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from 'wasp/client/operations';
-import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores, getDistributors } from 'wasp/client/operations';
+import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores, getDistributors, getClassifications, getCategoryDefinitions } from 'wasp/client/operations';
 import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats, seedDistributors, syncBrands } from 'wasp/client/operations';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -29,6 +29,9 @@ import { useColumnOrdering } from '../lib/useColumnOrdering';
 import OrderingFilters from '../components/OrderingFilters';
 import OrderingTableHeader from '../components/OrderingTableHeader';
 import ProductTableRow from '../components/ProductTableRow';
+import StrainTypeCell from '../components/StrainTypeCell';
+import CategoryCell from '../components/CategoryCell';
+import SubcategoryCell from '../components/SubcategoryCell';
 import SalesMatrix from '../components/SalesMatrix';
 import ColumnVisibilityMenu from '../components/ColumnVisibilityMenu';
 
@@ -129,6 +132,8 @@ const OrderingDashboard = () => {
 
   const { data: worksheet } = useQuery(getOrCreateOrderWorksheet);
   const { data: allDistributors } = useQuery(getDistributors);
+  const { data: classifications } = useQuery(getClassifications);
+  const { data: categoryDefinitions } = useQuery(getCategoryDefinitions);
 
   // Store initial page data when ready
   useEffect(() => {
@@ -810,9 +815,18 @@ const OrderingDashboard = () => {
                             <ProductTableRow
                               key={product.id}
                               product={product}
-                              orderedColumns={orderedColumns.map(col => 
-                                col.id === 'distributor' ? { ...col, allDistributors: allDistributors || [] } : col
-                              )}
+                              orderedColumns={orderedColumns.map(col => {
+                                if (col.id === 'distributor') {
+                                  return { ...col, allDistributors: allDistributors || [] };
+                                }
+                                if (col.id === 'classification') {
+                                  return { ...col, classifications: classifications || [] };
+                                }
+                                if (col.id === 'category' || col.id === 'subcategory') {
+                                  return { ...col, categoryDefinitions: categoryDefinitions || [] };
+                                }
+                                return col;
+                              })}
                               periodDays={allAnalyticsData?.periodDays || 14}
                               maxTotalSales={maxTotalSales}
                               onAddToOrder={handleAddToOrder}

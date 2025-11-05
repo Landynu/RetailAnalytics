@@ -1,10 +1,14 @@
 import React from 'react';
+import { Link } from 'wasp/client/router';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { ShoppingCart } from 'lucide-react';
 import Sparkline from './Sparkline';
 import LocationCell from './LocationCell';
 import DistributorCell from './DistributorCell';
+import StrainTypeCell from './StrainTypeCell';
+import CategoryCell from './CategoryCell';
+import SubcategoryCell from './SubcategoryCell';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 
 const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, onAddToOrder, isLoadingTrends = false, rowIndex = 0 }) => {
@@ -43,7 +47,12 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
       case 'name':
         return (
           <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
-            <span className="font-semibold text-teal-800 break-words">{product.name}</span>
+            <Link 
+              to={`/product/${product.id}`}
+              className="font-semibold text-teal-800 hover:text-teal-600 hover:underline break-words"
+            >
+              {product.name}
+            </Link>
           </td>
         );
 
@@ -224,6 +233,37 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
               brand={product.brand}
               distributors={product.distributors || []}
               allDistributors={column.allDistributors || []}
+            />
+          </td>
+        );
+
+      case 'classification':
+        return (
+          <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
+            <StrainTypeCell 
+              product={product}
+              classifications={column.classifications || []}
+            />
+          </td>
+        );
+
+      case 'category':
+        return (
+          <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
+            <CategoryCell 
+              product={product}
+              categoryDefinitions={column.categoryDefinitions || []}
+              onCategoryChange={() => {}}
+            />
+          </td>
+        );
+
+      case 'subcategory':
+        return (
+          <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
+            <SubcategoryCell 
+              product={product}
+              categoryDefinitions={column.categoryDefinitions || []}
             />
           </td>
         );

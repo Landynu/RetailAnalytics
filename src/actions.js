@@ -627,32 +627,97 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   }
 
   // Batch update existing products - PostgreSQL handles this well
+  // Preserve enriched fields (thc, cbd, cannabinoidProfile, strainType, classificationId, format, distributorId, description, imageUrl, categoryDefinitionId, subcategoryId)
   if (existingProductsToUpdate.length > 0) {
     const chunkSize = 500; // Increased from 50 for PostgreSQL
     for (let i = 0; i < existingProductsToUpdate.length; i += chunkSize) {
       const chunk = existingProductsToUpdate.slice(i, i + chunkSize);
-      await Promise.all(chunk.map(product => 
-        context.entities.ProductCatalog.update({
+      await Promise.all(chunk.map(async product => {
+        // Fetch existing product to preserve enriched fields
+        const existing = await context.entities.ProductCatalog.findUnique({
+          where: { gtin: product.gtin },
+          select: {
+            thc: true,
+            cbd: true,
+            cannabinoidProfile: true,
+            strainType: true,
+            classificationId: true,
+            format: true,
+            distributorId: true,
+            description: true,
+            imageUrl: true,
+            categoryDefinitionId: true,
+            subcategoryId: true
+          }
+        });
+        
+        return context.entities.ProductCatalog.update({
           where: { gtin: product.gtin },
           data: {
             name: product.name,
             brand: product.brand,
             category: product.category,
-            parentCategory: product.parentCategory,
-            subcategory: product.subcategory,
-            strainType: product.strainType,
-            format: product.format,
+            parentCategory: product.parentCategory, // Overwritten from CSV
+            subcategory: product.subcategory, // Overwritten from CSV
+            strainType: existing?.strainType || product.strainType, // Preserve if exists
+            format: existing?.format || product.format, // Preserve if exists
             unitCount: product.unitCount,
             unitSize: product.unitSize,
-            retailPrice: product.retailPrice,
-            wholesaleCost: product.wholesaleCost,
+            retailPrice: product.retailPrice, // Overwritten from CSV
+            wholesaleCost: product.wholesaleCost, // Overwritten from CSV
             margin: product.margin,
-            description: truncateField(product.description, 1000),
-            imageUrl: truncateField(product.imageUrl, 500),
+            description: existing?.description || truncateField(product.description, 1000), // Preserve if exists
+            imageUrl: existing?.imageUrl || truncateField(product.imageUrl, 500), // Preserve if exists
+            thc: existing?.thc, // Preserve
+            cbd: existing?.cbd, // Preserve
+            cannabinoidProfile: existing?.cannabinoidProfile, // Preserve
+            classificationId: existing?.classificationId, // Preserve
+            distributorId: existing?.distributorId, // Preserve
+            categoryDefinitionId: existing?.categoryDefinitionId, // Preserve
+            subcategoryId: existing?.subcategoryId, // Preserve
             lastSeen: new Date()
           }
-        })
-      ));
+        });
+      }));
+    }
+    
+    // After updating products, attempt to sync CSV category strings to category definitions
+    const updatedProducts = await context.entities.ProductCatalog.findMany({
+      where: { gtin: { in: existingProductsToUpdate.map(p => p.gtin) } },
+      select: { id: true, gtin: true, parentCategory: true, subcategory: true }
+    });
+    
+    // Sync categories to definitions
+    for (const updatedProduct of updatedProducts) {
+      if (updatedProduct.parentCategory) {
+        const categoryDef = await context.entities.CategoryDefinition.findFirst({
+          where: { name: updatedProduct.parentCategory }
+        });
+        
+        if (categoryDef) {
+          await context.entities.ProductCatalog.update({
+            where: { id: updatedProduct.id },
+            data: { categoryDefinitionId: categoryDef.id }
+          });
+          
+          // If subcategory matches, update that too
+          if (updatedProduct.subcategory) {
+            const subcategoryDef = await context.entities.CategorySubcategory.findFirst({
+              where: {
+                categoryId: categoryDef.id,
+                name: updatedProduct.subcategory
+              }
+            });
+            
+            if (subcategoryDef) {
+              await context.entities.ProductCatalog.update({
+                where: { id: updatedProduct.id },
+                data: { subcategoryId: subcategoryDef.id }
+              });
+            }
+          }
+        }
+      }
     }
   }
 
@@ -2310,4 +2375,557 @@ export const seedDistributors = async (args, context) => {
   }
   
   return { created, total: distributors.length }
+}
+
+export const seedDefaultClassifications = async (args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const classifications = [
+    { name: 'Sativa', displayOrder: 1 },
+    { name: 'Hybrid', displayOrder: 2 },
+    { name: 'Indica', displayOrder: 3 },
+    { name: 'Blend', displayOrder: 4 },
+    { name: 'CBD', displayOrder: 5 }
+  ]
+  
+  let created = 0
+  for (const classification of classifications) {
+    const existing = await context.entities.Classification.findUnique({
+      where: { name: classification.name }
+    })
+    
+    if (!existing) {
+      await context.entities.Classification.create({ data: classification })
+      created++
+    }
+  }
+  
+  return { created, total: classifications.length }
+}
+
+export const seedDefaultCategories = async (args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const categoriesData = [
+    {
+      name: 'Flower',
+      displayOrder: 1,
+      subcategories: [
+        'Dried Flower',
+        'Milled',
+        'Infused Flower',
+        'Infused Milled',
+        'CBD/Balanced'
+      ]
+    },
+    {
+      name: 'Pre-rolls',
+      displayOrder: 2,
+      subcategories: [
+        'Joints',
+        'Blunts',
+        'Infused Joints',
+        'Infused Blunts',
+        'Variety/Multipack',
+        'Multipack Infused',
+        'CBD/Balanced'
+      ]
+    },
+    {
+      name: 'Vapes',
+      displayOrder: 3,
+      subcategories: [
+        'Cured Resin',
+        'Disposable Vapes',
+        '510 Thread Cartridges',
+        'Pax Pods',
+        'Closed Loop Pods',
+        'Live Resin',
+        'Live Rosin',
+        'Variety/Multipacks'
+      ]
+    },
+    {
+      name: 'Edibles',
+      displayOrder: 4,
+      subcategories: [
+        'Chocolates',
+        'Snacks & Baked Goods',
+        'Gummies',
+        'Hard Candies',
+        'Mints',
+        'Live Resin Gummies',
+        'Edible Extracts',
+        'Condiments'
+      ]
+    },
+    {
+      name: 'Concentrates',
+      displayOrder: 5,
+      subcategories: [
+        'Hash',
+        'Syringe',
+        'Shatter',
+        'Rosin',
+        'Wax',
+        'Kief',
+        'Resin',
+        'Diamonds & Sauce',
+        'Crumble',
+        'Budder',
+        'Cured Resin',
+        'Isolate'
+      ]
+    },
+    {
+      name: 'Beverages',
+      displayOrder: 6,
+      subcategories: [
+        'Coffees & Teas',
+        'Soft Drinks',
+        'Sparkling Waters',
+        'Beverage Mixers',
+        'THC Drinks',
+        'THC & CBD Drinks',
+        'CBD Drinks',
+        'Minor Cannabinoid'
+      ]
+    },
+    {
+      name: 'Extracts',
+      displayOrder: 7,
+      subcategories: [
+        'Oils',
+        'Capsules',
+        'Sublingual Strips',
+        'Oral Spray'
+      ]
+    },
+    {
+      name: 'Topicals',
+      displayOrder: 8,
+      subcategories: [
+        'Creams & Lotions',
+        'Bath & Shower',
+        'Transdermal Gels'
+      ]
+    },
+    {
+      name: 'Seeds',
+      displayOrder: 9,
+      subcategories: [
+        'Autoflower',
+        'Feminized',
+        'Regular'
+      ]
+    },
+    {
+      name: 'Accessories',
+      displayOrder: 10,
+      subcategories: [
+        'Dab Pens & Vaporizers',
+        'Rolling Papers/Cones/& Filters',
+        'Grinders',
+        'Cleaning & Storage',
+        'Vape Batteries',
+        'Bongs',
+        'Pipes',
+        'Rigs',
+        'Lighters',
+        'Hemp Lighters'
+      ]
+    }
+  ]
+  
+  let categoriesCreated = 0
+  let subcategoriesCreated = 0
+  
+  for (const categoryData of categoriesData) {
+    let category = await context.entities.CategoryDefinition.findFirst({
+      where: { name: categoryData.name }
+    })
+    
+    if (!category) {
+      category = await context.entities.CategoryDefinition.create({
+        data: {
+          name: categoryData.name,
+          displayOrder: categoryData.displayOrder
+        }
+      })
+      categoriesCreated++
+    }
+    
+    // Create subcategories
+    for (let i = 0; i < categoryData.subcategories.length; i++) {
+      const subcatName = categoryData.subcategories[i]
+      const existing = await context.entities.CategorySubcategory.findFirst({
+        where: {
+          categoryId: category.id,
+          name: subcatName
+        }
+      })
+      
+      if (!existing) {
+        await context.entities.CategorySubcategory.create({
+          data: {
+            categoryId: category.id,
+            name: subcatName,
+            displayOrder: i + 1
+          }
+        })
+        subcategoriesCreated++
+      }
+    }
+  }
+  
+  return {
+    categoriesCreated,
+    subcategoriesCreated,
+    totalCategories: categoriesData.length
+  }
+}
+
+export const updateProductEnrichment = async ({ productId, updates }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const product = await context.entities.ProductCatalog.findUnique({
+    where: { id: productId }
+  })
+  
+  if (!product) { throw new HttpError(404, 'Product not found') }
+  
+  // Track changes for audit trail
+  const changes = []
+  const data = {}
+  
+  if (updates.thc !== undefined && updates.thc !== product.thc) {
+    changes.push({ field: 'thc', oldValue: String(product.thc || ''), newValue: String(updates.thc || '') })
+    data.thc = updates.thc
+  }
+  
+  if (updates.cbd !== undefined && updates.cbd !== product.cbd) {
+    changes.push({ field: 'cbd', oldValue: String(product.cbd || ''), newValue: String(updates.cbd || '') })
+    data.cbd = updates.cbd
+  }
+  
+  if (updates.cannabinoidProfile !== undefined) {
+    changes.push({ field: 'cannabinoidProfile', oldValue: JSON.stringify(product.cannabinoidProfile || {}), newValue: JSON.stringify(updates.cannabinoidProfile || {}) })
+    data.cannabinoidProfile = updates.cannabinoidProfile
+  }
+  
+  if (updates.classificationId !== undefined && updates.classificationId !== product.classificationId) {
+    changes.push({ field: 'classificationId', oldValue: String(product.classificationId || ''), newValue: String(updates.classificationId || '') })
+    data.classificationId = updates.classificationId
+  }
+  
+  if (updates.categoryDefinitionId !== undefined && updates.categoryDefinitionId !== product.categoryDefinitionId) {
+    changes.push({ field: 'categoryDefinitionId', oldValue: String(product.categoryDefinitionId || ''), newValue: String(updates.categoryDefinitionId || '') })
+    data.categoryDefinitionId = updates.categoryDefinitionId
+  }
+  
+  if (updates.subcategoryId !== undefined && updates.subcategoryId !== product.subcategoryId) {
+    changes.push({ field: 'subcategoryId', oldValue: String(product.subcategoryId || ''), newValue: String(updates.subcategoryId || '') })
+    data.subcategoryId = updates.subcategoryId
+  }
+  
+  if (updates.format !== undefined && updates.format !== product.format) {
+    changes.push({ field: 'format', oldValue: product.format || '', newValue: updates.format || '' })
+    data.format = updates.format
+  }
+  
+  if (updates.distributorId !== undefined && updates.distributorId !== product.distributorId) {
+    changes.push({ field: 'distributorId', oldValue: String(product.distributorId || ''), newValue: String(updates.distributorId || '') })
+    data.distributorId = updates.distributorId
+  }
+  
+  const updated = await context.entities.ProductCatalog.update({
+    where: { id: productId },
+    data
+  })
+  
+  // Create enrichment audit records
+  for (const change of changes) {
+    await context.entities.ProductEnrichment.create({
+      data: {
+        productId,
+        enrichedBy: context.user.id,
+        field: change.field,
+        oldValue: change.oldValue,
+        newValue: change.newValue
+      }
+    })
+  }
+  
+  return updated
+}
+
+export const updateProductCannabinoids = async ({ productId, thc, cbd, cannabinoidProfile }, context) => {
+  return updateProductEnrichment({ productId, updates: { thc, cbd, cannabinoidProfile } }, context)
+}
+
+export const bulkUpdateProducts = async ({ productIds, updates }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const results = []
+  for (const productId of productIds) {
+    try {
+      const updated = await updateProductEnrichment({ productId, updates }, context)
+      results.push({ productId, success: true, product: updated })
+    } catch (error) {
+      results.push({ productId, success: false, error: error.message })
+    }
+  }
+  
+  return { results, total: productIds.length, successful: results.filter(r => r.success).length }
+}
+
+export const createClassification = async ({ name, displayOrder }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const existing = await context.entities.Classification.findUnique({
+    where: { name }
+  })
+  
+  if (existing) { throw new HttpError(400, 'Classification already exists') }
+  
+  return await context.entities.Classification.create({
+    data: {
+      name,
+      displayOrder: displayOrder || 0
+    }
+  })
+}
+
+export const updateClassification = async ({ id, name, displayOrder, isActive }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const data = {}
+  if (name !== undefined) data.name = name
+  if (displayOrder !== undefined) data.displayOrder = displayOrder
+  if (isActive !== undefined) data.isActive = isActive
+  
+  return await context.entities.Classification.update({
+    where: { id },
+    data
+  })
+}
+
+export const deleteClassification = async ({ id }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  // Soft delete
+  return await context.entities.Classification.update({
+    where: { id },
+    data: { isActive: false }
+  })
+}
+
+export const createCategoryDefinition = async ({ name, displayOrder }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  return await context.entities.CategoryDefinition.create({
+    data: {
+      name,
+      displayOrder: displayOrder || 0
+    }
+  })
+}
+
+export const updateCategoryDefinition = async ({ id, name, displayOrder, isActive }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const data = {}
+  if (name !== undefined) data.name = name
+  if (displayOrder !== undefined) data.displayOrder = displayOrder
+  if (isActive !== undefined) data.isActive = isActive
+  
+  return await context.entities.CategoryDefinition.update({
+    where: { id },
+    data
+  })
+}
+
+export const deleteCategoryDefinition = async ({ id }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  // Soft delete
+  return await context.entities.CategoryDefinition.update({
+    where: { id },
+    data: { isActive: false }
+  })
+}
+
+export const createSubcategory = async ({ categoryId, name, displayOrder }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  return await context.entities.CategorySubcategory.create({
+    data: {
+      categoryId,
+      name,
+      displayOrder: displayOrder || 0
+    }
+  })
+}
+
+export const updateSubcategory = async ({ id, name, displayOrder, isActive }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const data = {}
+  if (name !== undefined) data.name = name
+  if (displayOrder !== undefined) data.displayOrder = displayOrder
+  if (isActive !== undefined) data.isActive = isActive
+  
+  return await context.entities.CategorySubcategory.update({
+    where: { id },
+    data
+  })
+}
+
+export const deleteSubcategory = async ({ id }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  // Soft delete
+  return await context.entities.CategorySubcategory.update({
+    where: { id },
+    data: { isActive: false }
+  })
+}
+
+export const syncProductCategoriesToDefinitions = async (args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const products = await context.entities.ProductCatalog.findMany({
+    where: {
+      OR: [
+        { categoryDefinitionId: null },
+        { subcategoryId: null }
+      ],
+      parentCategory: { not: null }
+    },
+    select: {
+      id: true,
+      parentCategory: true,
+      subcategory: true
+    }
+  })
+  
+  let synced = 0
+  for (const product of products) {
+    if (product.parentCategory) {
+      const categoryDef = await context.entities.CategoryDefinition.findFirst({
+        where: { name: product.parentCategory }
+      })
+      
+      if (categoryDef) {
+        const updateData = { categoryDefinitionId: categoryDef.id }
+        
+        if (product.subcategory) {
+          const subcategoryDef = await context.entities.CategorySubcategory.findFirst({
+            where: {
+              categoryId: categoryDef.id,
+              name: product.subcategory
+            }
+          })
+          
+          if (subcategoryDef) {
+            updateData.subcategoryId = subcategoryDef.id
+          }
+        }
+        
+        await context.entities.ProductCatalog.update({
+          where: { id: product.id },
+          data: updateData
+        })
+        synced++
+      }
+    }
+  }
+  
+  return { synced, total: products.length }
+}
+
+export const syncProductClassifications = async (args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  console.log('🔄 Starting classification sync for all products...')
+  
+  // Get all classifications for lookup
+  const classifications = await context.entities.Classification.findMany({
+    where: { isActive: true }
+  })
+  const classificationMap = new Map()
+  classifications.forEach(c => {
+    classificationMap.set(c.name.toLowerCase(), c.id)
+  })
+  
+  // Get all products with strainType but no classificationId
+  const products = await context.entities.ProductCatalog.findMany({
+    where: {
+      OR: [
+        { classificationId: null, strainType: { not: null } },
+        { classificationId: null, strainType: { not: 'N/A' } }
+      ]
+    },
+    select: {
+      id: true,
+      strainType: true
+    }
+  })
+  
+  console.log(`📦 Found ${products.length} products to sync`)
+  
+  let synced = 0
+  let skipped = 0
+  
+  // Process in chunks
+  const chunkSize = 100
+  for (let i = 0; i < products.length; i += chunkSize) {
+    const chunk = products.slice(i, i + chunkSize)
+    
+    await Promise.all(chunk.map(async (product) => {
+      if (product.strainType && product.strainType !== 'N/A') {
+        const classificationId = classificationMap.get(product.strainType.toLowerCase())
+        
+        if (classificationId) {
+          await context.entities.ProductCatalog.update({
+            where: { id: product.id },
+            data: { classificationId }
+          })
+          synced++
+        } else {
+          skipped++
+        }
+      } else {
+        skipped++
+      }
+    }))
+    
+    console.log(`Progress: ${Math.min(i + chunkSize, products.length)}/${products.length}`)
+  }
+  
+  console.log(`✅ Classification sync complete: ${synced} synced, ${skipped} skipped`)
+  
+  return {
+    totalProducts: products.length,
+    synced,
+    skipped
+  }
+}
+
+export const syncAllProductEnrichments = async (args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  console.log('🔄 Starting comprehensive product enrichment sync...')
+  
+  // Sync classifications
+  const classificationResult = await syncProductClassifications(args, context)
+  
+  // Sync categories
+  const categoryResult = await syncProductCategoriesToDefinitions(args, context)
+  
+  return {
+    classifications: classificationResult,
+    categories: categoryResult,
+    totalSynced: classificationResult.synced + categoryResult.synced
+  }
 }

@@ -43,7 +43,7 @@ action analyzeInventoryExport {
 
 action uploadInventoryExport {
   fn: import { uploadInventoryExport } from "@src/actions.js",
-  entities: [Store, ProductCatalog, Category, InventorySnapshot, StockLevel]
+  entities: [Store, ProductCatalog, Category, InventorySnapshot, StockLevel, Classification, CategoryDefinition, CategorySubcategory]
 }
 
 action uploadInventoryLogs {
@@ -246,6 +246,117 @@ action seedDistributors {
   entities: [Distributor]
 }
 
+action seedDefaultClassifications {
+  fn: import { seedDefaultClassifications } from "@src/actions.js",
+  entities: [Classification]
+}
+
+action seedDefaultCategories {
+  fn: import { seedDefaultCategories } from "@src/actions.js",
+  entities: [CategoryDefinition, CategorySubcategory]
+}
+
+query getProductCatalog {
+  fn: import { getProductCatalog } from "@src/queries.js",
+  entities: [ProductCatalog, Classification, CategoryDefinition, CategorySubcategory, Distributor, StockLevel, Store]
+}
+
+query getClassifications {
+  fn: import { getClassifications } from "@src/queries.js",
+  entities: [Classification]
+}
+
+query getCategoryDefinitions {
+  fn: import { getCategoryDefinitions } from "@src/queries.js",
+  entities: [CategoryDefinition, CategorySubcategory]
+}
+
+query getProductById {
+  fn: import { getProductById } from "@src/queries.js",
+  entities: [ProductCatalog, Classification, CategoryDefinition, CategorySubcategory, Distributor, ProductEnrichment, StockLevel, Store, InventoryMovement]
+}
+
+route ProductDetailRoute { path: "/product/:productId", to: ProductDetailPage }
+page ProductDetailPage {
+  component: import ProductDetail from "@src/pages/ProductDetail.jsx",
+  authRequired: true
+}
+
+action updateProductEnrichment {
+  fn: import { updateProductEnrichment } from "@src/actions.js",
+  entities: [ProductCatalog, ProductEnrichment]
+}
+
+action updateProductCannabinoids {
+  fn: import { updateProductCannabinoids } from "@src/actions.js",
+  entities: [ProductCatalog, ProductEnrichment]
+}
+
+action bulkUpdateProducts {
+  fn: import { bulkUpdateProducts } from "@src/actions.js",
+  entities: [ProductCatalog, ProductEnrichment]
+}
+
+action createClassification {
+  fn: import { createClassification } from "@src/actions.js",
+  entities: [Classification]
+}
+
+action updateClassification {
+  fn: import { updateClassification } from "@src/actions.js",
+  entities: [Classification]
+}
+
+action deleteClassification {
+  fn: import { deleteClassification } from "@src/actions.js",
+  entities: [Classification]
+}
+
+action createCategoryDefinition {
+  fn: import { createCategoryDefinition } from "@src/actions.js",
+  entities: [CategoryDefinition]
+}
+
+action updateCategoryDefinition {
+  fn: import { updateCategoryDefinition } from "@src/actions.js",
+  entities: [CategoryDefinition]
+}
+
+action deleteCategoryDefinition {
+  fn: import { deleteCategoryDefinition } from "@src/actions.js",
+  entities: [CategoryDefinition]
+}
+
+action createSubcategory {
+  fn: import { createSubcategory } from "@src/actions.js",
+  entities: [CategorySubcategory]
+}
+
+action updateSubcategory {
+  fn: import { updateSubcategory } from "@src/actions.js",
+  entities: [CategorySubcategory]
+}
+
+action deleteSubcategory {
+  fn: import { deleteSubcategory } from "@src/actions.js",
+  entities: [CategorySubcategory]
+}
+
+action syncProductCategoriesToDefinitions {
+  fn: import { syncProductCategoriesToDefinitions } from "@src/actions.js",
+  entities: [ProductCatalog, CategoryDefinition, CategorySubcategory]
+}
+
+action syncProductClassifications {
+  fn: import { syncProductClassifications } from "@src/actions.js",
+  entities: [ProductCatalog, Classification]
+}
+
+action syncAllProductEnrichments {
+  fn: import { syncAllProductEnrichments } from "@src/actions.js",
+  entities: [ProductCatalog, Classification, CategoryDefinition, CategorySubcategory]
+}
+
 route DashboardRoute { path: "/", to: DashboardPage }
 page DashboardPage {
   component: import DashboardPage from "@src/pages/Dashboard.jsx",
@@ -291,5 +402,17 @@ page BrandMappingPage {
 route StoresRoute { path: "/stores", to: StoresPage }
 page StoresPage {
   component: import Stores from "@src/pages/Stores.jsx",
+  authRequired: true
+}
+
+route CategoryManagementRoute { path: "/categories", to: CategoryManagementPage }
+page CategoryManagementPage {
+  component: import CategoryManagement from "@src/pages/CategoryManagement.jsx",
+  authRequired: true
+}
+
+route ProductCatalogRoute { path: "/product-catalog", to: ProductCatalogPage }
+page ProductCatalogPage {
+  component: import ProductCatalog from "@src/pages/ProductCatalog.jsx",
   authRequired: true
 }
