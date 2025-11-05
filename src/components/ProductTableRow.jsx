@@ -7,7 +7,7 @@ import LocationCell from './LocationCell';
 import DistributorCell from './DistributorCell';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 
-const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, onAddToOrder }) => {
+const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, onAddToOrder, isLoadingTrends = false }) => {
   const getStrainColor = (strainType) => {
     switch(strainType) {
       case 'Sativa': return 'bg-green-500';
@@ -179,6 +179,8 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
           <td key={column.id} style={cellStyle} className="px-3 py-3 text-center border">
             {product.sparklineData && product.sparklineData.length > 0 ? (
               <Sparkline data={product.sparklineData} width={60} height={20} />
+            ) : isLoadingTrends ? (
+              <Sparkline data={[]} width={60} height={20} isLoading={true} />
             ) : (
               <span className="text-muted-foreground text-xs">-</span>
             )}

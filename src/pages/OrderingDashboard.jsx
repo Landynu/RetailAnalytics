@@ -8,7 +8,7 @@ import { Card } from '../components/ui/card';
 import LocationSelector from '../components/LocationSelector';
 import DateRangeFilter from '../components/DateRangeFilter';
 import FilterDropdown from '../components/FilterDropdown';
-import { Package, Tag, RotateCcw } from 'lucide-react';
+import { Package, Tag, RotateCcw, Loader2 } from 'lucide-react';
 import DataLoadingOverlay from '../components/DataLoadingOverlay';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 import { arrayMove } from '@dnd-kit/sortable';
@@ -88,18 +88,42 @@ const OrderingDashboard = () => {
 
   const [allProducts, setAllProducts] = useState([]);
   const [allAnalyticsData, setAllAnalyticsData] = useState(null);
+  
+  // Progressive loading state tracking
+  const [hasInitialPageLoaded, setHasInitialPageLoaded] = useState(false);
+  const [hasFullDataLoaded, setHasFullDataLoaded] = useState(false);
 
   const includeHiddenCategories = visibleHiddenCategories.size > 0;
 
-  // Only refetch when storeIds, dateRange, or includeHiddenCategories changes
-  // Filters are handled client-side, so they don't trigger refetch
-  const { data: analytics, isLoading: analyticsLoading, refetch: refetchAnalytics } = useQuery(
+  // Fast initial load: first 100 products with basic data
+  const { 
+    data: initialAnalytics, 
+    isLoading: isLoadingInitialPage
+  } = useQuery(
     getOrderingAnalytics,
     { 
       storeIds: selectedStoreIds, 
       dateRange, 
       filters: {}, // Empty filters - we'll filter client-side
-      loadAll: true, // Load all products at once
+      loadAll: false, // Fast path: only first page
+      limit: 100,
+      offset: 0,
+      includeHiddenCategories
+    }
+  );
+
+  // Background full load: all products with complete analytics
+  // Start immediately in background (React Query will handle caching)
+  const { 
+    data: fullAnalytics, 
+    isLoading: isLoadingFullData
+  } = useQuery(
+    getOrderingAnalytics,
+    { 
+      storeIds: selectedStoreIds, 
+      dateRange, 
+      filters: {}, // Empty filters - we'll filter client-side
+      loadAll: true, // Complete analytics
       includeHiddenCategories
     }
   );
@@ -107,13 +131,36 @@ const OrderingDashboard = () => {
   const { data: worksheet } = useQuery(getOrCreateOrderWorksheet);
   const { data: allDistributors } = useQuery(getDistributors);
 
-  // Store all analytics data when loaded
+  // Store initial page data when ready
   useEffect(() => {
-    if (analytics) {
-      setAllAnalyticsData(analytics);
-      setAllProducts(analytics.products || []);
+    if (initialAnalytics && !hasInitialPageLoaded) {
+      setAllAnalyticsData(initialAnalytics);
+      setAllProducts(initialAnalytics.products || []);
+      setHasInitialPageLoaded(true);
     }
-  }, [analytics]);
+  }, [initialAnalytics, hasInitialPageLoaded]);
+
+  // Replace with full data when background load completes (but only if it has more data)
+  useEffect(() => {
+    if (fullAnalytics && !hasFullDataLoaded) {
+      // Only replace if full data has more products or different data
+      const fullProductCount = fullAnalytics.products?.length || 0;
+      const currentProductCount = allProducts.length;
+      
+      // Replace if full data has more products or is complete
+      if (fullProductCount > currentProductCount || fullAnalytics.totalCount !== undefined) {
+        setAllAnalyticsData(fullAnalytics);
+        setAllProducts(fullAnalytics.products || []);
+        setHasFullDataLoaded(true);
+      }
+    }
+  }, [fullAnalytics, hasFullDataLoaded, allProducts.length]);
+
+  // Reset loading flags when dependencies change
+  useEffect(() => {
+    setHasInitialPageLoaded(false);
+    setHasFullDataLoaded(false);
+  }, [selectedStoreIds, dateRange, includeHiddenCategories]);
 
   // Client-side filtering function (matches backend filterProductsInMemory logic)
   const filterProductsClientSide = React.useCallback((products, filters) => {
@@ -457,11 +504,13 @@ const OrderingDashboard = () => {
     return counts;
   }, [sortedProducts]);
 
-  // Show skeleton loading only on initial page load
-  const isInitialLoad = analyticsLoading && allProducts.length === 0;
-  // No refetching during filter changes - filters are client-side now
+  // Determine loading states for progressive rendering
+  const isInitialPageLoad = isLoadingInitialPage && allProducts.length === 0;
+  const isShowingInitialPage = hasInitialPageLoaded && !hasFullDataLoaded && isLoadingFullData;
+  const hasAnyData = allProducts.length > 0;
 
-  if (isInitialLoad) {
+  // Show skeleton loading only on very first page load (no data at all)
+  if (isInitialPageLoad) {
     return (
       <div className="flex h-screen">
         <div className="animate-pulse w-64 bg-muted"></div>
@@ -493,9 +542,22 @@ const OrderingDashboard = () => {
           <div>
             <div className="flex items-center justify-between gap-4 mb-4">
               <div>
-                <h1 className="text-3xl font-bold text-emerald-800">Ordering Intelligence</h1>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-3xl font-bold text-emerald-800">Ordering Intelligence</h1>
+                  {isLoadingFullData && hasInitialPageLoaded && (
+                    <Badge variant="secondary" className="h-7 px-3 text-xs font-medium flex items-center gap-2 bg-blue-50 text-blue-700 border-blue-200">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Loading complete analytics...
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-emerald-700 mt-1">
                   Analysis for {allAnalyticsData?.periodDays || 14} days • Showing {sortedProducts.length} of {allProducts.length} products
+                  {isLoadingFullData && hasInitialPageLoaded && (fullAnalytics?.totalCount || initialAnalytics?.totalCount) && (
+                    <span className="text-blue-600 ml-2">
+                      (Loading {(fullAnalytics?.totalCount || initialAnalytics?.totalCount)} total...)
+                    </span>
+                  )}
                 </p>
                 {allAnalyticsData?.lastUpdate && (
                   <p className="text-xs text-emerald-600 mt-1">
@@ -639,14 +701,14 @@ const OrderingDashboard = () => {
                         onColumnResize={updateColumnWidth}
                       />
                       <tbody className="relative">
-                        {isInitialLoad ? (
+                        {sortedProducts.length === 0 && isInitialPageLoad ? (
                           <tr>
                             <td colSpan={orderedColumns.length} className="p-8 text-center relative" style={{ height: '400px' }}>
                               <div className="absolute inset-0 flex items-center justify-center">
                                 <DataLoadingOverlay 
                                   isLoading={true} 
                                   message="Loading products..."
-                                  productCount={allProducts.length}
+                                  productCount={0}
                                 />
                               </div>
                             </td>
@@ -662,6 +724,7 @@ const OrderingDashboard = () => {
                               periodDays={allAnalyticsData?.periodDays || 14}
                               maxTotalSales={maxTotalSales}
                               onAddToOrder={handleAddToOrder}
+                              isLoadingTrends={isLoadingFullData && hasInitialPageLoaded}
                             />
                           ))
                         )}
@@ -675,7 +738,8 @@ const OrderingDashboard = () => {
 
           <SalesMatrix 
             salesMatrix={allAnalyticsData?.salesMatrix} 
-            stores={allAnalyticsData?.stores || []} 
+            stores={allAnalyticsData?.stores || []}
+            isLoading={isLoadingFullData && hasInitialPageLoaded && !allAnalyticsData?.salesMatrix}
           />
         </div>
       </div>

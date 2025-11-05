@@ -1,6 +1,27 @@
 import React from 'react';
 
-const Sparkline = ({ data, width = 60, height = 20, color = '#10b981' }) => {
+const Sparkline = ({ data, width = 60, height = 20, color = '#10b981', isLoading = false }) => {
+  // Show loading skeleton if explicitly loading
+  if (isLoading) {
+    return (
+      <div className="inline-block" style={{ verticalAlign: 'middle' }} title="Loading trend data...">
+        <div className="relative animate-pulse">
+          <svg width={width} height={height} className="opacity-60">
+            <rect width={width} height={height} fill="#f3f4f6" rx="2" />
+            {/* Animated wave-like loading line */}
+            <polyline
+              fill="none"
+              stroke="#9ca3af"
+              strokeWidth="1.5"
+              points={`0,${height*0.7} ${width*0.2},${height*0.5} ${width*0.4},${height*0.6} ${width*0.6},${height*0.4} ${width*0.8},${height*0.5} ${width},${height*0.45}`}
+              strokeDasharray="3 2"
+            />
+          </svg>
+        </div>
+      </div>
+    );
+  }
+
   if (!data || data.length === 0) {
     return <div className="text-xs text-muted-foreground">-</div>;
   }

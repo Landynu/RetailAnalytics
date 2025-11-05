@@ -2128,46 +2128,43 @@ export const getOrderingAnalytics = async ({
   // Total count already calculated at database level
   const hasMore = loadAll ? false : offset + limit < totalCount;
 
-  // Calculate strain counts and sparkline data in parallel
-  // Use filtered product IDs from memory instead of database queries
+  // Fast path: Skip expensive sparkline calculations for initial page load
+  // Sparklines can be loaded later when full data is requested
   const paginatedProductIds = filteredProductMetrics.map(p => p.id);
   const allFilteredProductIdsList = allFilteredProductIds;
   
-  const [
-    sparklineData
-  ] = await Promise.all([
-    // Get weekly sales summaries for sparklines (last 12 weeks) - cached
-    paginatedProductIds.length > 0 ? (async () => {
-      const sparklineCacheKey = generateCacheKey('sparklines', {
-        productIds: paginatedProductIds.sort((a, b) => a - b).join(','),
-        storeIds: storeIdList.sort().join(','),
-        date: twelveWeeksAgo.toISOString().split('T')[0]
-      });
-      let sparklineData = await getCached(sparklineCacheKey, 'sparklines');
-      if (!sparklineData) {
-        sparklineData = await timedQuery('sparklines', () =>
-          context.entities.WeeklySalesSummary.findMany({
-            where: {
-              productId: { in: paginatedProductIds },
-              storeId: { in: storeIdList },
-              weekStart: { gte: twelveWeeksAgo }
-            },
-            select: {
-              productId: true,
-              weekStart: true,
-              unitsSold: true
-            },
-            orderBy: { weekStart: 'asc' }
-          }), { productIds: paginatedProductIds.length, stores: storeIdList.length }
-        );
-        // Cache for 30 minutes (historical data doesn't change) - non-blocking
-        setCached(sparklineCacheKey, sparklineData, 1800, 'sparklines').catch(err => 
-          console.warn(`Cache write failed for sparklines:`, err.message)
-        );
-      }
-      return sparklineData;
-    })() : Promise.resolve([])
-  ]);
+  // Only calculate sparklines if loadAll is true (full data load)
+  // For initial page load (loadAll: false), skip sparklines for faster response
+  const sparklineData = loadAll && paginatedProductIds.length > 0 ? await (async () => {
+    const sparklineCacheKey = generateCacheKey('sparklines', {
+      productIds: paginatedProductIds.sort((a, b) => a - b).join(','),
+      storeIds: storeIdList.sort().join(','),
+      date: twelveWeeksAgo.toISOString().split('T')[0]
+    });
+    let sparklineData = await getCached(sparklineCacheKey, 'sparklines');
+    if (!sparklineData) {
+      sparklineData = await timedQuery('sparklines', () =>
+        context.entities.WeeklySalesSummary.findMany({
+          where: {
+            productId: { in: paginatedProductIds },
+            storeId: { in: storeIdList },
+            weekStart: { gte: twelveWeeksAgo }
+          },
+          select: {
+            productId: true,
+            weekStart: true,
+            unitsSold: true
+          },
+          orderBy: { weekStart: 'asc' }
+        }), { productIds: paginatedProductIds.length, stores: storeIdList.length }
+      );
+      // Cache for 30 minutes (historical data doesn't change) - non-blocking
+      setCached(sparklineCacheKey, sparklineData, 1800, 'sparklines').catch(err => 
+        console.warn(`Cache write failed for sparklines:`, err.message)
+      );
+    }
+    return sparklineData;
+  })() : [];
 
   // Calculate strain counts from filtered products in memory (already loaded, no DB query needed)
   const strainCounts = { Hybrid: 0, Sativa: 0, Indica: 0 };
@@ -2212,40 +2209,49 @@ export const getOrderingAnalytics = async ({
   // Products are already paginated - use filteredProductMetrics
   const paginatedProductsForSparklines = filteredProductMetrics;
 
-  // Organize sparkline data by product
+  // Organize sparkline data by product (only if sparklines were loaded)
   const sparklineByProduct = {};
-  sparklineData.forEach(data => {
-    if (!sparklineByProduct[data.productId]) {
-      sparklineByProduct[data.productId] = [];
-    }
-    // Convert weekStart to Date if it's a string (from cache)
-    const weekStartDate = data.weekStart instanceof Date 
-      ? data.weekStart 
-      : new Date(data.weekStart);
-    sparklineByProduct[data.productId].push({
-      week: weekStartDate,
-      units: data.unitsSold
+  if (sparklineData.length > 0) {
+    sparklineData.forEach(data => {
+      if (!sparklineByProduct[data.productId]) {
+        sparklineByProduct[data.productId] = [];
+      }
+      // Convert weekStart to Date if it's a string (from cache)
+      const weekStartDate = data.weekStart instanceof Date 
+        ? data.weekStart 
+        : new Date(data.weekStart);
+      sparklineByProduct[data.productId].push({
+        week: weekStartDate,
+        units: data.unitsSold
+      });
     });
-  });
+  }
 
-  // Attach sparkline data to paginated products
-  paginatedProductsForSparklines.forEach(product => {
-    const productSparkline = sparklineByProduct[product.id] || [];
-    // Group by week and sum units across all stores
-    const weeklyTotals = {};
-    productSparkline.forEach(point => {
-      // Ensure week is a Date object
-      const weekDate = point.week instanceof Date 
-        ? point.week 
-        : new Date(point.week);
-      const weekKey = weekDate.toISOString().split('T')[0];
-      weeklyTotals[weekKey] = (weeklyTotals[weekKey] || 0) + point.units;
+  // Attach sparkline data to paginated products (only if sparklines were loaded)
+  if (loadAll && sparklineData.length > 0) {
+    paginatedProductsForSparklines.forEach(product => {
+      const productSparkline = sparklineByProduct[product.id] || [];
+      // Group by week and sum units across all stores
+      const weeklyTotals = {};
+      productSparkline.forEach(point => {
+        // Ensure week is a Date object
+        const weekDate = point.week instanceof Date 
+          ? point.week 
+          : new Date(point.week);
+        const weekKey = weekDate.toISOString().split('T')[0];
+        weeklyTotals[weekKey] = (weeklyTotals[weekKey] || 0) + point.units;
+      });
+      // Convert to array of weekly values (last 12 weeks)
+      product.sparklineData = Object.keys(weeklyTotals)
+        .sort()
+        .map(week => weeklyTotals[week]);
     });
-    // Convert to array of weekly values (last 12 weeks)
-    product.sparklineData = Object.keys(weeklyTotals)
-      .sort()
-      .map(week => weeklyTotals[week]);
-  });
+  } else {
+    // For fast path, set empty sparkline data
+    paginatedProductsForSparklines.forEach(product => {
+      product.sparklineData = [];
+    });
+  }
 
   // Calculate sales matrix data, location totals, latest movement, and brand-distributor mappings in parallel
   // Note: allFilteredProductIds is already defined above (line 1514), so we don't need to query again

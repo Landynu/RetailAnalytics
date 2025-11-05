@@ -1,8 +1,38 @@
 import React from 'react';
 import { Loader2 } from 'lucide-react';
 
-const DataLoadingOverlay = ({ isLoading, message = 'Loading data...', productCount = null }) => {
+const DataLoadingOverlay = ({ 
+  isLoading, 
+  message = 'Loading data...', 
+  productCount = null,
+  totalCount = null,
+  loadingType = 'initial' // 'initial' | 'refetch' | 'background'
+}) => {
   if (!isLoading) return null;
+
+  const getProgressText = () => {
+    if (totalCount && productCount !== null) {
+      const percentage = Math.min(100, Math.round((productCount / totalCount) * 100));
+      return `${productCount} of ${totalCount} products (${percentage}%)`;
+    }
+    if (productCount !== null) {
+      return `Processing ${productCount} products...`;
+    }
+    return null;
+  };
+
+  const getSubMessage = () => {
+    switch (loadingType) {
+      case 'initial':
+        return 'Please wait, this may take a moment';
+      case 'refetch':
+        return 'Updating data with new filters...';
+      case 'background':
+        return 'Loading complete analytics in the background...';
+      default:
+        return 'Please wait, this may take a moment';
+    }
+  };
 
   return (
     <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-20">
@@ -18,13 +48,13 @@ const DataLoadingOverlay = ({ isLoading, message = 'Loading data...', productCou
           
           <div className="text-center space-y-2">
             <p className="text-lg font-semibold">{message}</p>
-            {productCount !== null && (
+            {getProgressText() && (
               <p className="text-sm text-muted-foreground">
-                Processing {productCount} products...
+                {getProgressText()}
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              Please wait, this may take a moment
+              {getSubMessage()}
             </p>
           </div>
         </div>
