@@ -149,6 +149,70 @@ export async function getCached(key, queryName = null) {
 }
 
 /**
+ * Get multiple cached values in parallel using pipelining (faster for multiple keys)
+ * @param {string[]} keys - Array of cache keys
+ * @param {string[]} queryNames - Optional array of query names for logging (must match keys length)
+ * @returns {Promise<Array<any|null>>} Array of cached values (null if not found)
+ */
+export async function getCachedBatch(keys, queryNames = null) {
+  const startTime = Date.now();
+  const client = getRedisClient();
+  if (!client || client.status !== 'ready') {
+    return keys.map(() => null);
+  }
+
+  try {
+    // Use pipeline for batch operations (single round trip)
+    const pipeline = client.pipeline();
+    keys.forEach(key => pipeline.get(key));
+    const results = await pipeline.exec();
+    
+    const redisDuration = Date.now() - startTime;
+    const parsedResults = [];
+    
+    for (let i = 0; i < results.length; i++) {
+      const [error, value] = results[i];
+      const queryName = queryNames ? queryNames[i] : null;
+      
+      if (error) {
+        console.warn(`⚠️ Cache get error for key ${keys[i]}:`, error.message);
+        parsedResults.push(null);
+        continue;
+      }
+      
+      if (value === null) {
+        if (queryName) {
+          console.log(`[QUERY] ${queryName} | CACHE MISS | ${redisDuration}ms | key: ${keys[i].substring(0, 50)}...`);
+        }
+        parsedResults.push(null);
+        continue;
+      }
+      
+      // Parse JSON
+      const parseStart = Date.now();
+      const parsed = JSON.parse(value);
+      const parseDuration = Date.now() - parseStart;
+      
+      if (queryName) {
+        const sizeKB = (value.length / 1024).toFixed(2);
+        if (parseDuration > 50) {
+          console.log(`[QUERY] ${queryName} | CACHE HIT | Redis: ${redisDuration}ms | Parse: ${parseDuration}ms | TTL: N/A | Size: ${sizeKB}KB | key: ${keys[i].substring(0, 50)}...`);
+        } else {
+          console.log(`[QUERY] ${queryName} | CACHE HIT | ${redisDuration + parseDuration}ms | key: ${keys[i].substring(0, 50)}...`);
+        }
+      }
+      
+      parsedResults.push(parsed);
+    }
+    
+    return parsedResults;
+  } catch (error) {
+    console.warn(`⚠️ Cache batch get error:`, error.message);
+    return keys.map(() => null);
+  }
+}
+
+/**
  * Set cached value with TTL and logging
  * @param {string} key - Cache key
  * @param {any} value - Value to cache (will be JSON stringified)

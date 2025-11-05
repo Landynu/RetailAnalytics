@@ -1,5 +1,5 @@
 import { HttpError } from 'wasp/server'
-import { getCached, setCached, generateCacheKey, timedQuery } from './cache.js'
+import { getCached, getCachedBatch, setCached, generateCacheKey, timedQuery } from './cache.js'
 
 // Helper function to filter products in-memory
 function filterProductsInMemory(products, filters) {
@@ -1396,12 +1396,11 @@ export const getOrderingAnalytics = async ({
     date: thirtyDaysAgo.toISOString().split('T')[0]
   });
   
-  // Parallelize ALL cache reads at the start
-  const [baseProducts, cachedRankingsProducts, productsWithRecentSalesCached] = await Promise.all([
-    getCached(baseProductsKey, 'base:products'),
-    getCached(baseRankingsProductsKey, 'base:rankings_products'),
-    getCached(recentSalesCacheKey, 'recent_sales')
-  ]);
+  // Parallelize ALL cache reads at the start using batch (single Redis round trip)
+  let [baseProducts, cachedRankingsProducts, productsWithRecentSalesCached] = await getCachedBatch(
+    [baseProductsKey, baseRankingsProductsKey, recentSalesCacheKey],
+    ['base:products', 'base:rankings_products', 'recent_sales']
+  );
 
   // Get products with sales in last 30 days from WeeklySalesSummary (for performance)
   // If cache miss, fetch it
@@ -1473,10 +1472,7 @@ export const getOrderingAnalytics = async ({
     allProductIdsForRankings = cachedRankingsProducts || baseProducts.map(p => ({ id: p.id, subcategory: p.subcategory }));
   } else {
     // Base cache miss - fetch all products (unfiltered) and cache them
-    [
-      allProductIdsForRankings,
-      baseProducts
-    ] = await Promise.all([
+    const dbResults = await Promise.all([
       timedQuery('all_product_ids_rankings', () =>
         context.entities.ProductCatalog.findMany({
           where: baseProductWhere,
@@ -1495,6 +1491,9 @@ export const getOrderingAnalytics = async ({
         }), { stores: storeIdList.length }
       )
     ]);
+    
+    allProductIdsForRankings = dbResults[0];
+    baseProducts = dbResults[1];
     
     // Cache base products for future use (non-blocking)
     setCached(baseProductsKey, baseProducts, 3600, 'base:products').catch(err => 
@@ -1555,16 +1554,17 @@ export const getOrderingAnalytics = async ({
     dateRange: `${weekBoundaries.start.toISOString().split('T')[0]}_${currentWeekStart.toISOString().split('T')[0]}`
   });
 
-  // Parallelize cache checks for base sales_totals, purchase_orders, and rankings
-  const [cachedBaseSales, cachedBasePOs, cachedBaseRankings] = await Promise.all([
-    getCached(baseSalesTotalsKey, 'base:sales_totals'),
-    getCached(basePOsKey, 'base:purchase_orders'),
-    getCached(baseRankingsKey, 'base:rankings')
-  ]);
+  // Parallelize cache checks for base sales_totals, purchase_orders, and rankings using batch
+  const [cachedBaseSales, cachedBasePOs, cachedBaseRankings] = await getCachedBatch(
+    [baseSalesTotalsKey, basePOsKey, baseRankingsKey],
+    ['base:sales_totals', 'base:purchase_orders', 'base:rankings']
+  );
   let salesMap = null;
   let completeWeeksSet = null;
   let weeklySalesData = null;
   let movementSalesTotals = null;
+  let allPOs = null;
+  let allRankingsSalesData = null;
 
   if (cachedBaseSales) {
     // Reconstruct base salesMap from cache, then filter to only include filtered products
@@ -1588,39 +1588,66 @@ export const getOrderingAnalytics = async ({
     // Fetch base data for all products matching baseProductWhere
     const allBaseProductIds = baseProducts.map(p => p.id);
     
-    const salesQueryResults = await Promise.all([
-      // Get sales totals from WeeklySalesSummary (complete weeks only, exclude current incomplete week)
-      // Use findMany to get both sales data AND weekStart in one query (merged optimization - eliminates separate completeWeeks query)
-      allBaseProductIds.length > 0 ? timedQuery('weekly_sales_totals', () => 
-        context.entities.WeeklySalesSummary.findMany({
+    // Parallelize ALL base data queries: sales, purchase orders, and rankings
+    const [salesQueryResults, allPOs, allRankingsSalesData] = await Promise.all([
+      // Sales queries (weekly + movements)
+      Promise.all([
+        // Get sales totals from WeeklySalesSummary (complete weeks only, exclude current incomplete week)
+        allBaseProductIds.length > 0 ? timedQuery('weekly_sales_totals', () => 
+          context.entities.WeeklySalesSummary.findMany({
+            where: {
+              storeId: { in: storeIdList },
+              productId: { in: allBaseProductIds },
+              weekStart: { gte: weekBoundaries.start, lt: currentWeekStart }
+            },
+            select: {
+              productId: true,
+              storeId: true,
+              weekStart: true,
+              unitsSold: true
+            }
+          }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
+        ) : Promise.resolve([]),
+        // Get sales from InventoryMovement for the exact date range (includes incomplete week)
+        allBaseProductIds.length > 0 ? timedQuery('movement_sales', () =>
+          context.entities.InventoryMovement.findMany({
+          where: {
+            storeId: { in: storeIdList },
+              productId: { in: allBaseProductIds },
+                type: 'sale',
+                date: { gte: startDate, lte: endDate }
+              },
+            select: { productId: true, storeId: true, changeQty: true, date: true }
+          }), { productIds: allBaseProductIds.length, stores: storeIdList.length, dateRange: `${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}` }
+        ) : Promise.resolve([])
+      ]),
+      // Purchase orders (independent, can run in parallel)
+      allBaseProductIds.length > 0 ? timedQuery('purchase_orders', () =>
+        context.entities.InventoryMovement.findMany({
+          where: {
+            storeId: { in: storeIdList },
+            productId: { in: allBaseProductIds },
+            type: 'purchase order'
+          },
+          select: { productId: true, date: true, changeQty: true },
+          orderBy: { date: 'desc' }
+        }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
+      ) : Promise.resolve([]),
+      // Rankings sales (independent, can run in parallel)
+      allBaseProductIds.length > 0 ? timedQuery('rankings_sales', () =>
+        context.entities.WeeklySalesSummary.groupBy({
+          by: ['productId'],
           where: {
             storeId: { in: storeIdList },
             productId: { in: allBaseProductIds },
             weekStart: { gte: weekBoundaries.start, lt: currentWeekStart }
           },
-          select: {
-            productId: true,
-            storeId: true,
-            weekStart: true,
-            unitsSold: true
-          }
+          _sum: { unitsSold: true }
         }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
-      ) : Promise.resolve([]),
-      // Get sales from InventoryMovement for the exact date range (includes incomplete week)
-      allBaseProductIds.length > 0 ? timedQuery('movement_sales', () =>
-        context.entities.InventoryMovement.findMany({
-        where: {
-          storeId: { in: storeIdList },
-            productId: { in: allBaseProductIds },
-              type: 'sale',
-              date: { gte: startDate, lte: endDate }
-            },
-          select: { productId: true, storeId: true, changeQty: true, date: true }
-        }), { productIds: allBaseProductIds.length, stores: storeIdList.length, dateRange: `${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}` }
       ) : Promise.resolve([])
     ]);
     
-    // Destructure results
+    // Destructure sales results
     [weeklySalesData, movementSalesTotals] = salesQueryResults;
 
     // Build map: productId -> { totalSales, locationSales: { storeId: units } }
@@ -1722,20 +1749,7 @@ export const getOrderingAnalytics = async ({
       }
     });
   } else {
-    // Need to fetch all POs for base products
-    const allBaseProductIds = baseProducts.map(p => p.id);
-    const allPOs = allBaseProductIds.length > 0 ? await timedQuery('purchase_orders', () =>
-      context.entities.InventoryMovement.findMany({
-        where: {
-          storeId: { in: storeIdList },
-          productId: { in: allBaseProductIds },
-          type: 'purchase order'
-        },
-        select: { productId: true, date: true, changeQty: true },
-        orderBy: { date: 'desc' }
-      }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
-    ) : [];
-
+    // Purchase orders already fetched in parallel above with sales queries
     // Build base purchase order map (all products)
     const baseLastPOMap = new Map();
     allPOs.forEach(po => {
@@ -1827,10 +1841,13 @@ export const getOrderingAnalytics = async ({
   recentSales = recentSales || [];
 
   // Build map of product -> most recent sale date from movements
+  // Convert dates from cache (strings) back to Date objects
   const lastSaleMap = new Map();
   recentSales.forEach(movement => {
     if (!lastSaleMap.has(movement.productId)) {
-      lastSaleMap.set(movement.productId, movement.date);
+      // Convert date from cache (string) to Date object if needed
+      const saleDate = movement.date instanceof Date ? movement.date : new Date(movement.date);
+      lastSaleMap.set(movement.productId, saleDate);
     }
   });
 
@@ -1897,21 +1914,8 @@ export const getOrderingAnalytics = async ({
         fullBaseSalesMap.set(parseInt(productId), sales);
       });
     } else if (salesMap) {
-      // We need the full base map, not the filtered one
-      // If we have cachedBaseSales, we should use it. Otherwise, we need to rebuild from DB
-      // For now, let's query DB to get the full rankings (this is a fallback)
-      const allBaseProductIds = baseProducts.map(p => p.id);
-      const allRankingsSalesData = allBaseProductIds.length > 0 ? await timedQuery('rankings_sales', () =>
-        context.entities.WeeklySalesSummary.groupBy({
-          by: ['productId'],
-          where: {
-            storeId: { in: storeIdList },
-            productId: { in: allBaseProductIds },
-            weekStart: { gte: weekBoundaries.start, lt: currentWeekStart }
-          },
-          _sum: { unitsSold: true }
-        }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
-      ) : [];
+      // Rankings sales data already fetched in parallel above with sales queries
+      // Use the data we already have
 
       allRankingsSalesData.forEach(item => {
         baseRankingsSalesMap.set(item.productId, item._sum.unitsSold || 0);
@@ -1945,7 +1949,9 @@ export const getOrderingAnalytics = async ({
 
     olderSaleData.forEach(summary => {
       if (!lastSaleMap.has(summary.productId)) {
-        lastSaleMap.set(summary.productId, summary.weekStart);
+        // Convert weekStart from cache (string) to Date object if needed
+        const weekStartDate = summary.weekStart instanceof Date ? summary.weekStart : new Date(summary.weekStart);
+        lastSaleMap.set(summary.productId, weekStartDate);
       }
     });
 
