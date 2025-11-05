@@ -103,6 +103,12 @@ model ProductCatalog {
     margin         Float?   // Calculated: (retail - wholesale) / retail
     description    String?
     imageUrl       String?
+    imageStoragePath String? // S3 path for optimized full-size image (WebP format)
+    imageThumbnailPath String? // S3 path for 300x300px thumbnail (WebP format)
+    imageOriginalSize Int? // Original file size in bytes (before optimization)
+    imageOptimizedSize Int? // Optimized file size in bytes (after compression)
+    imageMigratedAt DateTime? // Migration timestamp
+    imageMigrationStatus String? // "PENDING", "MIGRATED", "FAILED", "SKIPPED"
     lastSeen       DateTime @default(now())
     status         String?  @default("ACTIVE") // ACTIVE, ON_SALE, DISCONTINUED, SEASONAL
     salePrice      Float?   // Promotional pricing when on sale

@@ -11,6 +11,8 @@ import { Search, RefreshCw, Sparkles } from 'lucide-react';
 import StrainTypeCell from '../components/StrainTypeCell';
 import CategoryCell from '../components/CategoryCell';
 import SubcategoryCell from '../components/SubcategoryCell';
+import ProductImage from '../components/ProductImage';
+import { migrateProductImages, configureS3CORS } from 'wasp/client/operations';
 
 const ProductCatalog = () => {
   const [filters, setFilters] = useState({
@@ -80,6 +82,52 @@ const ProductCatalog = () => {
             <Sparkles className="h-4 w-4 mr-2" />
             Sync Enrichments
           </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={async () => {
+              if (confirm('Configure CORS on S3 bucket to allow images to load in the browser? This will allow all origins to access images.')) {
+                try {
+                  const result = await configureS3CORS();
+                  alert('✅ CORS configured successfully! Images should now load properly.');
+                } catch (error) {
+                  alert('❌ Error configuring CORS: ' + error.message + '\n\nYou may need to configure CORS manually in Railway object storage settings.');
+                }
+              }
+            }}
+          >
+            <Sparkles className="h-4 w-4 mr-2" />
+            Configure CORS
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={async () => {
+              if (confirm('This will download and optimize all product images from CDN to S3 storage. This may take several minutes. Continue?')) {
+                try {
+                  console.log('Starting image migration...');
+                  const result = await migrateProductImages({ batchSize: 10 });
+                  console.log('Migration result:', result);
+                  
+                  const message = `Migration Complete!\n\n` +
+                    `Total: ${result.total}\n` +
+                    `✅ Migrated: ${result.migrated}\n` +
+                    `❌ Failed: ${result.failed}\n` +
+                    `⏭️ Skipped: ${result.skipped}\n\n` +
+                    `Check the server console for detailed logs.`;
+                  
+                  alert(message);
+                  refetch();
+                } catch (error) {
+                  console.error('Migration error:', error);
+                  alert('Error: ' + error.message + '\n\nCheck the server console for details.');
+                }
+              }
+            }}
+          >
+            <Sparkles className="h-4 w-4 mr-2" />
+            Migrate Images
+          </Button>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
@@ -114,6 +162,7 @@ const ProductCatalog = () => {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-4 py-3 text-left text-sm font-semibold">Image</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold">Name</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold">Brand</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold">Category</th>
@@ -127,19 +176,26 @@ const ProductCatalog = () => {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
                     Loading products...
                   </td>
                 </tr>
               ) : products.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
                     No products found
                   </td>
                 </tr>
               ) : (
                 products.map((product) => (
                   <tr key={product.id} className="border-b hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <ProductImage 
+                        product={product} 
+                        variant="thumbnail"
+                        className="w-16 h-16"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <Link 
                         to={`/product/${product.id}`}

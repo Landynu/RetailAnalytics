@@ -131,7 +131,7 @@ const OrderingTableHeader = ({
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <thead className="sticky top-0 z-20">
+      <thead className="sticky top-0 z-30">
         <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
           <tr>
             {orderedColumns.map(column => (

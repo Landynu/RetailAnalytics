@@ -357,6 +357,15 @@ action syncAllProductEnrichments {
   entities: [ProductCatalog, Classification, CategoryDefinition, CategorySubcategory]
 }
 
+action configureS3CORS {
+  fn: import { configureS3CORS } from "@src/actions.js"
+}
+
+action migrateProductImages {
+  fn: import { migrateProductImages } from "@src/actions.js",
+  entities: [ProductCatalog]
+}
+
 route DashboardRoute { path: "/", to: DashboardPage }
 page DashboardPage {
   component: import DashboardPage from "@src/pages/Dashboard.jsx",

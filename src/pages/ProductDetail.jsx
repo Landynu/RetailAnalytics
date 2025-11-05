@@ -12,6 +12,7 @@ import { ArrowLeft, Edit2, Save, X } from 'lucide-react';
 import StrainTypeCell from '../components/StrainTypeCell';
 import CategoryCell from '../components/CategoryCell';
 import SubcategoryCell from '../components/SubcategoryCell';
+import ProductImage from '../components/ProductImage';
 
 const ProductDetail = () => {
   const { productId } = useParams();
@@ -103,6 +104,34 @@ const ProductDetail = () => {
           </div>
         )}
       </div>
+
+      {/* Product Image */}
+      {product.imageUrl || product.imageStoragePath ? (
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Product Image</h2>
+          <div className="max-w-md">
+            <ProductImage 
+              product={product} 
+              variant="full"
+              className="w-full h-64"
+            />
+            {product.imageOptimizedSize && product.imageOriginalSize && (
+              <div className="mt-2 text-xs text-gray-500">
+                Optimized: {((product.imageOptimizedSize / 1024).toFixed(1))}KB 
+                (Original: {((product.imageOriginalSize / 1024).toFixed(1))}KB, 
+                {((1 - product.imageOptimizedSize / product.imageOriginalSize) * 100).toFixed(1)}% smaller)
+              </div>
+            )}
+            {product.imageMigrationStatus && (
+              <div className="mt-2">
+                <Badge variant={product.imageMigrationStatus === 'MIGRATED' ? 'default' : 'outline'}>
+                  {product.imageMigrationStatus}
+                </Badge>
+              </div>
+            )}
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Basic Information */}
