@@ -11,6 +11,7 @@ import SalesAnalyticsDashboard from '../components/SalesAnalyticsDashboard';
 import CompactStoreCard from '../components/CompactStoreCard';
 import InPageStoreDetail from '../components/InPageStoreDetail';
 import ExportButton from '../components/ExportButton';
+import DataLoadingOverlay from '../components/DataLoadingOverlay';
 import { Button } from '../components/ui/button';
 import { Plus, Package, DollarSign, Store as StoreIcon, Leaf, TrendingUp, Star } from 'lucide-react';
 import { useDebounce } from '../lib/useDebounce';
@@ -191,29 +192,44 @@ const DashboardPage = () => {
     stockStatus: hideZeroInventory ? 'inStock' : debouncedFilters.stockStatus
   };
 
-  // Fetch analytics with filters
+  // Fetch analytics with filters - only for inventory view
   const { data: analytics, isLoading: analyticsLoading, refetch: refetchAnalytics } = useQuery(
     getGlobalAnalyticsFiltered,
     { storeIds: selectedStoreIds, filters: effectiveFilters },
-    { enabled: !focusedStoreId } // Only fetch when not viewing store detail
+    { 
+      enabled: !focusedStoreId && activeView === 'inventory', // Only fetch when inventory view is active
+      staleTime: 30000 // Cache for 30 seconds - React Query will handle this
+    }
   );
 
-  // Fetch sales analytics - automatically use daily for recent data, weekly for historical
+  // Fetch sales analytics - only when sales view is active (lazy loading)
   const { data: dailySalesData, isLoading: dailySalesLoading } = useQuery(
     getDailySalesAnalytics,
     { storeIds: selectedStoreIds, filters: effectiveFilters },
-    { enabled: !focusedStoreId && activeView === 'sales' && useDailyData }
+    { 
+      enabled: !focusedStoreId && activeView === 'sales' && useDailyData,
+      staleTime: 30000 // Cache for 30 seconds
+    }
   );
 
   const { data: weeklySalesData, isLoading: weeklySalesLoading } = useQuery(
     getGlobalSalesAnalytics,
     { storeIds: selectedStoreIds, filters: effectiveFilters },
-    { enabled: !focusedStoreId && activeView === 'sales' && !useDailyData }
+    { 
+      enabled: !focusedStoreId && activeView === 'sales' && !useDailyData,
+      staleTime: 30000 // Cache for 30 seconds
+    }
   );
 
   // Use the appropriate data source based on date range
   const salesData = useDailyData ? dailySalesData : weeklySalesData;
   const salesLoading = useDailyData ? dailySalesLoading : weeklySalesLoading;
+
+  // Progressive loading states
+  const isInitialLoad = (activeView === 'inventory' && analyticsLoading && !analytics) || 
+                        (activeView === 'sales' && salesLoading && !salesData);
+  const isRefetching = (activeView === 'inventory' && analyticsLoading && analytics) ||
+                       (activeView === 'sales' && salesLoading && salesData);
 
   // React Query automatically refetches when parameters change, so we don't need manual refetch
   // Removed aggressive polling that was causing performance issues
@@ -267,7 +283,8 @@ const DashboardPage = () => {
     );
   }
 
-  if (storesLoading) {
+  // Show skeleton only on very first load (no stores data)
+  if (storesLoading && !stores) {
     return (
       <div className="container mx-auto px-4 py-6 max-w-7xl space-y-6">
         <div className="animate-pulse h-12 bg-muted rounded"></div>
@@ -281,7 +298,15 @@ const DashboardPage = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-7xl">
+    <div className="container mx-auto px-4 py-6 max-w-7xl relative">
+      {/* Loading overlay for refetches */}
+      {isRefetching && (
+        <DataLoadingOverlay
+          isLoading={true}
+          message={activeView === 'sales' ? 'Loading sales analytics...' : 'Loading inventory analytics...'}
+          loadingType="refetch"
+        />
+      )}
       <div className="space-y-6">
         {/* Header with Location Selector */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

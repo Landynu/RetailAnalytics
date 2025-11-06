@@ -1044,10 +1044,14 @@ export const getDailySalesAnalytics = async ({
     movementWhere.product = productFilter;
   }
 
-  // Fetch daily movements
+  // Fetch daily movements - optimized with minimal fields
+  // Removed orderBy to let database optimize query execution
   const movements = await context.entities.InventoryMovement.findMany({
     where: movementWhere,
-    include: {
+    select: {
+      id: true,
+      date: true,
+      changeQty: true,
       product: {
         select: {
           id: true,
@@ -1067,11 +1071,14 @@ export const getDailySalesAnalytics = async ({
           location: true
         }
       }
-    },
-    orderBy: { date: 'asc' }
+    }
+    // Removed orderBy - sort in memory if needed for better query performance
   });
 
   console.log('📊 Daily movements fetched:', movements.length);
+
+  // Sort movements by date for consistent processing (in-memory sort is fast)
+  movements.sort((a, b) => a.date - b.date);
 
   // Aggregate data by day
   let grossSales = 0;
@@ -2808,10 +2815,13 @@ export const getGlobalAnalyticsFiltered = async ({
     };
   }
 
-  // Get filtered stores with stock levels
+  // Get filtered stores with stock levels - optimized with selective fields
   const stores = await context.entities.Store.findMany({
     where: storeWhere,
-    include: {
+    select: {
+      id: true,
+      name: true,
+      location: true,
       stockLevels: {
         where: {
           product: productWhere,
@@ -2819,18 +2829,30 @@ export const getGlobalAnalyticsFiltered = async ({
           ...(filters.stockStatus === 'lowStock' ? { quantity: { gt: 0, lt: 5 } } : {}),
           ...(filters.stockStatus === 'outOfStock' ? { quantity: 0 } : {})
         },
-        include: {
-          product: true
+        select: {
+          quantity: true,
+          product: {
+            select: {
+              id: true,
+              name: true,
+              gtin: true,
+              brand: true,
+              parentCategory: true,
+              subcategory: true,
+              strainType: true,
+              retailPrice: true
+            }
+          }
         }
       }
     }
   });
 
-  // Get movements for sales data (type='sale' only)
+  // Get movements for sales data (type='sale' only) - only if we have product filters
   const movementWhere = {
-    storeId: storeIds && storeIds.length > 0 ? { in: storeIds.map(id => parseInt(id)) } : undefined,
     type: 'sale', // Only actual sales
-    product: productWhere
+    ...(storeIds && storeIds.length > 0 ? { storeId: { in: storeIds.map(id => parseInt(id)) } } : {}),
+    ...(Object.keys(productWhere).length > 0 ? { product: productWhere } : {})
   };
 
   if (filters.dateRange) {
@@ -2840,10 +2862,22 @@ export const getGlobalAnalyticsFiltered = async ({
     };
   }
 
+  // Fetch movements with minimal fields - only what we need for aggregation
   const movements = await context.entities.InventoryMovement.findMany({
     where: movementWhere,
-    include: {
-      product: true
+    select: {
+      id: true,
+      changeQty: true,
+      product: {
+        select: {
+          id: true,
+          name: true,
+          gtin: true,
+          brand: true,
+          strainType: true,
+          retailPrice: true
+        }
+      }
     }
   });
 
