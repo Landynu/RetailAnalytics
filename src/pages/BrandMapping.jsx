@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getBrandDistributors, getDistributors } from 'wasp/client/operations';
 import { updateBrandDistributors, createDistributor, seedDistributors, syncBrands } from 'wasp/client/operations';
@@ -6,22 +6,88 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
-import { Check, Plus, Search, RefreshCw } from 'lucide-react';
+import { Check, Plus, Search, RefreshCw, Filter, X, Building2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import KPICard from '../components/KPICard';
 
 const BrandMapping = () => {
-  const { data: brandMappings, refetch: refetchMappings } = useQuery(getBrandDistributors);
+  const { data: brandMappings, refetch: refetchMappings, isLoading: isLoadingMappings } = useQuery(getBrandDistributors);
   const { data: distributors, refetch: refetchDistributors } = useQuery(getDistributors);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingBrand, setEditingBrand] = useState(null);
   const [selectedDistributors, setSelectedDistributors] = useState([]);
   const [newDistributorName, setNewDistributorName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  
+  // Filter states
+  const [filterDistributors, setFilterDistributors] = useState([]);
+  const [mappingStatusFilter, setMappingStatusFilter] = useState('all'); // 'all' | 'mapped' | 'unmapped'
+  const [showFilters, setShowFilters] = useState(false);
+  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
+  const [hasAutoSynced, setHasAutoSynced] = useState(false);
 
-  // Smart sort: unmapped first, then by most recent activity
-  const filteredBrands = (brandMappings || [])
-    .filter(b => b.brandName.toLowerCase().includes(searchTerm.toLowerCase()))
-    .sort((a, b) => {
+  // Auto-sync brands on page load if no brands exist
+  useEffect(() => {
+    if (!brandMappings && !isLoadingMappings && !hasAutoSynced && !isAutoSyncing) {
+      setHasAutoSynced(true);
+      setIsAutoSyncing(true);
+      syncBrands()
+        .then(() => {
+          refetchMappings();
+        })
+        .catch((error) => {
+          console.error('Auto-sync error:', error);
+        })
+        .finally(() => {
+          setIsAutoSyncing(false);
+        });
+    }
+  }, [brandMappings, isLoadingMappings, hasAutoSynced, isAutoSyncing, refetchMappings]);
+
+  // Calculate brand counts per distributor
+  const distributorBrandCounts = useMemo(() => {
+    const counts = {};
+    brandMappings?.forEach(brand => {
+      brand.distributors.forEach(dist => {
+        counts[dist.id] = (counts[dist.id] || 0) + 1;
+      });
+    });
+    return Object.entries(counts)
+      .map(([id, count]) => ({
+        id: parseInt(id),
+        name: distributors?.find(d => d.id === parseInt(id))?.name || 'Unknown',
+        count
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [brandMappings, distributors]);
+
+  // Filter and sort brands
+  const filteredBrands = useMemo(() => {
+    let filtered = (brandMappings || []);
+
+    // Search filter
+    if (searchTerm) {
+      filtered = filtered.filter(b => 
+        b.brandName.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    // Mapping status filter
+    if (mappingStatusFilter === 'mapped') {
+      filtered = filtered.filter(b => b.hasDistributors);
+    } else if (mappingStatusFilter === 'unmapped') {
+      filtered = filtered.filter(b => !b.hasDistributors);
+    }
+
+    // Distributor filter
+    if (filterDistributors.length > 0) {
+      filtered = filtered.filter(b => 
+        b.distributors.some(d => filterDistributors.includes(d.id))
+      );
+    }
+
+    // Sort: unmapped first, then by most recent activity
+    return filtered.sort((a, b) => {
       // Priority 1: Unmapped brands first
       if (!a.hasDistributors && b.hasDistributors) return -1;
       if (a.hasDistributors && !b.hasDistributors) return 1;
@@ -36,6 +102,23 @@ const BrandMapping = () => {
       // Priority 3: Alphabetical
       return a.brandName.localeCompare(b.brandName);
     });
+  }, [brandMappings, searchTerm, mappingStatusFilter, filterDistributors]);
+
+  const handleToggleFilterDistributor = (distId) => {
+    if (filterDistributors.includes(distId)) {
+      setFilterDistributors(filterDistributors.filter(id => id !== distId));
+    } else {
+      setFilterDistributors([...filterDistributors, distId]);
+    }
+  };
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setFilterDistributors([]);
+    setMappingStatusFilter('all');
+  };
+
+  const hasActiveFilters = searchTerm || filterDistributors.length > 0 || mappingStatusFilter !== 'all';
 
   const handleEdit = (brand) => {
     setEditingBrand(brand.brandName);
@@ -153,20 +236,141 @@ const BrandMapping = () => {
           </div>
         </Card>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search brands..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
+        {/* Search and Filters */}
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search brands..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Button
+              variant={showFilters ? "default" : "outline"}
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <Filter className="h-4 w-4 mr-2" />
+              Filters
+            </Button>
+            {hasActiveFilters && (
+              <Button variant="outline" onClick={clearFilters}>
+                <X className="h-4 w-4 mr-2" />
+                Clear
+              </Button>
+            )}
+          </div>
+
+          {/* Filter Panel */}
+          {showFilters && (
+            <Card className="p-4">
+              <div className="space-y-4">
+                {/* Mapping Status Filter */}
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Mapping Status</label>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant={mappingStatusFilter === 'all' ? 'default' : 'outline'}
+                      onClick={() => setMappingStatusFilter('all')}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={mappingStatusFilter === 'mapped' ? 'default' : 'outline'}
+                      onClick={() => setMappingStatusFilter('mapped')}
+                    >
+                      Mapped
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={mappingStatusFilter === 'unmapped' ? 'default' : 'outline'}
+                      onClick={() => setMappingStatusFilter('unmapped')}
+                    >
+                      Unmapped
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Distributor Filter */}
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Filter by Distributor</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(distributors || []).map(dist => (
+                      <Badge
+                        key={dist.id}
+                        variant={filterDistributors.includes(dist.id) ? 'default' : 'outline'}
+                        className="cursor-pointer text-sm py-1 px-3"
+                        onClick={() => handleToggleFilterDistributor(dist.id)}
+                      >
+                        {filterDistributors.includes(dist.id) && (
+                          <Check className="h-3 w-3 mr-1" />
+                        )}
+                        {dist.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Active Filter Chips */}
+                {hasActiveFilters && (
+                  <div className="pt-2 border-t">
+                    <div className="text-xs text-muted-foreground mb-2">Active Filters:</div>
+                    <div className="flex flex-wrap gap-2">
+                      {searchTerm && (
+                        <Badge variant="secondary" className="text-xs">
+                          Search: "{searchTerm}"
+                          <X 
+                            className="h-3 w-3 ml-1 cursor-pointer" 
+                            onClick={() => setSearchTerm('')}
+                          />
+                        </Badge>
+                      )}
+                      {mappingStatusFilter !== 'all' && (
+                        <Badge variant="secondary" className="text-xs">
+                          Status: {mappingStatusFilter}
+                          <X 
+                            className="h-3 w-3 ml-1 cursor-pointer" 
+                            onClick={() => setMappingStatusFilter('all')}
+                          />
+                        </Badge>
+                      )}
+                      {filterDistributors.map(distId => {
+                        const dist = distributors?.find(d => d.id === distId);
+                        return dist ? (
+                          <Badge key={distId} variant="secondary" className="text-xs">
+                            {dist.name}
+                            <X 
+                              className="h-3 w-3 ml-1 cursor-pointer" 
+                              onClick={() => handleToggleFilterDistributor(distId)}
+                            />
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* Brand List */}
         <div className="grid gap-3">
-          {!brandMappings || brandMappings.length === 0 ? (
+          {isAutoSyncing ? (
+            <Card className="p-8 text-center">
+              <h3 className="text-lg font-semibold text-emerald-900 mb-2">
+                Syncing Brands...
+              </h3>
+              <p className="text-muted-foreground mb-4">
+                Loading brands from your product catalog
+              </p>
+              <RefreshCw className="h-6 w-6 mx-auto animate-spin text-emerald-600" />
+            </Card>
+          ) : !brandMappings || brandMappings.length === 0 ? (
             <Card className="p-8 text-center">
               <h3 className="text-lg font-semibold text-emerald-900 mb-2">
                 No Brands Yet
@@ -279,29 +483,63 @@ const BrandMapping = () => {
           )}
         </div>
 
-        {/* Summary Stats */}
-        <Card className="p-4 bg-emerald-50">
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="text-2xl font-bold text-emerald-900">
-                {brandMappings?.length || 0}
-              </div>
-              <div className="text-sm text-emerald-700">Total Brands</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-emerald-900">
-                {brandMappings?.filter(b => b.distributors.length > 0).length || 0}
-              </div>
-              <div className="text-sm text-emerald-700">Mapped Brands</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-emerald-900">
-                {distributors?.length || 0}
-              </div>
-              <div className="text-sm text-emerald-700">Distributors</div>
-            </div>
+        {/* KPI Section */}
+        <div className="space-y-4">
+          {/* Overall Stats */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <KPICard
+              title="Total Brands"
+              value={brandMappings?.length || 0}
+              description="All brands in system"
+              icon={Building2}
+              loading={isLoadingMappings || isAutoSyncing}
+            />
+            <KPICard
+              title="Mapped Brands"
+              value={brandMappings?.filter(b => b.distributors.length > 0).length || 0}
+              description="With distributor assigned"
+              icon={Check}
+              loading={isLoadingMappings || isAutoSyncing}
+            />
+            <KPICard
+              title="Unmapped Brands"
+              value={brandMappings?.filter(b => b.distributors.length === 0).length || 0}
+              description="Need distributor assignment"
+              icon={Building2}
+              iconColor="text-amber-600"
+              bgColor="bg-amber-50"
+              loading={isLoadingMappings || isAutoSyncing}
+            />
           </div>
-        </Card>
+
+          {/* Distributor Brand Counts */}
+          {distributorBrandCounts.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold mb-3 text-emerald-800">
+                Brands per Distributor
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                {distributorBrandCounts.slice(0, 10).map(({ id, name, count }) => (
+                  <KPICard
+                    key={id}
+                    title={name}
+                    value={count}
+                    description={`${count === 1 ? 'brand' : 'brands'}`}
+                    icon={Building2}
+                    iconColor="text-emerald-600"
+                    bgColor="bg-emerald-50"
+                    loading={isLoadingMappings || isAutoSyncing}
+                  />
+                ))}
+              </div>
+              {distributorBrandCounts.length > 10 && (
+                <p className="text-sm text-muted-foreground mt-2 text-center">
+                  Showing top 10 of {distributorBrandCounts.length} distributors
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
