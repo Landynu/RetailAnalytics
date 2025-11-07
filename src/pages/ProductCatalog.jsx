@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link } from 'wasp/client/router';
 import { useQuery } from 'wasp/client/operations';
 import { getProductCatalog, getClassifications, getCategoryDefinitions } from 'wasp/client/operations';
@@ -7,20 +7,22 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Search, RefreshCw, Sparkles } from 'lucide-react';
+import { Search, RefreshCw, Sparkles, Package, Tag, Leaf } from 'lucide-react';
 import StrainTypeCell from '../components/StrainTypeCell';
 import CategoryCell from '../components/CategoryCell';
 import SubcategoryCell from '../components/SubcategoryCell';
 import ProductImage from '../components/ProductImage';
-import { migrateProductImages, configureS3CORS } from 'wasp/client/operations';
+import { migrateProductImages, configureS3CORS, checkS3Storage, checkImageMigrationStatus } from 'wasp/client/operations';
+import FilterDropdown from '../components/FilterDropdown';
 
 const ProductCatalog = () => {
   const [filters, setFilters] = useState({
     search: '',
     brands: [],
     categories: [],
+    subcategories: [],
     strainTypes: [],
-    inStock: false
+    inStock: true
   });
   const [limit] = useState(100);
   const [offset, setOffset] = useState(0);
@@ -54,6 +56,26 @@ const ProductCatalog = () => {
 
   const products = catalogData?.products || [];
   const total = catalogData?.total || 0;
+
+  // Extract filter options from products
+  const filterOptions = useMemo(() => {
+    if (!products || products.length === 0) {
+      return {
+        brands: [],
+        categories: [],
+        subcategories: [],
+        classifications: []
+      };
+    }
+
+    // Extract unique values from products
+    const brands = [...new Set(products.map(p => p.brand).filter(Boolean))].sort();
+    const categories = [...new Set(products.map(p => p.parentCategory).filter(Boolean))].sort();
+    const subcategories = [...new Set(products.map(p => p.subcategory).filter(Boolean))].sort();
+    const classifications = [...new Set(products.map(p => p.strainType).filter(Boolean))].sort();
+
+    return { brands, categories, subcategories, classifications };
+  }, [products]);
 
   return (
     <div className="p-6 space-y-6">
@@ -103,6 +125,38 @@ const ProductCatalog = () => {
             variant="outline" 
             size="sm" 
             onClick={async () => {
+              try {
+                const result = await checkS3Storage();
+                const sample = result.sampleObjects.slice(0, 5).map(obj => `  • ${obj.key} (${(obj.size / 1024).toFixed(1)} KB)`).join('\n');
+                alert(`S3 Storage Check:\n\n${result.message}\n\nSample objects:\n${sample}${result.isTruncated ? '\n\n(More objects exist, showing first 1000)' : ''}`);
+              } catch (error) {
+                alert('Error checking S3 storage: ' + error.message);
+              }
+            }}
+          >
+            <Sparkles className="h-4 w-4 mr-2" />
+            Check S3 Storage
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={async () => {
+              try {
+                const result = await checkImageMigrationStatus();
+                const breakdown = Object.entries(result.statusBreakdown).map(([status, count]) => `  ${status || 'NULL'}: ${count}`).join('\n');
+                alert(`Migration Status:\n\nTotal with images: ${result.totalWithImages}\nMigrated: ${result.migrated}\nWith S3 paths: ${result.withS3Paths}\n\nStatus breakdown:\n${breakdown}`);
+              } catch (error) {
+                alert('Error checking migration status: ' + error.message);
+              }
+            }}
+          >
+            <Sparkles className="h-4 w-4 mr-2" />
+            Check Migration Status
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={async () => {
               if (confirm('This will download and optimize all product images from CDN to S3 storage. This may take several minutes. Continue?')) {
                 try {
                   console.log('Starting image migration...');
@@ -137,8 +191,8 @@ const ProductCatalog = () => {
 
       {/* Filters */}
       <Card className="p-4">
-        <div className="flex gap-2 items-center">
-          <div className="flex-1 relative">
+        <div className="flex gap-2 items-center flex-wrap">
+          <div className="flex-1 relative min-w-[200px]">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
               placeholder="Search products..."
@@ -147,11 +201,39 @@ const ProductCatalog = () => {
               className="pl-10"
             />
           </div>
+          <FilterDropdown
+            label="Brands"
+            options={filterOptions.brands}
+            selectedValues={filters.brands}
+            onChange={(values) => setFilters({ ...filters, brands: values })}
+            icon={Package}
+          />
+          <FilterDropdown
+            label="Categories"
+            options={filterOptions.categories}
+            selectedValues={filters.categories}
+            onChange={(values) => setFilters({ ...filters, categories: values })}
+            icon={Tag}
+          />
+          <FilterDropdown
+            label="Subcategories"
+            options={filterOptions.subcategories}
+            selectedValues={filters.subcategories}
+            onChange={(values) => setFilters({ ...filters, subcategories: values })}
+            icon={Tag}
+          />
+          <FilterDropdown
+            label="Classifications"
+            options={filterOptions.classifications}
+            selectedValues={filters.strainTypes}
+            onChange={(values) => setFilters({ ...filters, strainTypes: values })}
+            icon={Leaf}
+          />
           <Button
             variant={filters.inStock ? "default" : "outline"}
             onClick={() => setFilters({ ...filters, inStock: !filters.inStock })}
           >
-            {filters.inStock ? '✓ In Stock Only' : 'Show In Stock Only'}
+            {filters.inStock ? '✓ In Stock Only' : 'Show All Products'}
           </Button>
         </div>
       </Card>

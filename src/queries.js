@@ -2598,6 +2598,10 @@ export const getProductCatalog = async (args, context) => {
     where.parentCategory = { in: filters.categories }
   }
   
+  if (filters.subcategories && filters.subcategories.length > 0) {
+    where.subcategory = { in: filters.subcategories }
+  }
+  
   if (filters.strainTypes && filters.strainTypes.length > 0) {
     where.strainType = { in: filters.strainTypes }
   }

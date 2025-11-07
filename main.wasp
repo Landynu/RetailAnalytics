@@ -366,6 +366,20 @@ action migrateProductImages {
   entities: [ProductCatalog]
 }
 
+action checkS3Storage {
+  fn: import { checkS3Storage } from "@src/actions.js"
+}
+
+action checkImageMigrationStatus {
+  fn: import { checkImageMigrationStatus } from "@src/actions.js",
+  entities: [ProductCatalog]
+}
+
+api proxyImage {
+  fn: import { proxyImage } from "@src/apis/imageProxy.js",
+  httpRoute: (GET, "/api/images/proxy")
+}
+
 route DashboardRoute { path: "/", to: DashboardPage }
 page DashboardPage {
   component: import DashboardPage from "@src/pages/Dashboard.jsx",

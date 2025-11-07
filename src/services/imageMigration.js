@@ -1,8 +1,8 @@
 import sharp from 'sharp';
-import { S3Client, PutObjectCommand, HeadObjectCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, HeadObjectCommand, PutBucketCorsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
-// Initialize S3 client
-const getS3Client = () => {
+// Initialize S3 client (exported for use in other modules)
+export const getS3Client = () => {
   const endpoint = process.env.S3_ENDPOINT;
   const region = process.env.S3_REGION || 'us-east-1';
   const accessKeyId = process.env.S3_ACCESS_KEY_ID;
@@ -54,6 +54,33 @@ const getPublicUrl = (storagePath) => {
   }
 
   throw new Error('Cannot construct public URL. Please set S3_PUBLIC_URL or ensure S3_ENDPOINT and S3_BUCKET_NAME are set');
+};
+
+// List objects in S3 bucket (for verification)
+export const listS3Objects = async (prefix = 'productimages/', maxKeys = 1000) => {
+  const s3Client = getS3Client();
+  const bucket = process.env.S3_BUCKET_NAME;
+
+  if (!bucket) {
+    throw new Error('S3_BUCKET_NAME not set');
+  }
+
+  try {
+    const command = new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      MaxKeys: maxKeys,
+    });
+
+    const response = await s3Client.send(command);
+    return {
+      objects: response.Contents || [],
+      count: response.KeyCount || 0,
+      isTruncated: response.IsTruncated || false,
+    };
+  } catch (error) {
+    throw new Error(`Error listing S3 objects: ${error.message}`);
+  }
 };
 
 // Configure CORS on the S3 bucket

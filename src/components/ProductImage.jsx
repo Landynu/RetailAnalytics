@@ -24,32 +24,66 @@ const ProductImage = ({
   const [imageLoading, setImageLoading] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  // Build fallback chain based on variant
-  // TEMPORARY: Skip S3 images if they have CORS issues (Railway S3 needs CORS configuration)
-  // Once CORS is configured on Railway, S3 images will work and this logic can be simplified
-  const getImageChain = () => {
-    const chain = [];
-    const hasS3Images = product.imageStoragePath || product.imageThumbnailPath;
-    const s3Url = product.imageStoragePath || product.imageThumbnailPath;
-    const isRailwayS3 = s3Url && s3Url.includes('storage.railway.app');
+  // Convert Railway S3 URL to proxy URL to avoid CORS issues
+  const convertToProxyUrl = (url) => {
+    if (!url) return null;
     
-    // For now, prefer CDN images if Railway S3 is detected (CORS not configured)
-    // TODO: Once CORS is configured on Railway, remove this check and use S3 images first
-    if (isRailwayS3 && product.imageUrl) {
-      // Skip S3, use CDN directly
-      chain.push(product.imageUrl);
-      return chain;
+    // Check if it's a Railway S3 URL
+    if (url.includes('storage.railway.app') || url.includes('b1.us-west-1.storage.railway.app')) {
+      // Extract the path from the Railway URL
+      // Format: https://b1.us-west-1.storage.railway.app/object-storage-xxx/productimages/brand/product.webp
+      try {
+        const urlObj = new URL(url);
+        // Find the path after the bucket name (productimages/...)
+        const pathMatch = urlObj.pathname.match(/\/productimages\/(.+)$/);
+        if (pathMatch) {
+          const imagePath = `productimages/${pathMatch[1]}`;
+          
+          // In development, Wasp client runs on :3000, server on :3001
+          // In production, they're on the same origin
+          // Use window.location to determine the correct server URL
+          const isDevelopment = window.location.hostname === 'localhost' && window.location.port === '3000';
+          const serverUrl = isDevelopment 
+            ? 'http://localhost:3001'  // Wasp dev server
+            : window.location.origin;  // Same origin in production
+          
+          return `${serverUrl}/api/images/proxy?path=${encodeURIComponent(imagePath)}`;
+        }
+      } catch (e) {
+        console.warn('Failed to parse Railway URL:', url, e);
+      }
     }
     
-    // Normal flow: try S3 images first, then CDN fallback
+    // Not a Railway URL or parsing failed, return as-is
+    return url;
+  };
+
+  // Build fallback chain based on variant
+  // Use proxy for Railway S3 images to avoid CORS issues
+  const getImageChain = () => {
+    const chain = [];
+    
+    // Normal flow: try S3 images first (via proxy), then CDN fallback
     if (variant === 'full') {
       // Try optimized S3 images first, then fallback to CDN
-      if (product.imageStoragePath) chain.push(product.imageStoragePath);
-      if (product.imageThumbnailPath) chain.push(product.imageThumbnailPath);
+      if (product.imageStoragePath) {
+        const proxyUrl = convertToProxyUrl(product.imageStoragePath);
+        if (proxyUrl) chain.push(proxyUrl);
+      }
+      if (product.imageThumbnailPath) {
+        const proxyUrl = convertToProxyUrl(product.imageThumbnailPath);
+        if (proxyUrl) chain.push(proxyUrl);
+      }
     } else if (variant === 'thumbnail' || variant === 'auto') {
       // Try thumbnail first, then full-size, then CDN
-      if (product.imageThumbnailPath) chain.push(product.imageThumbnailPath);
-      if (product.imageStoragePath) chain.push(product.imageStoragePath);
+      if (product.imageThumbnailPath) {
+        const proxyUrl = convertToProxyUrl(product.imageThumbnailPath);
+        if (proxyUrl) chain.push(proxyUrl);
+      }
+      if (product.imageStoragePath) {
+        const proxyUrl = convertToProxyUrl(product.imageStoragePath);
+        if (proxyUrl) chain.push(proxyUrl);
+      }
     }
     
     // Always add CDN URL as final fallback (most reliable)
@@ -71,16 +105,6 @@ const ProductImage = ({
     setImageLoading(true);
   }, [product.id, variant]);
 
-  // Debug logging (remove in production if needed)
-  if (!hasImage && product.imageUrl) {
-    console.debug('ProductImage: No image URL found for', product.name, {
-      imageStoragePath: product.imageStoragePath,
-      imageThumbnailPath: product.imageThumbnailPath,
-      imageUrl: product.imageUrl,
-      variant
-    });
-  }
-
   return (
     <div className={`relative ${className}`}>
       {imageLoading && hasImage && (
@@ -96,15 +120,6 @@ const ProductImage = ({
           loading={lazy ? 'lazy' : 'eager'}
           onLoad={() => setImageLoading(false)}
           onError={(e) => {
-            // Check if this is a CORS error (OpaqueResponseBlocking)
-            const isCorsError = imageUrl && imageUrl.includes('storage.railway.app');
-            
-            if (isCorsError) {
-              console.warn(`ProductImage: CORS error loading S3 image for ${product.name}, falling back to CDN...`);
-            } else {
-              console.warn('ProductImage: Failed to load image', imageUrl, 'for product', product.name);
-            }
-            
             // Try next image in fallback chain
             if (currentImageIndex < imageChain.length - 1) {
               setCurrentImageIndex(currentImageIndex + 1);
@@ -114,9 +129,6 @@ const ProductImage = ({
               // All images failed
               setImageError(true);
               setImageLoading(false);
-              if (product.imageUrl) {
-                console.warn(`ProductImage: All images failed for ${product.name}, including fallback to ${product.imageUrl}`);
-              }
             }
           }}
           onClick={onClick}

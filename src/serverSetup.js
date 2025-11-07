@@ -5,43 +5,47 @@ import './cache.js';
 
 export const serverMiddlewareFn = (middlewareConfig) => {
   // CORS configuration - must be set before other middleware
+  // Use a very early position to ensure it runs before Wasp's built-in routes
   const allowedOrigins = [
     'https://retail-analytics-client-production.up.railway.app',
     'http://localhost:3000',
+    'http://localhost:3001', // Wasp dev server port
     'http://localhost:5173', // Vite dev server default port
   ];
 
+  // Use 'cors' as the key - Wasp will apply this early in the middleware chain
   middlewareConfig.set('cors', (req, res, next) => {
     const origin = req.headers.origin;
+    const isDevelopment = process.env.NODE_ENV !== 'production';
     
-    // When Access-Control-Allow-Credentials is true, we cannot use '*'
-    // We must specify the exact origin or allow all in dev
-    if (origin) {
-      // Check if origin is in allowed list
-      if (allowedOrigins.includes(origin)) {
+    // In development, be very permissive - allow any origin
+    if (isDevelopment) {
+      if (origin) {
         res.setHeader('Access-Control-Allow-Origin', origin);
-      } else if (process.env.NODE_ENV !== 'production') {
-        // In development, allow any origin (more permissive for testing)
-        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      } else {
+        // No origin header (same-origin or direct request) - allow all
+        res.setHeader('Access-Control-Allow-Origin', '*');
       }
-      // In production, if origin not allowed, don't set header (will be blocked by browser)
     } else {
-      // Same-origin request (no origin header), allow it
-      // For same-origin, we can use '*' or omit the header
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      // Production: only allow specific origins
+      if (origin && allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      } else if (!origin) {
+        // Same-origin request in production
+        res.setHeader('Access-Control-Allow-Origin', '*');
+      }
+      // If origin not allowed in production, don't set header (browser will block)
     }
 
-    // Set CORS headers
-    // Note: When using credentials, origin must be specific (not '*')
-    if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production')) {
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-    }
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
+    // Always set these headers (they're safe even if origin isn't allowed)
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cookie');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Type, Set-Cookie');
     res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
 
-    // Handle preflight OPTIONS requests
+    // Handle preflight OPTIONS requests - MUST respond before other middleware
     if (req.method === 'OPTIONS') {
       res.status(200).end();
       return;
