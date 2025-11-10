@@ -348,19 +348,20 @@ async function syncCategoriesInBackground(context, updatedProducts) {
       const updateTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
       console.log(`[${updateTimestamp}] Applying ${categoryUpdates.length} category updates in batches...`);
       
-      const updateBatchSize = 100;
+      const updateBatchSize = 50; // Reduced from 100 to prevent connection pool exhaustion
       for (let i = 0; i < categoryUpdates.length; i += updateBatchSize) {
         const batch = categoryUpdates.slice(i, i + updateBatchSize);
         
-        await Promise.all(batch.map(update =>
-          context.entities.ProductCatalog.update({
+        // Process sequentially within each batch to manage connections
+        for (const update of batch) {
+          await context.entities.ProductCatalog.update({
             where: { id: update.productId },
             data: {
               categoryDefinitionId: update.categoryDefinitionId,
               subcategoryId: update.subcategoryId
             }
-          })
-        ));
+          });
+        }
         
         if ((i + updateBatchSize) % 500 === 0 || i + updateBatchSize >= categoryUpdates.length) {
           const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
@@ -790,37 +791,20 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     console.log(`[${fetchTimestamp}] ✓ Fetched ${createdProducts.length} product IDs`);
   }
 
-  // Batch update existing products - PostgreSQL handles this well
+  // Batch update existing products - Process sequentially to avoid connection pool exhaustion
   // Preserve enriched fields (thc, cbd, cannabinoidProfile, strainType, classificationId, format, distributorId, description, imageUrl, categoryDefinitionId, subcategoryId)
   if (existingProductsToUpdate.length > 0) {
     const updateStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.log(`[${updateStartTimestamp}] Updating ${existingProductsToUpdate.length} existing products in batches...`);
-    const chunkSize = 500; // Increased from 50 for PostgreSQL
+    const chunkSize = 50; // Reduced from 500 to prevent connection pool exhaustion
     for (let i = 0; i < existingProductsToUpdate.length; i += chunkSize) {
       const chunk = existingProductsToUpdate.slice(i, i + chunkSize);
       const batchStartTime = Date.now();
       
-      await Promise.all(chunk.map(async product => {
-        // Fetch existing product to preserve enriched fields
-        const existing = await context.entities.ProductCatalog.findUnique({
-          where: { gtin: product.gtin },
-          select: {
-            thc: true,
-            cbd: true,
-            cannabinoidProfile: true,
-            strainType: true,
-            classificationId: true,
-            format: true,
-            distributorId: true,
-            description: true,
-            imageUrl: true,
-            imageStoragePath: true,
-            imageThumbnailPath: true,
-            imageMigrationStatus: true,
-            categoryDefinitionId: true,
-            subcategoryId: true
-          }
-        });
+      // Process products sequentially within each chunk to manage connection pool
+      for (const product of chunk) {
+        // Use existing product data from the map instead of re-querying
+        const existing = existingProductsMap.get(product.gtin);
         
         // Determine image URL and migration status
         const newImageUrl = truncateField(product.imageUrl, 500);
@@ -851,7 +835,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           // imageMigrationStatus already set to 'MIGRATED' above
         }
         
-        return context.entities.ProductCatalog.update({
+        await context.entities.ProductCatalog.update({
           where: { gtin: product.gtin },
           data: {
             name: product.name,
@@ -881,7 +865,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
             lastSeen: new Date()
           }
         });
-      }));
+      }
       
       const batchEndTime = Date.now();
       const batchDuration = ((batchEndTime - batchStartTime) / 1000).toFixed(2);
@@ -1221,37 +1205,105 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   if (newProductsNeeded > 0) {
     console.log(`[${ts()}] ⚠️  ${newProductsNeeded} movements skipped - products not in catalog (upload inventory export first)`);
   }
-  console.log(`[${ts()}] Stage 4/5: Bulk creating ${movementsToCreate.length} movement records...`);
+  console.log(`[${ts()}] Stage 4/5: Deduplicating and bulk creating movement records...`);
 
-  // STAGE 4: Bulk create movements (5-10 seconds)
+  // STAGE 4: Deduplicate and bulk create movements
   let totalCreated = 0;
+  let totalDuplicates = 0;
+  let uniqueMovements = []; // Declare outside if block for use in Stage 5
+  
   if (movementsToCreate.length > 0) {
-    const chunkSize = 1000;
-    for (let i = 0; i < movementsToCreate.length; i += chunkSize) {
-      const chunk = movementsToCreate.slice(i, i + chunkSize);
+    // Calculate date range for deduplication check
+    const dates = movementsToCreate.map(m => m.date);
+    const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
+    const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+    
+    // Get store and product IDs from movements
+    const storeIds = [...new Set(movementsToCreate.map(m => m.storeId))];
+    const productIds = [...new Set(movementsToCreate.map(m => m.productId))];
+    
+    // Fetch existing movements in this date range to check for duplicates
+    console.log(`[${ts()}] Checking for existing movements in date range ${minDate.toISOString().split('T')[0]} to ${maxDate.toISOString().split('T')[0]}...`);
+    const existingMovements = await context.entities.InventoryMovement.findMany({
+      where: {
+        storeId: { in: storeIds },
+        productId: { in: productIds },
+        date: { gte: minDate, lte: maxDate }
+      },
+      select: {
+        storeId: true,
+        productId: true,
+        date: true,
+        type: true,
+        changeQty: true,
+        openingQty: true,
+        closingQty: true,
+        employee: true
+      }
+    });
+    
+    // Create a Set of existing movement keys for fast lookup
+    // Key format: storeId_productId_date_type_changeQty_openingQty_closingQty
+    const existingKeys = new Set();
+    existingMovements.forEach(m => {
+      const dateStr = m.date.toISOString().split('T')[0]; // Normalize to date only (ignore time)
+      const key = `${m.storeId}_${m.productId}_${dateStr}_${m.type}_${m.changeQty}_${m.openingQty}_${m.closingQty}_${m.employee || ''}`;
+      existingKeys.add(key);
+    });
+    
+    console.log(`[${ts()}] Found ${existingMovements.length} existing movements, checking for duplicates...`);
+    
+    // Filter out duplicates
+    movementsToCreate.forEach(m => {
+      const dateStr = m.date.toISOString().split('T')[0]; // Normalize to date only
+      const key = `${m.storeId}_${m.productId}_${dateStr}_${m.type}_${m.changeQty}_${m.openingQty}_${m.closingQty}_${m.employee || ''}`;
       
-      await context.entities.InventoryMovement.createMany({
-        data: chunk
-      });
-      
-      totalCreated += chunk.length;
-      
-      if (totalCreated % 5000 === 0 || totalCreated === movementsToCreate.length) {
-        const percentage = ((totalCreated / movementsToCreate.length) * 100).toFixed(1);
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(`[${ts()}] 📊 Created: ${totalCreated}/${movementsToCreate.length} (${percentage}%) - ${elapsed}s`);
+      if (existingKeys.has(key)) {
+        totalDuplicates++;
+      } else {
+        uniqueMovements.push(m);
+        // Add to existing keys to prevent duplicates within the same upload
+        existingKeys.add(key);
+      }
+    });
+    
+    if (totalDuplicates > 0) {
+      console.log(`[${ts()}] ⚠️  Skipped ${totalDuplicates} duplicate movements (already exist in database)`);
+    }
+    
+    // Bulk create only unique movements
+    if (uniqueMovements.length > 0) {
+      const chunkSize = 1000;
+      for (let i = 0; i < uniqueMovements.length; i += chunkSize) {
+        const chunk = uniqueMovements.slice(i, i + chunkSize);
+        
+        await context.entities.InventoryMovement.createMany({
+          data: chunk,
+          skipDuplicates: true // Extra safety - PostgreSQL will skip if somehow duplicates slip through
+        });
+        
+        totalCreated += chunk.length;
+        
+        if (totalCreated % 5000 === 0 || totalCreated === uniqueMovements.length) {
+          const percentage = ((totalCreated / uniqueMovements.length) * 100).toFixed(1);
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          console.log(`[${ts()}] 📊 Created: ${totalCreated}/${uniqueMovements.length} (${percentage}%) - ${elapsed}s`);
+        }
       }
     }
   }
   
-  console.log(`[${ts()}] ✓ Stage 4 complete: ${totalCreated} movements created`);
+  console.log(`[${ts()}] ✓ Stage 4 complete: ${totalCreated} new movements created, ${totalDuplicates} duplicates skipped`);
   console.log(`[${ts()}] Stage 5/5: Updating stock levels (DELETE + BULK INSERT)...`);
 
   // STAGE 5: Update stock levels using DELETE + BULK INSERT (2-5 seconds)
-  if (movementsToCreate.length > 0) {
+  // Use unique movements for stock level calculation (duplicates would give same closing quantity anyway)
+  const movementsForStock = uniqueMovements.length > 0 ? uniqueMovements : movementsToCreate;
+  
+  if (movementsForStock.length > 0) {
     // Group by store+product and take the last closing quantity
     const stockMap = new Map();
-    movementsToCreate.forEach(m => {
+    movementsForStock.forEach(m => {
       const key = `${m.storeId}-${m.productId}`;
       stockMap.set(key, {
         storeId: m.storeId,
@@ -1296,6 +1348,9 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   console.log(`\n[${ts()}] ✅ INVENTORY LOGS UPLOAD COMPLETE!`);
   console.log(`[${ts()}] 📊 Total time: ${duration}s`);
   console.log(`[${ts()}] ✓ Movements created: ${totalCreated}`);
+  if (totalDuplicates > 0) {
+    console.log(`[${ts()}] ⚠️  Duplicates skipped: ${totalDuplicates}`);
+  }
   console.log(`[${ts()}] ⚠️  Skipped: ${skippedRows.length}`);
   console.log(`[${ts()}] ⚡ Average: ${(totalCreated / parseFloat(duration)).toFixed(0)} records/second\n`);
 
@@ -1341,6 +1396,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
     snapshot,
     movementsProcessed: totalCreated,
     totalMovements: movements.length,
+    duplicatesSkipped: totalDuplicates,
     productsCreated: 0,
     skippedRows: skippedRows.length,
     errors: 0,
@@ -1545,30 +1601,36 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
     }
   }
 
-  // Batch update existing products
+  // Batch update existing products - Process sequentially to avoid connection pool exhaustion
   if (updatedProducts.length > 0) {
-    await Promise.all(updatedProducts.map(product => 
-      context.entities.ProductCatalog.update({
-        where: { gtin: product.gtin },
-        data: {
-          name: product.name,
-          brand: product.brand,
-          category: product.category,
-          parentCategory: product.parentCategory,
-          subcategory: product.subcategory,
-          strainType: product.strainType,
-          format: product.format,
-          retailPrice: product.retailPrice,
-          wholesaleCost: product.wholesaleCost,
-          margin: product.margin,
-          description: product.description,
-          imageUrl: product.imageUrl,
-          weight: product.weight,
-          size: product.size,
-          lastSeen: new Date()
-        }
-      })
-    ));
+    const chunkSize = 50; // Process in smaller chunks to manage connections
+    for (let i = 0; i < updatedProducts.length; i += chunkSize) {
+      const chunk = updatedProducts.slice(i, i + chunkSize);
+      
+      // Process sequentially within each chunk
+      for (const product of chunk) {
+        await context.entities.ProductCatalog.update({
+          where: { gtin: product.gtin },
+          data: {
+            name: product.name,
+            brand: product.brand,
+            category: product.category,
+            parentCategory: product.parentCategory,
+            subcategory: product.subcategory,
+            strainType: product.strainType,
+            format: product.format,
+            retailPrice: product.retailPrice,
+            wholesaleCost: product.wholesaleCost,
+            margin: product.margin,
+            description: product.description,
+            imageUrl: product.imageUrl,
+            weight: product.weight,
+            size: product.size,
+            lastSeen: new Date()
+          }
+        });
+      }
+    }
   }
 
   // Invalidate and warm cache after product catalog update
@@ -3408,5 +3470,141 @@ export const checkImageMigrationStatus = async (args, context) => {
   } catch (error) {
     console.error('❌ Error checking migration status:', error.message)
     throw new HttpError(500, `Failed to check migration status: ${error.message}`)
+  }
+}
+
+/**
+ * Cleanup action to delete all data for October and November 2025
+ * This allows re-uploading those files with proper deduplication
+ */
+export const cleanupOctoberNovember2025 = async (args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+  
+  const startTime = Date.now();
+  const ts = () => new Date().toISOString().split('T')[1].split('.')[0];
+  
+  console.log(`\n[${ts()}] 🧹 STARTING CLEANUP: October & November 2025`);
+  
+  try {
+    // Date range: October 1, 2025 to November 30, 2025
+    const startDate = new Date('2025-10-01T00:00:00.000Z');
+    const endDate = new Date('2025-11-30T23:59:59.999Z');
+    
+    // Calculate week boundaries for summary tables
+    // Week start is Monday, so we need to include weeks that overlap with Oct-Nov
+    // Oct 1, 2025 is a Wednesday, so the week starts Sept 29, 2025
+    // Nov 30, 2025 is a Sunday, so the week ends Dec 1, 2025
+    const weekStartDate = new Date('2025-09-29T00:00:00.000Z'); // Monday before Oct 1
+    const weekEndDate = new Date('2025-12-02T00:00:00.000Z'); // Monday after Nov 30
+    
+    console.log(`[${ts()}] Date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    console.log(`[${ts()}] Week range: ${weekStartDate.toISOString().split('T')[0]} to ${weekEndDate.toISOString().split('T')[0]}`);
+    
+    // Get user's store IDs
+    const userStores = await context.entities.Store.findMany({
+      where: { userId: context.user.id },
+      select: { id: true }
+    });
+    
+    if (userStores.length === 0) {
+      throw new HttpError(400, 'No stores found for user');
+    }
+    
+    const storeIds = userStores.map(s => s.id);
+    console.log(`[${ts()}] Processing ${storeIds.length} stores...`);
+    
+    // 1. Delete InventoryMovement records
+    console.log(`[${ts()}] Step 1/5: Deleting InventoryMovement records...`);
+    const movementDeleteResult = await context.entities.InventoryMovement.deleteMany({
+      where: {
+        storeId: { in: storeIds },
+        date: { gte: startDate, lte: endDate }
+      }
+    });
+    console.log(`[${ts()}] ✓ Deleted ${movementDeleteResult.count} InventoryMovement records`);
+    
+    // 2. Delete WeeklySalesSummary records
+    console.log(`[${ts()}] Step 2/5: Deleting WeeklySalesSummary records...`);
+    const weeklySalesDeleteResult = await context.entities.WeeklySalesSummary.deleteMany({
+      where: {
+        storeId: { in: storeIds },
+        weekStart: { gte: weekStartDate, lt: weekEndDate }
+      }
+    });
+    console.log(`[${ts()}] ✓ Deleted ${weeklySalesDeleteResult.count} WeeklySalesSummary records`);
+    
+    // 3. Delete WeeklyCategorySummary records
+    console.log(`[${ts()}] Step 3/5: Deleting WeeklyCategorySummary records...`);
+    const weeklyCategoryDeleteResult = await context.entities.WeeklyCategorySummary.deleteMany({
+      where: {
+        storeId: { in: storeIds },
+        weekStart: { gte: weekStartDate, lt: weekEndDate }
+      }
+    });
+    console.log(`[${ts()}] ✓ Deleted ${weeklyCategoryDeleteResult.count} WeeklyCategorySummary records`);
+    
+    // 4. Delete WeeklyBrandSummary records
+    console.log(`[${ts()}] Step 4/5: Deleting WeeklyBrandSummary records...`);
+    const weeklyBrandDeleteResult = await context.entities.WeeklyBrandSummary.deleteMany({
+      where: {
+        storeId: { in: storeIds },
+        weekStart: { gte: weekStartDate, lt: weekEndDate }
+      }
+    });
+    console.log(`[${ts()}] ✓ Deleted ${weeklyBrandDeleteResult.count} WeeklyBrandSummary records`);
+    
+    // 5. Delete InventorySnapshot records from that period (optional but helpful)
+    console.log(`[${ts()}] Step 5/5: Deleting InventorySnapshot records...`);
+    const snapshotDeleteResult = await context.entities.InventorySnapshot.deleteMany({
+      where: {
+        storeId: { in: storeIds },
+        uploadedAt: { gte: startDate, lte: endDate }
+      }
+    });
+    console.log(`[${ts()}] ✓ Deleted ${snapshotDeleteResult.count} InventorySnapshot records`);
+    
+    // Invalidate all caches
+    console.log(`[${ts()}] Invalidating caches...`);
+    await invalidateCachePattern('cache:base:*');
+    await invalidateCachePattern('cache:recent_sales:*');
+    await invalidateCachePattern('cache:recent_sales_movements:*');
+    await invalidateCachePattern('cache:older_sales:*');
+    await invalidateCachePattern('cache:filter_options:*');
+    await invalidateCachePattern('cache:sparklines:*');
+    await invalidateCachePattern('cache:sales_totals:*');
+    await invalidateCachePattern('cache:products_paginated:*');
+    await invalidateCachePattern('cache:purchase_orders:*');
+    await invalidateCachePattern('cache:rankings:*');
+    
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`\n[${ts()}] ✅ CLEANUP COMPLETE!`);
+    console.log(`[${ts()}] 📊 Total time: ${duration}s`);
+    console.log(`[${ts()}] Summary:`);
+    console.log(`[${ts()}]   - InventoryMovements: ${movementDeleteResult.count}`);
+    console.log(`[${ts()}]   - WeeklySalesSummary: ${weeklySalesDeleteResult.count}`);
+    console.log(`[${ts()}]   - WeeklyCategorySummary: ${weeklyCategoryDeleteResult.count}`);
+    console.log(`[${ts()}]   - WeeklyBrandSummary: ${weeklyBrandDeleteResult.count}`);
+    console.log(`[${ts()}]   - InventorySnapshots: ${snapshotDeleteResult.count}\n`);
+    
+    return {
+      success: true,
+      deleted: {
+        movements: movementDeleteResult.count,
+        weeklySales: weeklySalesDeleteResult.count,
+        weeklyCategories: weeklyCategoryDeleteResult.count,
+        weeklyBrands: weeklyBrandDeleteResult.count,
+        snapshots: snapshotDeleteResult.count
+      },
+      dateRange: {
+        start: startDate.toISOString().split('T')[0],
+        end: endDate.toISOString().split('T')[0]
+      },
+      duration: parseFloat(duration),
+      message: `Successfully deleted ${movementDeleteResult.count} movements and related summary data for October-November 2025`
+    };
+    
+  } catch (error) {
+    console.error(`[${ts()}] ❌ Cleanup failed:`, error.message);
+    throw new HttpError(500, `Cleanup failed: ${error.message}`);
   }
 }

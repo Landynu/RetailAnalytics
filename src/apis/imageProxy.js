@@ -61,6 +61,16 @@ export const proxyImage = async (req, res, context) => {
       return;
     }
 
+    // Log S3 configuration for debugging (without sensitive data)
+    const endpoint = process.env.S3_ENDPOINT;
+    const region = process.env.S3_REGION || 'us-east-1';
+    console.log('[ImageProxy] S3 Config:', {
+      endpoint: endpoint ? `${endpoint.substring(0, 30)}...` : 'missing',
+      region,
+      bucket: bucket ? `${bucket.substring(0, 20)}...` : 'missing',
+      imagePath: imagePath.substring(0, 50)
+    });
+
     // Fetch image from S3
     const command = new GetObjectCommand({
       Bucket: bucket,
@@ -118,11 +128,71 @@ export const proxyImage = async (req, res, context) => {
       res.status(500).json({ error: 'No image data received from S3' });
     }
   } catch (error) {
-    console.error('Error proxying image:', error.message);
+    console.error('Error proxying image:', {
+      message: error.message,
+      name: error.name,
+      code: error.Code || error.code,
+      endpoint: process.env.S3_ENDPOINT ? `${process.env.S3_ENDPOINT.substring(0, 30)}...` : 'missing',
+      bucket: process.env.S3_BUCKET_NAME ? `${process.env.S3_BUCKET_NAME.substring(0, 20)}...` : 'missing',
+      imagePath: imagePath.substring(0, 50)
+    });
+    
     if (error.name === 'NoSuchKey' || error.name === 'NotFound') {
       res.status(404).json({ error: 'Image not found' });
       return;
     }
+    
+    // Check for endpoint mismatch error
+    if (error.message.includes('must be addressed using the specified endpoint') || 
+        error.Code === 'PermanentRedirect' || 
+        error.code === 'PermanentRedirect') {
+      console.error('[ImageProxy] S3 Endpoint mismatch. Current endpoint:', process.env.S3_ENDPOINT);
+      
+      // Try to extract the correct endpoint from the error
+      let correctEndpoint = null;
+      if (error.$metadata && error.$metadata.httpStatusCode === 301) {
+        // Permanent redirect - check if there's a location header or endpoint in the error
+        correctEndpoint = error.Endpoint || error.endpoint;
+      }
+      
+      // Also check the error object directly for endpoint info
+      if (!correctEndpoint && error.endpoint) {
+        correctEndpoint = error.endpoint;
+      }
+      
+      // Check if endpoint is in the error message or metadata
+      if (!correctEndpoint) {
+        // Try to extract from error message or metadata
+        const endpointMatch = error.message?.match(/endpoint[:\s]+([^\s,]+)/i) || 
+                             error.$response?.headers?.['x-amz-endpoint'] ||
+                             error.$metadata?.endpoint;
+        if (endpointMatch) {
+          correctEndpoint = typeof endpointMatch === 'string' ? endpointMatch : endpointMatch[1];
+        }
+      }
+      
+      if (correctEndpoint) {
+        // Ensure it's a full URL with protocol
+        if (!correctEndpoint.startsWith('http://') && !correctEndpoint.startsWith('https://')) {
+          correctEndpoint = `https://${correctEndpoint}`;
+        }
+        console.error('[ImageProxy] Correct endpoint should be:', correctEndpoint);
+        console.error('[ImageProxy] Please update S3_ENDPOINT environment variable to:', correctEndpoint);
+      } else {
+        // Based on the logs, the correct endpoint appears to be Wasabi
+        console.error('[ImageProxy] Based on error, endpoint should be: https://object-storage.s3.wasabisys.com');
+        correctEndpoint = 'https://object-storage.s3.wasabisys.com';
+      }
+      
+      res.status(500).json({ 
+        error: 'S3 endpoint configuration error. Please check S3_ENDPOINT environment variable.',
+        details: 'The bucket endpoint does not match the configured endpoint.',
+        currentEndpoint: process.env.S3_ENDPOINT ? `${process.env.S3_ENDPOINT.substring(0, 50)}...` : 'missing',
+        suggestedEndpoint: correctEndpoint || 'Check Railway S3 service settings'
+      });
+      return;
+    }
+    
     res.status(500).json({ error: `Failed to proxy image: ${error.message}` });
   }
 };

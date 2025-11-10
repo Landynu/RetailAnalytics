@@ -48,12 +48,12 @@ action uploadInventoryExport {
 
 action uploadInventoryLogs {
   fn: import { uploadInventoryLogs } from "@src/actions.js",
-  entities: [Store, ProductCatalog, InventoryMovement, StockLevel, InventorySnapshot, UnmatchedRecord]
+  entities: [Store, ProductCatalog, InventoryMovement, StockLevel, InventorySnapshot, UnmatchedRecord, WeeklySalesSummary]
 }
 
 action uploadProductCatalog {
   fn: import { uploadProductCatalog } from "@src/actions.js",
-  entities: [ProductCatalog]
+  entities: [ProductCatalog, WeeklySalesSummary, InventoryMovement]
 }
 
 action createStore {
@@ -375,6 +375,11 @@ action checkImageMigrationStatus {
   entities: [ProductCatalog]
 }
 
+action cleanupOctoberNovember2025 {
+  fn: import { cleanupOctoberNovember2025 } from "@src/actions.js",
+  entities: [Store, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary, InventorySnapshot]
+}
+
 api proxyImage {
   fn: import { proxyImage } from "@src/apis/imageProxy.js",
   httpRoute: (GET, "/api/images/proxy")
@@ -437,5 +442,11 @@ page CategoryManagementPage {
 route ProductCatalogRoute { path: "/product-catalog", to: ProductCatalogPage }
 page ProductCatalogPage {
   component: import ProductCatalog from "@src/pages/ProductCatalog.jsx",
+  authRequired: true
+}
+
+route DataCleanupRoute { path: "/data-cleanup", to: DataCleanupPage }
+page DataCleanupPage {
+  component: import DataCleanup from "@src/pages/DataCleanup.jsx",
   authRequired: true
 }

@@ -3,14 +3,36 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, PutBucketCorsCommand, Li
 
 // Initialize S3 client (exported for use in other modules)
 export const getS3Client = () => {
-  const endpoint = process.env.S3_ENDPOINT;
-  const region = process.env.S3_REGION || 'us-east-1';
+  let endpoint = process.env.S3_ENDPOINT;
+  const region = process.env.S3_REGION || 'us-east-1'; // Default to us-east-1 (change to us-west-1 for Railway if needed)
   const accessKeyId = process.env.S3_ACCESS_KEY_ID;
   const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
 
   if (!endpoint || !accessKeyId || !secretAccessKey) {
     throw new Error('S3 configuration missing. Please set S3_ENDPOINT, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY');
   }
+
+  // Railway's object storage is Wasabi-backed in production
+  // Only use Wasabi endpoint in production when Railway endpoint is detected
+  // In development, use the configured endpoint as-is (preserves existing behavior)
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  // Only override endpoint in production when:
+  // 1. Railway endpoint is detected, AND
+  // 2. Wasabi endpoint is explicitly enabled OR endpoint already is Wasabi
+  if (isProduction && endpoint.includes('storage.railway.app')) {
+    const useWasabiEndpoint = process.env.S3_USE_WASABI_ENDPOINT === 'true' || 
+                             endpoint.includes('wasabisys.com');
+    
+    if (useWasabiEndpoint) {
+      // Railway storage is Wasabi-backed - use Wasabi endpoint for API calls
+      // Wasabi endpoint format for path-style: https://s3.{region}.wasabisys.com
+      const wasabiRegion = region || 'us-west-1';
+      endpoint = `https://s3.${wasabiRegion}.wasabisys.com`;
+      console.log('[S3Client] Using Wasabi endpoint (Railway storage is Wasabi-backed):', endpoint);
+    }
+  }
+  // In development, always use the configured endpoint as-is (no changes)
 
   return new S3Client({
     endpoint,
@@ -19,41 +41,49 @@ export const getS3Client = () => {
       accessKeyId,
       secretAccessKey,
     },
-    forcePathStyle: true, // Required for Railway/S3-compatible storage
+    forcePathStyle: true, // Required for Railway/S3-compatible storage (path-style URLs)
   });
 };
 
 // Get public URL for an object
+// Uses Railway endpoint for public URLs (what users see), not Wasabi endpoint (used for API calls)
 const getPublicUrl = (storagePath) => {
+  // Priority 1: Explicit public URL (most flexible)
   const publicUrl = process.env.S3_PUBLIC_URL;
-  const bucket = process.env.S3_BUCKET_NAME;
-  const endpoint = process.env.S3_ENDPOINT;
-
   if (publicUrl) {
     return `${publicUrl}/${storagePath}`;
   }
 
-  // Construct from endpoint and bucket if public URL not provided
-  if (endpoint && bucket) {
-    // Railway S3-compatible storage typically uses path-style: https://{endpoint}/{bucket}/{path}
+  // Priority 2: Railway endpoint (for public-facing URLs in production)
+  // In production, use Railway endpoint for public URLs even if API calls use Wasabi
+  // In development, use the configured endpoint
+  const railwayEndpoint = process.env.RAILWAY_S3_ENDPOINT;
+  const bucket = process.env.S3_BUCKET_NAME;
+  const configuredEndpoint = process.env.S3_ENDPOINT;
+
+  // Use Railway endpoint if set, otherwise fall back to configured endpoint
+  const endpointForPublicUrl = railwayEndpoint || configuredEndpoint;
+
+  if (endpointForPublicUrl && bucket) {
+    // Railway S3-compatible storage uses path-style: https://{endpoint}/{bucket}/{path}
     try {
-      const url = new URL(endpoint);
+      const url = new URL(endpointForPublicUrl);
       // Remove trailing slash from pathname if present
       const cleanPath = url.pathname.replace(/\/$/, '');
       return `${url.protocol}//${url.hostname}${cleanPath}/${bucket}/${storagePath}`;
     } catch {
       // If endpoint is not a full URL, try common patterns
       // Pattern 1: https://{endpoint}/{bucket}/{path} (Railway path-style)
-      if (endpoint.includes('://')) {
+      if (endpointForPublicUrl.includes('://')) {
         // Already has protocol, use as-is
-        return `${endpoint}/${bucket}/${storagePath}`;
+        return `${endpointForPublicUrl}/${bucket}/${storagePath}`;
       }
       // Pattern 2: https://{bucket}.{endpoint}/{path} (virtual-hosted style)
-      return `https://${bucket}.${endpoint}/${storagePath}`;
+      return `https://${bucket}.${endpointForPublicUrl}/${storagePath}`;
     }
   }
 
-  throw new Error('Cannot construct public URL. Please set S3_PUBLIC_URL or ensure S3_ENDPOINT and S3_BUCKET_NAME are set');
+  throw new Error('Cannot construct public URL. Please set S3_PUBLIC_URL, RAILWAY_S3_ENDPOINT, or ensure S3_ENDPOINT and S3_BUCKET_NAME are set');
 };
 
 // List objects in S3 bucket (for verification)

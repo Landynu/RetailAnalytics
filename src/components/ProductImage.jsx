@@ -28,29 +28,75 @@ const ProductImage = ({
   const convertToProxyUrl = (url) => {
     if (!url) return null;
     
-    // Check if it's a Railway S3 URL
-    if (url.includes('storage.railway.app') || url.includes('b1.us-west-1.storage.railway.app')) {
+    // Check if it's a Railway S3 URL (multiple possible patterns)
+    const isRailwayS3 = url.includes('storage.railway.app') || 
+                       url.includes('b1.us-west-1.storage.railway.app') ||
+                       (url.includes('railway.app') && url.includes('/productimages/'));
+    
+    if (isRailwayS3) {
       // Extract the path from the Railway URL
       // Format: https://b1.us-west-1.storage.railway.app/object-storage-xxx/productimages/brand/product.webp
+      // Or: https://{endpoint}/{bucket}/productimages/brand/product.webp
       try {
         const urlObj = new URL(url);
         // Find the path after the bucket name (productimages/...)
-        const pathMatch = urlObj.pathname.match(/\/productimages\/(.+)$/);
+        // Try multiple patterns to handle different Railway URL formats
+        let pathMatch = urlObj.pathname.match(/\/productimages\/(.+)$/);
+        
+        // If no match, try matching from the end (in case bucket name is in path)
+        if (!pathMatch) {
+          pathMatch = urlObj.pathname.match(/productimages\/(.+)$/);
+        }
+        
         if (pathMatch) {
           const imagePath = `productimages/${pathMatch[1]}`;
           
           // In development, Wasp client runs on :3000, server on :3001
-          // In production, they're on the same origin
-          // Use window.location to determine the correct server URL
+          // In production, client and server are on different subdomains
           const isDevelopment = window.location.hostname === 'localhost' && window.location.port === '3000';
-          const serverUrl = isDevelopment 
-            ? 'http://localhost:3001'  // Wasp dev server
-            : window.location.origin;  // Same origin in production
+          let serverUrl;
           
-          return `${serverUrl}/api/images/proxy?path=${encodeURIComponent(imagePath)}`;
+          if (isDevelopment) {
+            serverUrl = 'http://localhost:3001';  // Wasp dev server
+          } else {
+            // Production: client and server are on different subdomains
+            // Client: retail-analytics-client-production.up.railway.app or analytics.wiidsk.ca
+            // Server: retail-analytics-server-production.up.railway.app
+            const hostname = window.location.hostname;
+            if (hostname.includes('analytics.wiidsk.ca')) {
+              // Custom domain pointing to client - server is still on Railway subdomain
+              // Use the Railway server subdomain for API calls
+              serverUrl = 'https://retail-analytics-server-production.up.railway.app';
+            } else if (hostname.includes('retail-analytics-client')) {
+              // Railway client subdomain - use server subdomain with https
+              const serverHostname = hostname.replace('client', 'server');
+              serverUrl = `https://${serverHostname}`;
+            } else {
+              // Fallback: try same origin (in case server is proxied)
+              serverUrl = window.location.origin;
+            }
+          }
+          
+          const proxyUrl = `${serverUrl}/api/images/proxy?path=${encodeURIComponent(imagePath)}`;
+          
+          // Debug logging (both dev and production for troubleshooting)
+          const isProduction = window.location.hostname.includes('retail-analytics');
+          if (isDevelopment || isProduction) {
+            console.debug('[ProductImage] Converting Railway URL to proxy:', { 
+              original: url, 
+              proxy: proxyUrl,
+              imagePath,
+              serverUrl
+            });
+          }
+          
+          return proxyUrl;
+        } else {
+          // Log if we detected Railway but couldn't extract path
+          console.warn('[ProductImage] Railway URL detected but path extraction failed:', url, 'pathname:', urlObj.pathname);
         }
       } catch (e) {
-        console.warn('Failed to parse Railway URL:', url, e);
+        console.warn('[ProductImage] Failed to parse Railway URL:', url, e);
       }
     }
     
@@ -62,33 +108,78 @@ const ProductImage = ({
   // Use proxy for Railway S3 images to avoid CORS issues
   const getImageChain = () => {
     const chain = [];
+    const isDevelopment = window.location.hostname === 'localhost';
+    
+    // Debug: Log what image fields we have
+    if (isDevelopment || window.location.hostname.includes('retail-analytics')) {
+      console.debug('[ProductImage] Image fields for product:', {
+        id: product.id,
+        name: product.name,
+        imageStoragePath: product.imageStoragePath,
+        imageThumbnailPath: product.imageThumbnailPath,
+        imageUrl: product.imageUrl,
+        imageMigrationStatus: product.imageMigrationStatus
+      });
+    }
     
     // Normal flow: try S3 images first (via proxy), then CDN fallback
     if (variant === 'full') {
       // Try optimized S3 images first, then fallback to CDN
       if (product.imageStoragePath) {
         const proxyUrl = convertToProxyUrl(product.imageStoragePath);
-        if (proxyUrl) chain.push(proxyUrl);
+        if (proxyUrl) {
+          chain.push(proxyUrl);
+          if (isDevelopment || window.location.hostname.includes('retail-analytics')) {
+            console.debug('[ProductImage] Added imageStoragePath to chain:', proxyUrl);
+          }
+        } else {
+          // URL wasn't converted to proxy - might not be Railway URL
+          if (isDevelopment || window.location.hostname.includes('retail-analytics')) {
+            console.warn('[ProductImage] imageStoragePath not converted to proxy:', product.imageStoragePath);
+          }
+        }
       }
       if (product.imageThumbnailPath) {
         const proxyUrl = convertToProxyUrl(product.imageThumbnailPath);
-        if (proxyUrl) chain.push(proxyUrl);
+        if (proxyUrl) {
+          chain.push(proxyUrl);
+          if (isDevelopment || window.location.hostname.includes('retail-analytics')) {
+            console.debug('[ProductImage] Added imageThumbnailPath to chain:', proxyUrl);
+          }
+        }
       }
     } else if (variant === 'thumbnail' || variant === 'auto') {
       // Try thumbnail first, then full-size, then CDN
       if (product.imageThumbnailPath) {
         const proxyUrl = convertToProxyUrl(product.imageThumbnailPath);
-        if (proxyUrl) chain.push(proxyUrl);
+        if (proxyUrl) {
+          chain.push(proxyUrl);
+          if (isDevelopment || window.location.hostname.includes('retail-analytics')) {
+            console.debug('[ProductImage] Added imageThumbnailPath to chain:', proxyUrl);
+          }
+        }
       }
       if (product.imageStoragePath) {
         const proxyUrl = convertToProxyUrl(product.imageStoragePath);
-        if (proxyUrl) chain.push(proxyUrl);
+        if (proxyUrl) {
+          chain.push(proxyUrl);
+          if (isDevelopment || window.location.hostname.includes('retail-analytics')) {
+            console.debug('[ProductImage] Added imageStoragePath to chain:', proxyUrl);
+          }
+        }
       }
     }
     
     // Always add CDN URL as final fallback (most reliable)
     if (product.imageUrl) {
       chain.push(product.imageUrl);
+      if (isDevelopment || window.location.hostname.includes('retail-analytics')) {
+        console.debug('[ProductImage] Added imageUrl (CDN) to chain as fallback:', product.imageUrl);
+      }
+    }
+    
+    if (isDevelopment || window.location.hostname.includes('retail-analytics')) {
+      console.debug('[ProductImage] Final image chain:', chain);
     }
     
     return chain;

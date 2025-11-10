@@ -8,6 +8,7 @@ export const serverMiddlewareFn = (middlewareConfig) => {
   // Use a very early position to ensure it runs before Wasp's built-in routes
   const allowedOrigins = [
     'https://retail-analytics-client-production.up.railway.app',
+    'https://analytics.wiidsk.ca', // Custom domain
     'http://localhost:3000',
     'http://localhost:3001', // Wasp dev server port
     'http://localhost:5173', // Vite dev server default port
@@ -69,6 +70,44 @@ export const serverMiddlewareFn = (middlewareConfig) => {
     else if (req.url.endsWith('.html') || req.url === '/') {
       res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
     }
+    next();
+  });
+
+  // Configure Content-Security-Policy (CSP)
+  // Allow inline scripts for Wasp's generated code
+  // Only apply to HTML responses, not static assets or API endpoints
+  middlewareConfig.set('csp', (req, res, next) => {
+    // Skip CSP for static assets (js, css, images, fonts, etc.)
+    // These don't need CSP headers
+    if (req.url.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|map|json)$/)) {
+      next();
+      return;
+    }
+
+    // Skip CSP for API endpoints
+    if (req.url.startsWith('/api/') || req.url.startsWith('/operations/') || req.url.startsWith('/auth/')) {
+      next();
+      return;
+    }
+
+    // Set permissive CSP that allows Wasp's inline scripts
+    // This overrides any default CSP from Railway or Wasp
+    const cspDirectives = [
+      "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https: http:",
+      "style-src 'self' 'unsafe-inline' https: http:",
+      "img-src 'self' data: blob: https: http:",
+      "font-src 'self' data: https: http:",
+      "connect-src 'self' https: http: ws: wss:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ];
+
+    // Set CSP header - this will override any existing CSP
+    res.setHeader('Content-Security-Policy', cspDirectives.join('; '));
+
     next();
   });
   
