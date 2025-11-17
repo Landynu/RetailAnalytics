@@ -287,6 +287,68 @@ export const getInventoryMovements = async ({ storeId, dateRange, filters = {} }
   }));
 };
 
+export const getProductInventoryMovements = async ({ productId, dateRange = null, storeIds = null }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  const whereClause = {
+    productId: parseInt(productId)
+  };
+
+  // Optional date range filter
+  if (dateRange?.start && dateRange?.end) {
+    whereClause.date = {
+      gte: new Date(dateRange.start),
+      lte: new Date(dateRange.end)
+    };
+  }
+
+  // Optional store filter
+  if (storeIds && storeIds.length > 0) {
+    whereClause.storeId = { in: storeIds.map(id => parseInt(id)) };
+  }
+
+  const movements = await context.entities.InventoryMovement.findMany({
+    where: whereClause,
+    include: {
+      product: {
+        select: {
+          id: true,
+          name: true,
+          gtin: true,
+          brand: true
+        }
+      },
+      store: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    },
+    orderBy: { date: 'desc' },
+    take: 1000 // Limit to last 1000 movements for performance
+  });
+
+  return {
+    product: movements[0]?.product || null,
+    movements: movements.map(movement => ({
+      id: movement.id,
+      date: movement.date.toISOString(),
+      type: movement.type,
+      employee: movement.employee,
+      store: movement.store,
+      openingQty: movement.openingQty,
+      changeQty: movement.changeQty,
+      closingQty: movement.closingQty,
+      notes: movement.notes,
+      // Additional metadata
+      sku: movement.sku,
+      barcode: movement.barcode
+    })),
+    totalCount: movements.length
+  };
+};
+
 export const getCategoryBreakdown = async ({ storeId }, context) => {
   if (!context.user) { throw new HttpError(401) }
 

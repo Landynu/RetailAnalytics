@@ -1093,6 +1093,21 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     totalProcessed: products.length
   };
 
+  // Invalidate cache after inventory export update (CRITICAL for fresh data)
+  const cacheTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+  console.log(`[${cacheTimestamp}] Stage 4/4: Invalidating caches...`);
+  await invalidateCachePattern('cache:base:*');
+  await invalidateCachePattern('cache:recent_sales:*');
+  await invalidateCachePattern('cache:recent_sales_movements:*');
+  await invalidateCachePattern('cache:older_sales:*');
+  await invalidateCachePattern('cache:filter_options:*');
+  await invalidateCachePattern('cache:sparklines:*');
+  await invalidateCachePattern('cache:sales_totals:*');
+  await invalidateCachePattern('cache:products_paginated:*');
+  await invalidateCachePattern('cache:purchase_orders:*');
+  await invalidateCachePattern('cache:rankings:*');
+  console.log(`[${cacheTimestamp}] ✓ Cache invalidation complete\n`);
+
   return {
     snapshot,
     newProducts: results.newProducts,
@@ -3684,5 +3699,115 @@ export const cleanupOctoberNovember2025 = async (_args, context) => {
   } catch (error) {
     console.error(`[${ts()}] ❌ Cleanup failed:`, error.message);
     throw new HttpError(500, `Cleanup failed: ${error.message}`);
+  }
+}
+
+export const deleteInventoryMovementsByDateRange = async ({ startDate, endDate, storeIds = null, preview = false }, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  const ts = () => new Date().toISOString().split('T')[1].split('.')[0];
+
+  try {
+    // Parse dates as Central Time (UTC-6)
+    // When user selects "2025-11-01", they mean Nov 1 midnight Central Time
+    // which is Nov 1 at 06:00:00 UTC
+    const [yearStart, monthStart, dayStart] = startDate.split('-').map(Number);
+    const start = new Date(Date.UTC(yearStart, monthStart - 1, dayStart, 6, 0, 0, 0));
+
+    // End date should be 23:59:59.999 Central Time of selected day
+    // Nov 30 23:59:59 Central = Dec 1 05:59:59 UTC
+    const [yearEnd, monthEnd, dayEnd] = endDate.split('-').map(Number);
+    const end = new Date(Date.UTC(yearEnd, monthEnd - 1, dayEnd + 1, 5, 59, 59, 999));
+
+    console.log(`\n[${ts()}] 🗑️  ${preview ? 'PREVIEW' : 'DELETE'} Inventory Movements`);
+    console.log(`[${ts()}] Date range: ${start.toISOString()} to ${end.toISOString()}`);
+
+    // Build store filter
+    let targetStoreIds;
+    if (storeIds && storeIds.length > 0) {
+      targetStoreIds = storeIds.map(id => parseInt(id));
+      console.log(`[${ts()}] Stores: ${targetStoreIds.join(', ')}`);
+    } else {
+      // Get all user's stores
+      const userStores = await context.entities.Store.findMany({
+        where: { userId: context.user.id },
+        select: { id: true, name: true }
+      });
+
+      if (userStores.length === 0) {
+        throw new HttpError(400, 'No stores found for user');
+      }
+
+      targetStoreIds = userStores.map(s => s.id);
+      console.log(`[${ts()}] Stores: All (${targetStoreIds.length} stores)`);
+    }
+
+    // Build where clause
+    const whereClause = {
+      storeId: { in: targetStoreIds },
+      date: { gte: start, lte: end }
+    };
+
+    if (preview) {
+      // Preview mode: just count the records
+      const count = await context.entities.InventoryMovement.count({
+        where: whereClause
+      });
+
+      console.log(`[${ts()}] Preview: ${count} movements would be deleted`);
+
+      return {
+        success: true,
+        preview: true,
+        count,
+        dateRange: {
+          start: start.toISOString(),
+          end: end.toISOString()
+        },
+        stores: targetStoreIds.length
+      };
+    }
+
+    // Delete mode: actually delete the records
+    const startTime = Date.now();
+
+    console.log(`[${ts()}] Deleting InventoryMovement records...`);
+    const deleteResult = await context.entities.InventoryMovement.deleteMany({
+      where: whereClause
+    });
+
+    console.log(`[${ts()}] ✓ Deleted ${deleteResult.count} InventoryMovement records`);
+
+    // Invalidate all caches
+    console.log(`[${ts()}] Invalidating caches...`);
+    await invalidateCachePattern('cache:base:*');
+    await invalidateCachePattern('cache:recent_sales:*');
+    await invalidateCachePattern('cache:recent_sales_movements:*');
+    await invalidateCachePattern('cache:older_sales:*');
+    await invalidateCachePattern('cache:filter_options:*');
+    await invalidateCachePattern('cache:sparklines:*');
+    await invalidateCachePattern('cache:sales_totals:*');
+    await invalidateCachePattern('cache:products_paginated:*');
+    await invalidateCachePattern('cache:purchase_orders:*');
+    await invalidateCachePattern('cache:rankings:*');
+
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`[${ts()}] ✅ Deletion complete in ${duration}s\n`);
+
+    return {
+      success: true,
+      preview: false,
+      deletedCount: deleteResult.count,
+      dateRange: {
+        start: start.toISOString(),
+        end: end.toISOString()
+      },
+      stores: targetStoreIds.length,
+      duration: parseFloat(duration)
+    };
+
+  } catch (error) {
+    console.error(`[${ts()}] ❌ Delete failed:`, error.message);
+    throw new HttpError(500, `Failed to delete inventory movements: ${error.message}`);
   }
 }

@@ -126,32 +126,35 @@ export const useColumnOrdering = (stores = []) => {
     });
   }
 
-  // Update column order when stores change
+  // Update column order when stores change (only when actual store IDs change)
+  // Use a stable dependency based on store IDs to prevent unnecessary re-renders
+  const storeIds = stores.map(s => s.id).sort().join(',');
+
   useEffect(() => {
     if (stores.length > 0) {
       setColumnOrder(prevOrder => {
         // Get all location column IDs
         const locationColumnIds = stores.map(s => `location-${s.id}`);
         const locationsGroupIndex = prevOrder.indexOf('locations');
-        
+
         // If we have the old 'locations' placeholder
         if (locationsGroupIndex !== -1) {
           const newOrder = [...prevOrder];
           newOrder.splice(locationsGroupIndex, 1, ...locationColumnIds);
           return newOrder;
         }
-        
+
         // Otherwise, ensure all location columns exist
         const existingLocationIds = prevOrder.filter(id => id.startsWith('location-'));
         const newLocationIds = locationColumnIds.filter(id => !existingLocationIds.includes(id));
-        
+
         if (newLocationIds.length > 0) {
           // Find where to insert new locations (after last existing location or after margin)
           let insertIndex = prevOrder.length;
-          const lastLocationIndex = Math.max(...prevOrder.map((id, i) => 
+          const lastLocationIndex = Math.max(...prevOrder.map((id, i) =>
             id.startsWith('location-') ? i : -1
           ));
-          
+
           if (lastLocationIndex >= 0) {
             insertIndex = lastLocationIndex + 1;
           } else {
@@ -160,16 +163,17 @@ export const useColumnOrdering = (stores = []) => {
               insertIndex = marginIndex + 1;
             }
           }
-          
+
           const newOrder = [...prevOrder];
           newOrder.splice(insertIndex, 0, ...newLocationIds);
           return newOrder;
         }
-        
+
         return prevOrder;
       });
     }
-  }, [stores]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeIds]); // Only re-run when store IDs actually change
 
   // Save to localStorage whenever order, widths, or visibility changes
   useEffect(() => {

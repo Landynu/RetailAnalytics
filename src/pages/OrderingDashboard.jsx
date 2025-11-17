@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores, getDistributors, getClassifications, getCategoryDefinitions } from 'wasp/client/operations';
 import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats, seedDistributors, syncBrands } from 'wasp/client/operations';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
 import LocationSelector from '../components/LocationSelector';
 import DateRangeFilter from '../components/DateRangeFilter';
 import FilterDropdown from '../components/FilterDropdown';
-import { Package, Tag, RotateCcw, Loader2 } from 'lucide-react';
+import { Package, Tag, RotateCcw, Loader2, RefreshCw } from 'lucide-react';
 import DataLoadingOverlay from '../components/DataLoadingOverlay';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 import { arrayMove } from '@dnd-kit/sortable';
@@ -34,8 +35,10 @@ import CategoryCell from '../components/CategoryCell';
 import SubcategoryCell from '../components/SubcategoryCell';
 import SalesMatrix from '../components/SalesMatrix';
 import ColumnVisibilityMenu from '../components/ColumnVisibilityMenu';
+import InventoryMovementModal from '../components/InventoryMovementModal';
 
 const OrderingDashboard = () => {
+  const queryClient = useQueryClient();
   const { data: stores } = useQuery(getUserStores);
   const [selectedStoreIds, setSelectedStoreIds] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
@@ -73,9 +76,20 @@ const OrderingDashboard = () => {
   } = useColumnOrdering(displayStores);
   
   const [dateRange, setDateRange] = useState(() => {
-    const end = new Date();
-    const start = new Date();
+    // Create dates in Central Time (UTC-6)
+    // Get current time in Central Time
+    const now = new Date();
+    const centralNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+
+    // Set end to end of current day in Central Time
+    const end = new Date(centralNow);
+    end.setHours(23, 59, 59, 999);
+
+    // Set start to 14 days ago at start of day in Central Time
+    const start = new Date(centralNow);
     start.setDate(start.getDate() - 14);
+    start.setHours(0, 0, 0, 0);
+
     return { start: start.toISOString(), end: end.toISOString(), preset: 'last14' };
   });
   
@@ -90,10 +104,15 @@ const OrderingDashboard = () => {
 
   const [allProducts, setAllProducts] = useState([]);
   const [allAnalyticsData, setAllAnalyticsData] = useState(null);
-  
+
   // Progressive loading state tracking
   const [hasInitialPageLoaded, setHasInitialPageLoaded] = useState(false);
   const [hasFullDataLoaded, setHasFullDataLoaded] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Inventory movement modal state
+  const [selectedProductForMovements, setSelectedProductForMovements] = useState(null);
+  const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
 
   const includeHiddenCategories = visibleHiddenCategories.size > 0;
 
@@ -290,6 +309,34 @@ const OrderingDashboard = () => {
         alert('Error syncing brands: ' + error.message);
       }
     }
+  };
+
+  const handleRefreshData = async () => {
+    setIsRefreshing(true);
+    try {
+      // Invalidate all queries to force fresh data fetch
+      await queryClient.invalidateQueries();
+      // Reset loading flags to trigger fresh data load
+      setHasInitialPageLoaded(false);
+      setHasFullDataLoaded(false);
+      setAllProducts([]);
+      setAllAnalyticsData(null);
+
+      // Wait a bit for queries to start refetching
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleProductRowClick = (product) => {
+    setSelectedProductForMovements(product);
+    setIsMovementModalOpen(true);
+  };
+
+  const handleCloseMovementModal = () => {
+    setIsMovementModalOpen(false);
+    setSelectedProductForMovements(null);
   };
 
   const handleSort = (key) => {
@@ -636,7 +683,13 @@ const OrderingDashboard = () => {
                   <h1 className="text-4xl font-semibold bg-gradient-to-r from-[#14b8a6] via-[#0ea5e9] to-[#2563eb] bg-clip-text text-transparent">
                     Ordering Intelligence
                   </h1>
-                  {isLoadingFullData && hasInitialPageLoaded && (
+                  {isRefreshing && (
+                    <Badge variant="secondary" className="h-7 px-3 text-xs font-medium flex items-center gap-2 bg-green-50 text-green-700 border-green-200 shadow-sm rounded-lg">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Refreshing data...
+                    </Badge>
+                  )}
+                  {!isRefreshing && isLoadingFullData && hasInitialPageLoaded && (
                     <Badge variant="secondary" className="h-7 px-3 text-xs font-medium flex items-center gap-2 bg-blue-50 text-blue-700 border-blue-200 shadow-sm rounded-lg">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       Loading complete analytics...
@@ -644,12 +697,15 @@ const OrderingDashboard = () => {
                   )}
                 </div>
                 <p className="text-slate-700 mt-2 font-medium">
-                  Analysis for {allAnalyticsData?.periodDays || 14} days • Showing {sortedProducts.length} of {allProducts.length} products
+                  Analysis for {allAnalyticsData?.periodDays || 14} days ({new Date(dateRange.start).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })} - {new Date(dateRange.end).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}) • Showing {sortedProducts.length} of {allProducts.length} products
                   {isLoadingFullData && hasInitialPageLoaded && (fullAnalytics?.totalCount || initialAnalytics?.totalCount) && (
                     <span className="text-blue-600 ml-2">
                       (Loading {(fullAnalytics?.totalCount || initialAnalytics?.totalCount)} total...)
                     </span>
                   )}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Timezone: Central Time (UTC-6) • {new Date(dateRange.start).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })} to {new Date(dateRange.end).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
                 </p>
                 {allAnalyticsData?.lastUpdate && (
                   <p className="text-xs text-slate-500 mt-1.5">
@@ -777,6 +833,17 @@ const OrderingDashboard = () => {
                 <RotateCcw className="h-4 w-4 mr-2" />
                 Reset Widths
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefreshData}
+                disabled={isRefreshing || isLoadingInitialPage}
+                title="Refresh all data to get the latest inventory and sales information"
+                className="border-green-300 hover:bg-green-50 text-green-700 hover:text-green-800 rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
+              </Button>
             </div>
           </div>
 
@@ -830,6 +897,7 @@ const OrderingDashboard = () => {
                               periodDays={allAnalyticsData?.periodDays || 14}
                               maxTotalSales={maxTotalSales}
                               onAddToOrder={handleAddToOrder}
+                              onRowClick={handleProductRowClick}
                               isLoadingTrends={isLoadingFullData && hasInitialPageLoaded}
                               rowIndex={index}
                             />
@@ -843,13 +911,23 @@ const OrderingDashboard = () => {
             )}
           </div>
 
-          <SalesMatrix 
-            salesMatrix={filteredSalesMatrix || allAnalyticsData?.salesMatrix} 
+          <SalesMatrix
+            salesMatrix={filteredSalesMatrix || allAnalyticsData?.salesMatrix}
             stores={allAnalyticsData?.stores || []}
             isLoading={isLoadingFullData && hasInitialPageLoaded && !allAnalyticsData?.salesMatrix}
           />
         </div>
       </div>
+
+      {/* Inventory Movement Modal */}
+      <InventoryMovementModal
+        productId={selectedProductForMovements?.id}
+        productName={selectedProductForMovements?.name}
+        isOpen={isMovementModalOpen}
+        onClose={handleCloseMovementModal}
+        dateRange={dateRange}
+        storeIds={selectedStoreIds}
+      />
     </div>
   );
 };

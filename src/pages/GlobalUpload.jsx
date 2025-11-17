@@ -1,57 +1,73 @@
 import React, { useState, useRef } from 'react';
-import { useAction } from 'wasp/client/operations';
-import { uploadInventoryExport, uploadInventoryLogs, uploadProductCatalog, analyzeInventoryExport } from 'wasp/client/operations';
+import { useAction, useQuery } from 'wasp/client/operations';
+import { uploadInventoryExport, uploadInventoryLogs, uploadProductCatalog, analyzeInventoryExport, deleteInventoryMovementsByDateRange, getUserStores } from 'wasp/client/operations';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
-import { Upload, FileText, CheckCircle, AlertCircle, Database, TrendingUp, Store, File, ArrowLeft } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Database, TrendingUp, Store, File, ArrowLeft, Trash2 } from 'lucide-react';
 import CSVUploadConfirmation from '../components/CSVUploadConfirmation';
 import UploadProgressModal from '../components/UploadProgressModal';
 
 const GlobalUploadPage = () => {
+  const queryClient = useQueryClient();
   const uploadInventoryExportFn = useAction(uploadInventoryExport);
   const uploadInventoryLogsFn = useAction(uploadInventoryLogs);
   const uploadProductCatalogFn = useAction(uploadProductCatalog);
   const analyzeInventoryExportFn = useAction(analyzeInventoryExport);
-  
+  const deleteInventoryMovementsFn = useAction(deleteInventoryMovementsByDateRange);
+
+  // Fetch user stores for deletion tool
+  const { data: stores } = useQuery(getUserStores);
+
   // State for all upload types
   const [exportData, setExportData] = useState('');
   const [logsData, setLogsData] = useState('');
   const [catalogData, setCatalogData] = useState('');
-  
+
   // File upload states
   const [exportFile, setExportFile] = useState(null);
   const [logsFile, setLogsFile] = useState(null);
   const [catalogFile, setCatalogFile] = useState(null);
-  
+
   // Bulk logs upload states
   const [bulkLogsFiles, setBulkLogsFiles] = useState([]);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
   const [bulkResults, setBulkResults] = useState(null);
-  
+
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('export'); // export, logs, catalog
-  
+
   // Confirmation dialog state
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
   const [pendingUpload, setPendingUpload] = useState(null);
-  
+
   // Progress modal state
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [uploadType, setUploadType] = useState('');
   const [currentFileSize, setCurrentFileSize] = useState(0);
-  
+
   // File input refs
   const exportFileRef = useRef(null);
   const logsFileRef = useRef(null);
   const catalogFileRef = useRef(null);
   const bulkLogsFolderRef = useRef(null);
   const bulkLogsFilesRef = useRef(null);
+
+  // Deletion tool state
+  const [deleteStartDate, setDeleteStartDate] = useState('');
+  const [deleteEndDate, setDeleteEndDate] = useState('');
+  const [deleteStoreIds, setDeleteStoreIds] = useState([]);
+  const [deletePreview, setDeletePreview] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteSuccess, setDeleteSuccess] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // File handling functions
   const handleFileSelect = (file, setFile, setData) => {
@@ -378,7 +394,7 @@ const GlobalUploadPage = () => {
 
     try {
       let csvData = catalogData;
-      
+
       if (catalogFile && !catalogData.trim()) {
         csvData = await new Promise((resolve, reject) => {
           const reader = new FileReader();
@@ -389,7 +405,7 @@ const GlobalUploadPage = () => {
       }
 
       const result = await uploadProductCatalogFn({ csvData });
-      
+
       setSuccess(`Product catalog processed successfully! ${result.newProducts} products created, ${result.updatedProducts} products updated across all stores.`);
       setCatalogData('');
       setCatalogFile(null);
@@ -406,6 +422,79 @@ const GlobalUploadPage = () => {
       setIsLoading(false);
       setShowProgressModal(false);
     }
+  };
+
+  // Deletion tool handlers
+  const handleDeletePreview = async () => {
+    if (!deleteStartDate || !deleteEndDate) {
+      setDeleteError('Please select both start and end dates');
+      return;
+    }
+
+    setDeleteError('');
+    setDeleteSuccess('');
+    setIsDeleting(true);
+
+    try {
+      const result = await deleteInventoryMovementsFn({
+        startDate: deleteStartDate,
+        endDate: deleteEndDate,
+        storeIds: deleteStoreIds.length > 0 ? deleteStoreIds : null,
+        preview: true
+      });
+
+      setDeletePreview(result);
+      setShowDeleteConfirm(true);
+    } catch (err) {
+      setDeleteError('Error previewing deletion: ' + err.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteStartDate || !deleteEndDate) {
+      setDeleteError('Please select both start and end dates');
+      return;
+    }
+
+    setDeleteError('');
+    setDeleteSuccess('');
+    setIsDeleting(true);
+    setShowDeleteConfirm(false);
+
+    try {
+      const result = await deleteInventoryMovementsFn({
+        startDate: deleteStartDate,
+        endDate: deleteEndDate,
+        storeIds: deleteStoreIds.length > 0 ? deleteStoreIds : null,
+        preview: false
+      });
+
+      setDeleteSuccess(
+        `Successfully deleted ${result.deletedCount} inventory movements from ${result.stores} store(s). ` +
+        `Date range: ${new Date(result.dateRange.start).toLocaleDateString('en-US', { timeZone: 'America/Chicago' })} - ${new Date(result.dateRange.end).toLocaleDateString('en-US', { timeZone: 'America/Chicago' })}. ` +
+        `Duration: ${result.duration}s`
+      );
+
+      // Reset form
+      setDeleteStartDate('');
+      setDeleteEndDate('');
+      setDeleteStoreIds([]);
+      setDeletePreview(null);
+
+      // Invalidate React Query cache to force fresh data
+      queryClient.invalidateQueries();
+    } catch (err) {
+      setDeleteError('Error deleting inventory movements: ' + err.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setShowDeleteConfirm(false);
+    setDeletePreview(null);
   };
 
   return (
@@ -907,6 +996,217 @@ const GlobalUploadPage = () => {
         uploadType={uploadType}
         fileSize={currentFileSize}
       />
+
+      {/* Date Range Deletion Tool */}
+      <Card className="border-red-200 bg-red-50/30">
+        <CardHeader>
+          <CardTitle className="flex items-center text-red-700">
+            <Trash2 className="h-5 w-5 mr-2" />
+            Data Management: Delete Inventory Movements
+          </CardTitle>
+          <CardDescription className="text-red-600">
+            Delete inventory movement records within a specific date range. Use this to clean up incorrectly-timestamped data before re-uploading.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Warning Banner */}
+          <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-900">Warning: This action cannot be undone!</p>
+                <p className="text-xs text-amber-800 mt-1">
+                  This will permanently delete inventory movement records. Always use the Preview button first to verify what will be deleted.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Date Range Inputs */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Start Date
+              </label>
+              <input
+                type="date"
+                value={deleteStartDate}
+                onChange={(e) => setDeleteStartDate(e.target.value)}
+                className="w-full p-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                disabled={isDeleting}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                End Date
+              </label>
+              <input
+                type="date"
+                value={deleteEndDate}
+                onChange={(e) => setDeleteEndDate(e.target.value)}
+                className="w-full p-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                disabled={isDeleting}
+              />
+            </div>
+          </div>
+
+          {/* Store Selection */}
+          {stores && stores.length > 1 && (
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Filter by Stores (optional - leave empty for all stores)
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {stores.filter(s => s.isActive).map(store => (
+                  <label
+                    key={store.id}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer transition-colors ${
+                      deleteStoreIds.includes(store.id)
+                        ? 'bg-blue-100 border-blue-400 text-blue-900'
+                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={deleteStoreIds.includes(store.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setDeleteStoreIds([...deleteStoreIds, store.id]);
+                        } else {
+                          setDeleteStoreIds(deleteStoreIds.filter(id => id !== store.id));
+                        }
+                      }}
+                      disabled={isDeleting}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm font-medium">{store.name}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {deleteStoreIds.length === 0
+                  ? 'No stores selected - will delete from all stores'
+                  : `Selected ${deleteStoreIds.length} store(s)`}
+              </p>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-3 pt-4">
+            <Button
+              onClick={handleDeletePreview}
+              disabled={isDeleting || !deleteStartDate || !deleteEndDate}
+              variant="outline"
+              className="flex items-center"
+            >
+              {isDeleting ? (
+                <>
+                  <div className="animate-spin h-4 w-4 mr-2 border-2 border-current border-t-transparent rounded-full" />
+                  Loading...
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  Preview Deletion
+                </>
+              )}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Always preview before deleting to verify the count
+            </p>
+          </div>
+
+          {/* Status Messages */}
+          {deleteError && (
+            <div className="flex items-center space-x-2 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+              <AlertCircle className="h-4 w-4 text-destructive" />
+              <span className="text-sm text-destructive">{deleteError}</span>
+            </div>
+          )}
+
+          {deleteSuccess && (
+            <div className="flex items-center space-x-2 p-3 bg-green-50 border border-green-200 rounded-md">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <span className="text-sm text-green-600">{deleteSuccess}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && deletePreview && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
+            onClick={handleDeleteCancel}
+          />
+          <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md">
+            <Card className="border-red-300 shadow-2xl">
+              <CardHeader className="bg-red-50">
+                <CardTitle className="flex items-center text-red-700">
+                  <AlertCircle className="h-5 w-5 mr-2" />
+                  Confirm Deletion
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-6">
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-md">
+                  <p className="text-sm font-semibold text-amber-900 mb-2">
+                    You are about to delete:
+                  </p>
+                  <div className="space-y-1 text-sm text-amber-800">
+                    <p><strong>{deletePreview.count}</strong> inventory movement records</p>
+                    <p>From <strong>{deletePreview.stores}</strong> store(s)</p>
+                    <p>
+                      Date range: <strong>
+                        {new Date(deletePreview.dateRange.start).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}
+                      </strong> to <strong>
+                        {new Date(deletePreview.dateRange.end).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-red-50 border-2 border-red-300 rounded-md">
+                  <p className="text-xs font-bold text-red-900">
+                    ⚠️ THIS ACTION CANNOT BE UNDONE
+                  </p>
+                  <p className="text-xs text-red-800 mt-1">
+                    All selected inventory movements will be permanently deleted from the database.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 pt-4">
+                  <Button
+                    onClick={handleDeleteConfirm}
+                    disabled={isDeleting}
+                    variant="destructive"
+                    className="flex-1"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 mr-2 border-2 border-current border-t-transparent rounded-full" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Confirm Delete
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={handleDeleteCancel}
+                    disabled={isDeleting}
+                    variant="outline"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
     </div>
   );
 };

@@ -126,6 +126,11 @@ query getInventoryMovements {
   entities: [Store, ProductCatalog, InventoryMovement]
 }
 
+query getProductInventoryMovements {
+  fn: import { getProductInventoryMovements } from "@src/queries.js",
+  entities: [ProductCatalog, InventoryMovement, Store]
+}
+
 query getCategoryBreakdown {
   fn: import { getCategoryBreakdown } from "@src/queries.js",
   entities: [Store, ProductCatalog, StockLevel, Category]
@@ -194,6 +199,11 @@ action clearOrderWorksheet {
 action exportOrderWorksheet {
   fn: import { exportOrderWorksheet } from "@src/actions.js",
   entities: [OrderWorksheet, OrderWorksheetItem, ProductCatalog]
+}
+
+action deleteInventoryMovementsByDateRange {
+  fn: import { deleteInventoryMovementsByDateRange } from "@src/actions.js",
+  entities: [InventoryMovement, Store]
 }
 
 action markProductStatus {

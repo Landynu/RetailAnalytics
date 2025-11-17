@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'wasp/client/router';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { ShoppingCart } from 'lucide-react';
+import { ShoppingCart, History } from 'lucide-react';
 import Sparkline from './Sparkline';
 import LocationCell from './LocationCell';
 import DistributorCell from './DistributorCell';
@@ -11,7 +11,7 @@ import CategoryCell from './CategoryCell';
 import SubcategoryCell from './SubcategoryCell';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 
-const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, onAddToOrder, isLoadingTrends = false, rowIndex = 0 }) => {
+const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, onAddToOrder, onRowClick, isLoadingTrends = false, rowIndex = 0 }) => {
   const getStrainColor = (strainType) => {
     switch(strainType) {
       case 'Sativa': return 'bg-green-500';
@@ -47,12 +47,24 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
       case 'name':
         return (
           <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
-            <Link 
-              to={`/product/${product.id}`}
-              className="font-semibold text-teal-800 hover:text-teal-600 hover:underline break-words"
-            >
-              {product.name}
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                to={`/product/${product.id}`}
+                className="font-semibold text-teal-800 hover:text-teal-600 hover:underline break-words flex-1"
+              >
+                {product.name}
+              </Link>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onRowClick) onRowClick(product);
+                }}
+                className="flex-shrink-0 p-1.5 rounded-md hover:bg-blue-50 text-blue-600 hover:text-blue-700 transition-colors group"
+                title="View inventory movement history"
+              >
+                <History className="h-4 w-4" />
+              </button>
+            </div>
           </td>
         );
 
@@ -303,13 +315,15 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
   };
 
   const isEven = rowIndex % 2 === 0;
-  
+
   return (
-    <tr className={`transition-all duration-200 ${
-      isEven 
-        ? 'bg-white hover:bg-gradient-to-r hover:from-teal-50/30 hover:to-blue-50/30' 
-        : 'bg-slate-50/30 hover:bg-gradient-to-r hover:from-teal-50/50 hover:to-blue-50/50'
-    } border-b border-slate-200/50`}>
+    <tr
+      className={`transition-all duration-200 ${
+        isEven
+          ? 'bg-white hover:bg-gradient-to-r hover:from-teal-50/30 hover:to-blue-50/30'
+          : 'bg-slate-50/30 hover:bg-gradient-to-r hover:from-teal-50/50 hover:to-blue-50/50'
+      } border-b border-slate-200/50`}
+    >
       {orderedColumns.map(column => renderCell(column))}
     </tr>
   );

@@ -24,10 +24,14 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
   }, []);
 
   const getRelativeDateRange = (preset) => {
-    const end = new Date();
+    // Get current time in Central Time (UTC-6)
+    const now = new Date();
+    const centralNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+
+    const end = new Date(centralNow);
     end.setHours(23, 59, 59, 999);
-    let start = new Date();
-    
+    let start = new Date(centralNow);
+
     switch (preset) {
       case 'today':
         start.setHours(0, 0, 0, 0);
@@ -64,7 +68,7 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
       default:
         return null;
     }
-    
+
     return { start: start.toISOString(), end: end.toISOString() };
   };
 
@@ -99,7 +103,7 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
 
   const getDisplayText = () => {
     if (!dateRange) return 'All Time';
-    
+
     // Check if dateRange has a preset property (for relative ranges)
     if (dateRange.preset) {
       const presetLabels = {
@@ -114,10 +118,20 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
       };
       return presetLabels[dateRange.preset] || 'Custom Range';
     }
-    
-    // For custom date ranges, show the actual dates
-    const start = new Date(dateRange.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    const end = new Date(dateRange.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    // For custom date ranges, show the actual dates in Central Time
+    const start = new Date(dateRange.start).toLocaleDateString('en-US', {
+      timeZone: 'America/Chicago',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+    const end = new Date(dateRange.end).toLocaleDateString('en-US', {
+      timeZone: 'America/Chicago',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
     return `${start} - ${end}`;
   };
 

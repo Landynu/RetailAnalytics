@@ -2,16 +2,7 @@ import React from 'react';
 import { Badge } from './ui/badge';
 import { ArrowUp, ArrowDown, GripVertical } from 'lucide-react';
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
   SortableContext,
-  sortableKeyboardCoordinates,
   useSortable,
   horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
@@ -71,25 +62,15 @@ const DraggableHeader = ({ column, children, onSort, sortConfig }) => {
   );
 };
 
-const OrderingTableHeader = ({ 
-  orderedColumns, 
-  columnOrder, 
-  onDragEnd, 
-  onSort, 
-  sortConfig, 
+const OrderingTableHeader = ({
+  orderedColumns,
+  columnOrder,
+  onSort,
+  sortConfig,
   analytics,
   periodDays,
   filteredLocationCounts
 }) => {
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
   const renderHeaderContent = (column) => {
     if (column.isLocation) {
       // Use filteredLocationCounts if available (content-aware), otherwise fall back to analytics
@@ -130,24 +111,22 @@ const OrderingTableHeader = ({
   };
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <thead className="sticky top-0 z-30">
-        <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
-          <tr>
-            {orderedColumns.map(column => (
-              <DraggableHeader
-                key={column.id}
-                column={column}
-                onSort={onSort}
-                sortConfig={sortConfig}
-              >
-                {renderHeaderContent(column)}
-              </DraggableHeader>
-            ))}
-          </tr>
-        </SortableContext>
-      </thead>
-    </DndContext>
+    <thead className="sticky top-0 z-30">
+      <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
+        <tr>
+          {orderedColumns.map(column => (
+            <DraggableHeader
+              key={column.id}
+              column={column}
+              onSort={onSort}
+              sortConfig={sortConfig}
+            >
+              {renderHeaderContent(column)}
+            </DraggableHeader>
+          ))}
+        </tr>
+      </SortableContext>
+    </thead>
   );
 };
 
