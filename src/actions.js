@@ -4,7 +4,7 @@ import { HttpError } from 'wasp/server';
 import { invalidateCachePattern, warmOrderingAnalyticsCache } from './cache.js';
 import { migrateAllProductImages, configureBucketCORS } from './services/imageMigration.js';
 
-export const uploadInventory = async ({ storeId, csvData, autoCreateStores = false }, context) => {
+export const uploadInventory = async ({ storeId, csvData, autoCreateStores: _autoCreateStores = false }, context) => {
   if (!context.user) { throw new HttpError(401) };
 
   // Log file size for monitoring (no limit enforcement)
@@ -603,29 +603,52 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   console.log(`[${parseTimestamp}] ✓ Stage 1 complete: Parsed ${products.length} products, detected ${locationColumns.length} locations`);
   console.log(`[${parseTimestamp}] Stage 2/4: Creating/updating stores...`);
 
-  // Create/update stores if autoCreateStores is true
+  // Create/update stores - always build storeMap, even if autoCreateStores is false
+  // First, fetch all existing stores to match by name or reportName
+  const userStores = await context.entities.Store.findMany({
+    where: { userId: context.user.id }
+  });
+  
+  // Build storeMap by matching CSV location columns to existing stores
+  // Check both name and reportName (like inventory logs upload does)
   const storeMap = {};
-  if (autoCreateStores) {
-    for (const location of locationColumns) {
-      let store = await context.entities.Store.findFirst({
-        where: { name: location, userId: context.user.id }
+  const unmatchedLocations = [];
+  for (const location of locationColumns) {
+    // Try to find existing store by name or reportName
+    let store = userStores.find(s => 
+      s.name === location || 
+      (s.reportName && s.reportName === location)
+    );
+    
+    if (!store && autoCreateStores) {
+      // Only create new store if autoCreateStores is true
+      store = await context.entities.Store.create({
+        data: {
+          name: location,
+          location: location,
+          userId: context.user.id
+        }
       });
-      
-      if (!store) {
-        store = await context.entities.Store.create({
-          data: {
-            name: location,
-            location: location,
-            userId: context.user.id
-          }
-        });
-      }
+      // Add to userStores array so it's available for future iterations
+      userStores.push(store);
+    }
+    
+    if (store) {
       storeMap[location] = store.id;
+    } else {
+      // Track unmatched locations for warning
+      unmatchedLocations.push(location);
     }
   }
   
+  if (unmatchedLocations.length > 0) {
+    const unmatchedTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.warn(`[${unmatchedTimestamp}] ⚠️  WARNING: ${unmatchedLocations.length} location(s) could not be matched to stores: ${unmatchedLocations.join(', ')}`);
+    console.warn(`[${unmatchedTimestamp}] Stock levels for these locations will be skipped. Enable autoCreateStores or ensure store names/reportNames match CSV column names.`);
+  }
+  
   const storeTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.log(`[${storeTimestamp}] ✓ Stage 2 complete: ${Object.keys(storeMap).length} stores ready`);
+  console.log(`[${storeTimestamp}] ✓ Stage 2 complete: ${Object.keys(storeMap).length} stores ready (${locationColumns.length} locations in CSV)`);
   console.log(`[${storeTimestamp}] Stage 3/4: Processing products (create/update/unchanged)...`);
 
   // Create inventory snapshot
@@ -791,18 +814,40 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     console.log(`[${fetchTimestamp}] ✓ Fetched ${createdProducts.length} product IDs`);
   }
 
-  // Batch update existing products - Process sequentially to avoid connection pool exhaustion
+  // Helper function for controlled parallel processing with progress tracking
+  const processInParallel = async (items, concurrency, processor, onProgress) => {
+    const results = [];
+    for (let i = 0; i < items.length; i += concurrency) {
+      const batch = items.slice(i, i + concurrency);
+      const batchResults = await Promise.all(
+        batch.map(item => processor(item).catch(err => {
+          console.error(`Error processing item: ${err.message}`);
+          return null; // Continue processing other items even if one fails
+        }))
+      );
+      results.push(...batchResults);
+      
+      // Call progress callback after each batch
+      if (onProgress) {
+        onProgress(results.length, items.length);
+      }
+    }
+    return results;
+  };
+
+  // Batch update existing products - Process in parallel with controlled concurrency
   // Preserve enriched fields (thc, cbd, cannabinoidProfile, strainType, classificationId, format, distributorId, description, imageUrl, categoryDefinitionId, subcategoryId)
   if (existingProductsToUpdate.length > 0) {
     const updateStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[${updateStartTimestamp}] Updating ${existingProductsToUpdate.length} existing products in batches...`);
-    const chunkSize = 50; // Reduced from 500 to prevent connection pool exhaustion
-    for (let i = 0; i < existingProductsToUpdate.length; i += chunkSize) {
-      const chunk = existingProductsToUpdate.slice(i, i + chunkSize);
-      const batchStartTime = Date.now();
-      
-      // Process products sequentially within each chunk to manage connection pool
-      for (const product of chunk) {
+    console.log(`[${updateStartTimestamp}] Updating ${existingProductsToUpdate.length} existing products in parallel (concurrency: 10)...`);
+    const batchStartTime = Date.now();
+    const concurrency = 10; // Process 10 products in parallel at a time
+    
+    // Process all products with controlled concurrency
+    await processInParallel(
+      existingProductsToUpdate, 
+      concurrency, 
+      async (product) => {
         // Use existing product data from the map instead of re-querying
         const existing = existingProductsMap.get(product.gtin);
         
@@ -865,15 +910,24 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
             lastSeen: new Date()
           }
         });
+      },
+      // Progress callback
+      (processedCount, total) => {
+        if (processedCount % 100 === 0 || processedCount === total) {
+          const progressTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+          const elapsed = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+          const percentage = ((processedCount / total) * 100).toFixed(1);
+          const rate = (processedCount / parseFloat(elapsed)).toFixed(1);
+          console.log(`[${progressTimestamp}] Updated: ${processedCount}/${total} products (${percentage}%) - ${elapsed}s elapsed - ${rate} products/sec`);
+        }
       }
-      
-      const batchEndTime = Date.now();
-      const batchDuration = ((batchEndTime - batchStartTime) / 1000).toFixed(2);
-      const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-      const totalProcessed = Math.min(i + chunkSize, existingProductsToUpdate.length);
-      const percentage = ((totalProcessed / existingProductsToUpdate.length) * 100).toFixed(1);
-      console.log(`[${batchTimestamp}] Updated batch: ${totalProcessed}/${existingProductsToUpdate.length} products (${percentage}%) - ${batchDuration}s`);
-    }
+    );
+    
+    const batchEndTime = Date.now();
+    const batchDuration = ((batchEndTime - batchStartTime) / 1000).toFixed(2);
+    const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    const avgRate = (existingProductsToUpdate.length / parseFloat(batchDuration)).toFixed(1);
+    console.log(`[${batchTimestamp}] ✓ Updated ${existingProductsToUpdate.length} products in ${batchDuration}s (avg: ${avgRate} products/sec)`);
     
     const updateCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.log(`[${updateCompleteTimestamp}] ✓ Product updates complete`);
@@ -926,6 +980,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
 
   // Batch update stock levels
   const stockLevelUpdates = [];
+  const skippedStockLevels = []; // Track stock levels that couldn't be matched to stores
   for (const product of products) {
     const catalogProduct = allProductsMap.get(product.gtin);
     if (catalogProduct) {
@@ -937,8 +992,29 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
             quantity: stockLevel.quantity,
             snapshotId: snapshot.id
           });
+        } else {
+          // Track skipped stock levels for logging
+          skippedStockLevels.push({
+            productGtin: product.gtin,
+            productName: product.name,
+            location: stockLevel.location,
+            quantity: stockLevel.quantity
+          });
         }
       }
+    }
+  }
+  
+  if (skippedStockLevels.length > 0) {
+    const skipTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.warn(`[${skipTimestamp}] ⚠️  Skipped ${skippedStockLevels.length} stock level(s) due to unmatched store locations`);
+    // Log first few examples
+    const examples = skippedStockLevels.slice(0, 5);
+    examples.forEach(sl => {
+      console.warn(`[${skipTimestamp}]   - Product: ${sl.productName} | Location: "${sl.location}" | Qty: ${sl.quantity}`);
+    });
+    if (skippedStockLevels.length > 5) {
+      console.warn(`[${skipTimestamp}]   ... and ${skippedStockLevels.length - 5} more`);
     }
   }
 
@@ -950,13 +1026,15 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     const startTime = Date.now();
     
     try {
-      // Step 1: Get unique store IDs from this upload
+      // Step 1: Get unique store IDs and product IDs from this upload
       const storeIds = [...new Set(stockLevelUpdates.map(s => s.storeId))];
       const productIds = [...new Set(stockLevelUpdates.map(s => s.productId))];
       
-      console.log(`[${timestamp}] Step 1: Deleting existing stock levels for ${storeIds.length} stores...`);
+      console.log(`[${timestamp}] Step 1: Deleting existing stock levels for ${productIds.length} products across ${storeIds.length} stores...`);
       
       // Delete existing stock levels for these products in these stores
+      // This ensures we replace old inventory data with fresh data from the CSV
+      // Only delete for stores that are in the current upload (preserve inventory for other stores)
       const deleteResult = await context.entities.StockLevel.deleteMany({
         where: {
           AND: [
@@ -1683,7 +1761,7 @@ export const updateStoreBranding = async ({ storeId, branding }, context) => {
   return updatedStore;
 };
 
-export const generatePrintableMenu = async ({ storeId, options = {} }, context) => {
+export const generatePrintableMenu = async ({ storeId, options: _options = {} }, context) => {
   if (!context.user) { throw new HttpError(401) }
 
   const store = await context.entities.Store.findUnique({
@@ -1907,7 +1985,7 @@ export const toggleStorePrimary = async ({ storeId }, context) => {
 
 // Ordering Actions
 
-export const getOrCreateOrderWorksheet = async (args, context) => {
+export const getOrCreateOrderWorksheet = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
   // Find or create the user's current order worksheet
@@ -2036,7 +2114,7 @@ export const removeFromOrderWorksheet = async ({ itemId }, context) => {
   return { success: true };
 };
 
-export const clearOrderWorksheet = async (args, context) => {
+export const clearOrderWorksheet = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
   const worksheet = await context.entities.OrderWorksheet.findFirst({
@@ -2055,7 +2133,7 @@ export const clearOrderWorksheet = async (args, context) => {
   return { success: true };
 };
 
-export const exportOrderWorksheet = async (args, context) => {
+export const exportOrderWorksheet = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
   const worksheet = await context.entities.OrderWorksheet.findFirst({
@@ -2151,7 +2229,7 @@ export const markProductStatus = async ({ productId, status, salePrice }, contex
   return updatedProduct;
 };
 
-export const enrichProductFormats = async (args, context) => {
+export const enrichProductFormats = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
   console.log('🔄 Starting format enrichment for all products...');
@@ -2578,7 +2656,7 @@ export const deleteDistributor = async ({ id }, context) => {
   })
 }
 
-export const syncBrands = async (args, context) => {
+export const syncBrands = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
   
   // Get all unique brands from ProductCatalog
@@ -2608,7 +2686,7 @@ export const syncBrands = async (args, context) => {
   return { totalBrands: uniqueBrands.length, created }
 }
 
-export const seedDistributors = async (args, context) => {
+export const seedDistributors = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
   
   const distributors = [
@@ -2636,7 +2714,7 @@ export const seedDistributors = async (args, context) => {
   return { created, total: distributors.length }
 }
 
-export const seedDefaultClassifications = async (args, context) => {
+export const seedDefaultClassifications = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
   
   const classifications = [
@@ -2662,7 +2740,7 @@ export const seedDefaultClassifications = async (args, context) => {
   return { created, total: classifications.length }
 }
 
-export const seedDefaultCategories = async (args, context) => {
+export const seedDefaultCategories = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
   
   const categoriesData = [
@@ -3050,7 +3128,7 @@ export const deleteSubcategory = async ({ id }, context) => {
   })
 }
 
-export const syncProductCategoriesToDefinitions = async (args, context) => {
+export const syncProductCategoriesToDefinitions = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
   
   console.log('🔄 Starting category sync...');
@@ -3274,7 +3352,7 @@ export const syncProductCategoriesToDefinitions = async (args, context) => {
   };
 }
 
-export const syncProductClassifications = async (args, context) => {
+export const syncProductClassifications = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
   
   console.log('🔄 Starting classification sync for all products...')
@@ -3366,7 +3444,7 @@ export const syncAllProductEnrichments = async (args, context) => {
   }
 }
 
-export const configureS3CORS = async (args, context) => {
+export const configureS3CORS = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
   
   console.log('🔧 Configuring CORS on S3 bucket...')
@@ -3408,7 +3486,7 @@ export const migrateProductImages = async (args, context) => {
   }
 }
 
-export const checkS3Storage = async (args, context) => {
+export const checkS3Storage = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
   
   try {
@@ -3431,7 +3509,7 @@ export const checkS3Storage = async (args, context) => {
   }
 }
 
-export const checkImageMigrationStatus = async (args, context) => {
+export const checkImageMigrationStatus = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
   
   try {
@@ -3477,7 +3555,7 @@ export const checkImageMigrationStatus = async (args, context) => {
  * Cleanup action to delete all data for October and November 2025
  * This allows re-uploading those files with proper deduplication
  */
-export const cleanupOctoberNovember2025 = async (args, context) => {
+export const cleanupOctoberNovember2025 = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
   
   const startTime = Date.now();

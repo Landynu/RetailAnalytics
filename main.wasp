@@ -450,3 +450,9 @@ page DataCleanupPage {
   component: import DataCleanup from "@src/pages/DataCleanup.jsx",
   authRequired: true
 }
+
+route ErrorTestRoute { path: "/error-test", to: ErrorTestPage }
+page ErrorTestPage {
+  component: import ErrorTestPage from "@src/pages/ErrorTestPage.jsx",
+  authRequired: false
+}

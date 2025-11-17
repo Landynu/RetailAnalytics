@@ -1,9 +1,74 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 // Import cache module to initialize Redis connection on server startup
 // The cache module will handle connection lazily, so just importing it is enough
 import './cache.js';
 
 export const serverMiddlewareFn = (middlewareConfig) => {
+  // Security headers with helmet (applied early for all routes)
+  middlewareConfig.set('helmet', helmet({
+    contentSecurityPolicy: false, // We're managing CSP ourselves below
+    crossOriginEmbedderPolicy: false, // Allow embedding for iframes if needed
+  }));
+
+  // Rate limiting for upload endpoints to prevent abuse
+  const uploadLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // Limit each IP to 10 uploads per windowMs
+    message: {
+      error: 'Too many uploads from this IP, please try again in 15 minutes',
+      code: 'RATE_LIMIT_EXCEEDED'
+    },
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    // Skip rate limiting for localhost in development
+    skip: (req) => {
+      if (process.env.NODE_ENV !== 'production') {
+        return true; // Skip in development
+      }
+      return false;
+    }
+  });
+
+  // Apply rate limiting to upload routes
+  middlewareConfig.set('uploadRateLimit', (req, res, next) => {
+    // Only apply to upload-related endpoints
+    if (req.url.includes('/operations/upload') ||
+        req.url.includes('/api/upload') ||
+        req.url.includes('/api/extension/upload')) {
+      return uploadLimiter(req, res, next);
+    }
+    next();
+  });
+
+  // General API rate limiting (more permissive)
+  const apiLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 100, // Limit each IP to 100 requests per minute
+    message: {
+      error: 'Too many requests from this IP, please try again later',
+      code: 'RATE_LIMIT_EXCEEDED'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+      if (process.env.NODE_ENV !== 'production') {
+        return true; // Skip in development
+      }
+      return false;
+    }
+  });
+
+  // Apply general rate limiting to all API routes
+  middlewareConfig.set('apiRateLimit', (req, res, next) => {
+    // Apply to all API and operations endpoints
+    if (req.url.startsWith('/api/') || req.url.startsWith('/operations/')) {
+      return apiLimiter(req, res, next);
+    }
+    next();
+  });
+
   // CORS configuration - must be set before other middleware
   // Use a very early position to ensure it runs before Wasp's built-in routes
   const allowedOrigins = [

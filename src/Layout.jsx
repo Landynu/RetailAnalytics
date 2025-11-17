@@ -5,13 +5,15 @@ import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { Separator } from "./components/ui/separator";
 import { LogOut, User, Store } from "lucide-react";
+import { ErrorBoundary } from "./components/errors/ErrorBoundary";
 import "./Main.css";
 
 export const Layout = () => {
   const { data: user } = useAuth();
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <ErrorBoundary>
+      <div className="flex flex-col min-h-screen bg-background">
       <header className="border-b bg-card">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -102,6 +104,7 @@ export const Layout = () => {
           </div>
         </div>
       </footer>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 };
