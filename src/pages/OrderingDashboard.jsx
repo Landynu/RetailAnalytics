@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from 'wasp/client/operations';
-import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores, getDistributors, getClassifications, getCategoryDefinitions } from 'wasp/client/operations';
+import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores, getDistributors, getClassifications, getCategoryDefinitions, getProductActions } from 'wasp/client/operations';
 import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats, seedDistributors, syncBrands } from 'wasp/client/operations';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/ui/button';
@@ -153,6 +153,36 @@ const OrderingDashboard = () => {
   const { data: allDistributors } = useQuery(getDistributors);
   const { data: classifications } = useQuery(getClassifications);
   const { data: categoryDefinitions } = useQuery(getCategoryDefinitions);
+
+  // Fetch active product actions for highlighting DO_NOT_REORDER items
+  const { data: productActionsData } = useQuery(getProductActions, {
+    status: 'ACTIVE'
+  });
+
+  // Create a set of product IDs that have DO_NOT_REORDER actions
+  const doNotReorderProductIds = React.useMemo(() => {
+    if (!productActionsData?.actions) return new Set();
+    const ids = new Set();
+    productActionsData.actions.forEach(action => {
+      if (action.actionType === 'DO_NOT_REORDER') {
+        ids.add(action.productId);
+      }
+    });
+    return ids;
+  }, [productActionsData]);
+
+  // Create a map of productId -> active actions for displaying action symbols
+  const productActionsMap = React.useMemo(() => {
+    if (!productActionsData?.actions) return new Map();
+    const map = new Map();
+    productActionsData.actions.forEach(action => {
+      if (!map.has(action.productId)) {
+        map.set(action.productId, []);
+      }
+      map.get(action.productId).push(action);
+    });
+    return map;
+  }, [productActionsData]);
 
   // Store initial page data when ready
   useEffect(() => {
@@ -900,6 +930,8 @@ const OrderingDashboard = () => {
                               onRowClick={handleProductRowClick}
                               isLoadingTrends={isLoadingFullData && hasInitialPageLoaded}
                               rowIndex={index}
+                              hasDoNotReorderAction={doNotReorderProductIds.has(product.id)}
+                              activeActions={productActionsMap.get(product.id) || []}
                             />
                           ))
                         )}

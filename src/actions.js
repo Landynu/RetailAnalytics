@@ -3811,3 +3811,177 @@ export const deleteInventoryMovementsByDateRange = async ({ startDate, endDate, 
     throw new HttpError(500, `Failed to delete inventory movements: ${error.message}`);
   }
 }
+
+// ============================================================================
+// PRODUCT ACTIONS - Task/Flag Management
+// ============================================================================
+
+export const createProductAction = async ({ productId, actionType, notes, metadata }, context) => {
+  if (!context.user) throw new HttpError(401);
+
+  try {
+    const action = await context.entities.ProductAction.create({
+      data: {
+        productId: parseInt(productId),
+        userId: context.user.id,
+        actionType,
+        notes: notes || null,
+        metadata: metadata || null,
+        status: 'ACTIVE'
+      },
+      include: {
+        product: {
+          select: { id: true, name: true, brand: true, gtin: true }
+        }
+      }
+    });
+
+    console.log(`✅ Created ${actionType} action for product ${productId}`);
+    return action;
+  } catch (error) {
+    throw new HttpError(500, `Failed to create product action: ${error.message}`);
+  }
+};
+
+export const updateProductAction = async ({ actionId, notes, metadata }, context) => {
+  if (!context.user) throw new HttpError(401);
+
+  try {
+    const action = await context.entities.ProductAction.update({
+      where: { id: parseInt(actionId) },
+      data: {
+        notes: notes !== undefined ? notes : undefined,
+        metadata: metadata !== undefined ? metadata : undefined
+      },
+      include: {
+        product: {
+          select: { id: true, name: true, brand: true }
+        }
+      }
+    });
+
+    return action;
+  } catch (error) {
+    throw new HttpError(500, `Failed to update product action: ${error.message}`);
+  }
+};
+
+export const completeProductAction = async ({ actionId }, context) => {
+  if (!context.user) throw new HttpError(401);
+
+  try {
+    const action = await context.entities.ProductAction.update({
+      where: { id: parseInt(actionId) },
+      data: {
+        status: 'COMPLETED',
+        completedAt: new Date()
+      }
+    });
+
+    console.log(`✅ Completed action ${actionId}`);
+    return action;
+  } catch (error) {
+    throw new HttpError(500, `Failed to complete product action: ${error.message}`);
+  }
+};
+
+export const reactivateProductAction = async ({ actionId }, context) => {
+  if (!context.user) throw new HttpError(401);
+
+  try {
+    const action = await context.entities.ProductAction.update({
+      where: { id: parseInt(actionId) },
+      data: {
+        status: 'ACTIVE',
+        completedAt: null
+      }
+    });
+
+    console.log(`🔄 Reactivated action ${actionId}`);
+    return action;
+  } catch (error) {
+    throw new HttpError(500, `Failed to reactivate product action: ${error.message}`);
+  }
+};
+
+export const deleteProductAction = async ({ actionId }, context) => {
+  if (!context.user) throw new HttpError(401);
+
+  try {
+    await context.entities.ProductAction.delete({
+      where: { id: parseInt(actionId) }
+    });
+
+    return { success: true };
+  } catch (error) {
+    throw new HttpError(500, `Failed to delete product action: ${error.message}`);
+  }
+};
+
+export const exportProductActions = async ({ status = 'ACTIVE', actionType }, context) => {
+  if (!context.user) throw new HttpError(401);
+
+  try {
+    const whereClause = {
+      userId: context.user.id,
+      status: status || undefined
+    };
+
+    if (actionType) {
+      whereClause.actionType = actionType;
+    }
+
+    const actions = await context.entities.ProductAction.findMany({
+      where: whereClause,
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            brand: true,
+            gtin: true,
+            parentCategory: true,
+            subcategory: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Convert to CSV format
+    const headers = [
+      'Product Name',
+      'Brand',
+      'GTIN',
+      'Category',
+      'Subcategory',
+      'Action Type',
+      'Status',
+      'Notes',
+      'Created Date',
+      'Completed Date'
+    ];
+
+    const rows = actions.map(a => [
+      a.product.name,
+      a.product.brand || '',
+      a.product.gtin,
+      a.product.parentCategory || '',
+      a.product.subcategory || '',
+      a.actionType,
+      a.status,
+      a.notes || '',
+      new Date(a.createdAt).toLocaleDateString('en-US', { timeZone: 'America/Chicago' }),
+      a.completedAt ? new Date(a.completedAt).toLocaleDateString('en-US', { timeZone: 'America/Chicago' }) : ''
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    return { csvContent, count: actions.length };
+  } catch (error) {
+    throw new HttpError(500, `Failed to export product actions: ${error.message}`);
+  }
+};

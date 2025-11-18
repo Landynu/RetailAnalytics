@@ -9,9 +9,10 @@ import DistributorCell from './DistributorCell';
 import StrainTypeCell from './StrainTypeCell';
 import CategoryCell from './CategoryCell';
 import SubcategoryCell from './SubcategoryCell';
+import ActionMenu from './ActionMenu';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 
-const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, onAddToOrder, onRowClick, isLoadingTrends = false, rowIndex = 0 }) => {
+const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, onAddToOrder, onRowClick, isLoadingTrends = false, rowIndex = 0, hasDoNotReorderAction = false, activeActions = [] }) => {
   const getStrainColor = (strainType) => {
     switch(strainType) {
       case 'Sativa': return 'bg-green-500';
@@ -64,6 +65,7 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
               >
                 <History className="h-4 w-4" />
               </button>
+              <ActionMenu productId={product.id} activeActions={activeActions} />
             </div>
           </td>
         );
@@ -319,9 +321,11 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
   return (
     <tr
       className={`transition-all duration-200 ${
-        isEven
-          ? 'bg-white hover:bg-gradient-to-r hover:from-teal-50/30 hover:to-blue-50/30'
-          : 'bg-slate-50/30 hover:bg-gradient-to-r hover:from-teal-50/50 hover:to-blue-50/50'
+        hasDoNotReorderAction
+          ? 'bg-red-50 hover:bg-red-100 border-red-200'
+          : isEven
+            ? 'bg-white hover:bg-gradient-to-r hover:from-teal-50/30 hover:to-blue-50/30'
+            : 'bg-slate-50/30 hover:bg-gradient-to-r hover:from-teal-50/50 hover:to-blue-50/50'
       } border-b border-slate-200/50`}
     >
       {orderedColumns.map(column => renderCell(column))}

@@ -390,6 +390,46 @@ action cleanupOctoberNovember2025 {
   entities: [Store, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary, InventorySnapshot]
 }
 
+action createProductAction {
+  fn: import { createProductAction } from "@src/actions.js",
+  entities: [ProductAction, ProductCatalog]
+}
+
+action updateProductAction {
+  fn: import { updateProductAction } from "@src/actions.js",
+  entities: [ProductAction]
+}
+
+action completeProductAction {
+  fn: import { completeProductAction } from "@src/actions.js",
+  entities: [ProductAction]
+}
+
+action reactivateProductAction {
+  fn: import { reactivateProductAction } from "@src/actions.js",
+  entities: [ProductAction]
+}
+
+action deleteProductAction {
+  fn: import { deleteProductAction } from "@src/actions.js",
+  entities: [ProductAction]
+}
+
+action exportProductActions {
+  fn: import { exportProductActions } from "@src/actions.js",
+  entities: [ProductAction, ProductCatalog]
+}
+
+query getProductActions {
+  fn: import { getProductActions } from "@src/queries.js",
+  entities: [ProductAction, ProductCatalog]
+}
+
+query getActiveActionsByProduct {
+  fn: import { getActiveActionsByProduct } from "@src/queries.js",
+  entities: [ProductAction]
+}
+
 api proxyImage {
   fn: import { proxyImage } from "@src/apis/imageProxy.js",
   httpRoute: (GET, "/api/images/proxy")
@@ -428,6 +468,12 @@ page GlobalUploadPage {
 route OrderingRoute { path: "/ordering", to: OrderingPage }
 page OrderingPage {
   component: import OrderingDashboard from "@src/pages/OrderingDashboard.jsx",
+  authRequired: true
+}
+
+route ActionsRoute { path: "/actions", to: ActionsPage }
+page ActionsPage {
+  component: import ActionsPage from "@src/pages/ActionsPage.jsx",
   authRequired: true
 }
 

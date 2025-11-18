@@ -21,6 +21,7 @@ model User {
     stores           Store[]
     unmatchedRecords UnmatchedRecord[]
     orderWorksheets  OrderWorksheet[]
+    productActions   ProductAction[]
 }
 
 model Brand {
@@ -128,7 +129,8 @@ model ProductCatalog {
     movements      InventoryMovement[]
     worksheetItems OrderWorksheetItem[]
     seasonality    ProductSeasonality?
-    
+    actions        ProductAction[]
+
     @@index([parentCategory])
     @@index([brand])
     @@index([status])
@@ -139,6 +141,26 @@ model ProductCatalog {
     @@index([classificationId])
     @@index([categoryDefinitionId])
     @@index([subcategoryId])
+}
+
+model ProductAction {
+    id          Int      @id @default(autoincrement())
+    productId   Int
+    product     ProductCatalog @relation(fields: [productId], references: [id], onDelete: Cascade)
+    userId      Int
+    user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    actionType  String   // DO_NOT_REORDER, PUT_ON_SALE, REVIEW_PRICING, PRIORITY_RESTOCK, CUSTOMER_FAVORITE, PROMOTIONAL_CANDIDATE, UPDATE_INFO, SUPPLIER_ISSUE, SEASONAL, WATCH_PERFORMANCE
+    status      String   @default("ACTIVE") // ACTIVE, COMPLETED
+    notes       String?  // User notes, suggestions (e.g., suggested sale price)
+    metadata    Json?    // Additional structured data (e.g., { suggestedPrice: 29.99, reason: "competitor pricing" })
+    createdAt   DateTime @default(now())
+    completedAt DateTime?
+
+    @@index([productId])
+    @@index([userId])
+    @@index([actionType])
+    @@index([status])
+    @@index([productId, status])
 }
 
 model Category {

@@ -59,8 +59,8 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
       <div className="flex items-center gap-2 flex-wrap min-w-[150px]">
         {displayDistributors.length > 0 ? (
           displayDistributors.map(d => (
-            <Badge 
-              key={d.id} 
+            <Badge
+              key={d.id}
               variant={d.isPrimary ? 'default' : 'outline'}
               className={cn("text-xs", optimisticDistributors && "opacity-70")}
             >
@@ -73,7 +73,10 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setIsOpen(true)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsOpen(true);
+          }}
           className="h-6 px-2"
           disabled={isLoading}
         >
@@ -82,14 +85,20 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
       </div>
     );
   }
-  
+
   return (
-    <div className="border rounded p-2 bg-white shadow-lg z-10 min-w-[200px]">
+    <div
+      className="border rounded p-2 bg-white shadow-lg z-50 min-w-[200px] relative"
+      onClick={(e) => e.stopPropagation()}
+    >
       <div className="space-y-1 max-h-48 overflow-auto">
         {allDistributors.map(dist => (
           <div
             key={dist.id}
-            onClick={() => handleToggle(dist.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggle(dist.id);
+            }}
             className={cn(
               "flex items-center space-x-2 cursor-pointer hover:bg-muted p-1 rounded",
               selectedIds.includes(dist.id) && "bg-muted"
@@ -108,17 +117,21 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
         ))}
       </div>
       <div className="flex gap-2 mt-2 pt-2 border-t">
-        <Button 
-          size="sm" 
-          onClick={handleSave}
+        <Button
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSave();
+          }}
           disabled={isLoading}
         >
           {isLoading ? 'Saving...' : 'Save'}
         </Button>
-        <Button 
-          size="sm" 
-          variant="outline" 
-          onClick={() => {
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
             setSelectedIds(distributors.map(d => d.id));
             setIsOpen(false);
           }}
