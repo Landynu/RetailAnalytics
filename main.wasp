@@ -435,6 +435,58 @@ api proxyImage {
   httpRoute: (GET, "/api/images/proxy")
 }
 
+action scrapePOS {
+  fn: import { scrapePOS } from "@src/server/scraper.js",
+  entities: [InventorySnapshot, ProductCatalog, StockLevel, POSAccount, Store]
+}
+
+action createPOSAccount {
+  fn: import { createPOSAccount } from "@src/actions.js",
+  entities: [POSAccount]
+}
+
+action updatePOSAccount {
+  fn: import { updatePOSAccount } from "@src/actions.js",
+  entities: [POSAccount]
+}
+
+action deletePOSAccount {
+  fn: import { deletePOSAccount } from "@src/actions.js",
+  entities: [POSAccount, Store]
+}
+
+action linkStoreToPOSAccount {
+  fn: import { linkStoreToPOSAccount } from "@src/actions.js",
+  entities: [Store, POSAccount]
+}
+
+query getPOSAccounts {
+  fn: import { getPOSAccounts } from "@src/queries.js",
+  entities: [POSAccount, Store]
+}
+
+job scheduledScrape {
+  executor: PgBoss,
+  perform: {
+    fn: import { scrapePOS } from "@src/server/scraper.js"
+  },
+  schedule: {
+    cron: "0 2 * * *" // Run at 2 AM daily
+  },
+  entities: [InventorySnapshot, ProductCatalog, StockLevel, POSAccount, Store]
+}
+
+job backfillWeeklySummariesJob {
+  executor: PgBoss,
+  perform: {
+    fn: import { backfillWeeklySummaries } from "@src/actions.js"
+  },
+  schedule: {
+    cron: "0 3 * * *" // Run at 3 AM daily
+  },
+  entities: [Store, ProductCatalog, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary]
+}
+
 route DashboardRoute { path: "/", to: DashboardPage }
 page DashboardPage {
   component: import DashboardPage from "@src/pages/Dashboard.jsx",
@@ -492,6 +544,12 @@ page StoresPage {
 route CategoryManagementRoute { path: "/categories", to: CategoryManagementPage }
 page CategoryManagementPage {
   component: import CategoryManagement from "@src/pages/CategoryManagement.jsx",
+  authRequired: true
+}
+
+route SettingsRoute { path: "/settings", to: SettingsPage }
+page SettingsPage {
+  component: import Settings from "@src/pages/Settings.jsx",
   authRequired: true
 }
 

@@ -58,6 +58,23 @@ model BrandDistributor {
     @@index([distributorId])
 }
 
+model POSAccount {
+    id           Int      @id @default(autoincrement())
+    userId       Int
+    user         User     @relation(fields: [userId], references: [id])
+    name         String   // e.g., "Main Greenline Account"
+    posType      String   // GREENLINE, DUTCHIE, COVA
+    username     String   // Encrypted
+    password     String   // Encrypted
+    loginUrl     String?  // Custom URL if needed
+    isActive     Boolean  @default(true)
+    stores       Store[]
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+    
+    @@index([userId])
+}
+
 model Store {
     id            Int     @id @default(autoincrement())
     name          String
@@ -72,6 +89,12 @@ model Store {
     isActive      Boolean @default(true) // Disabled stores excluded from analytics
     isFavourite   Boolean @default(false) // Default filter selection
     isPrimary     Boolean @default(false) // Primary store for ordering analytics
+    
+    // POS Integration - Link to account
+    posAccountId    Int?
+    posAccount      POSAccount? @relation(fields: [posAccountId], references: [id])
+    externalStoreId String? // Greenline's internal store ID for mapping
+    
     user          User    @relation(fields: [userId], references: [id])
     userId        Int
     snapshots     InventorySnapshot[]
@@ -80,6 +103,7 @@ model Store {
     inventories Inventory[] // Legacy relation
     
     @@index([userId, isActive])
+    @@index([posAccountId])
 }
 
 model ProductCatalog {

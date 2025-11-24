@@ -29,7 +29,7 @@ export const uploadInventory = async ({ storeId, csvData, autoCreateStores: _aut
   const processingPromise = new Promise((resolve, reject) => {
     let rowCount = 0;
     const maxRows = 50000; // Limit to 50k rows to prevent hanging
-    
+
     readable
       .pipe(csvParser())
       .on('data', (data) => {
@@ -59,11 +59,11 @@ export const uploadInventory = async ({ storeId, csvData, autoCreateStores: _aut
   // Fix the bug: use inventory.id instead of storeId
   await Promise.all(products.map(async (product) => {
     await context.entities.Product.create({
-      data: { 
-        name: product.name, 
-        gtin: product.gtin, 
-        price: product.price, 
-        inventoryId: inventory.id 
+      data: {
+        name: product.name,
+        gtin: product.gtin,
+        price: product.price,
+        inventoryId: inventory.id
       }
     });
   }));
@@ -130,7 +130,7 @@ export const analyzeInventoryExport = async ({ csvData, autoCreateStores = true 
   const processingPromise = new Promise((resolve, reject) => {
     let rowCount = 0;
     const maxRows = 50000; // Limit to 50k rows to prevent hanging
-    
+
     readable
       .pipe(csvParser())
       .on('data', (data) => {
@@ -142,12 +142,12 @@ export const analyzeInventoryExport = async ({ csvData, autoCreateStores = true 
         // Detect location columns (numeric values in columns)
         if (Object.keys(data).length > 0) {
           Object.keys(data).forEach(key => {
-            if (key !== 'ID' && key !== 'SKU' && key !== 'Product Name' && 
-                key !== 'Category' && key !== 'Brand' && key !== 'Image URL' &&
-                key !== 'Retail price' && key !== 'Deposit Fee' && key !== 'Wholesale cost' &&
-                key !== 'Description' && key !== 'Barcode' && key !== 'Net product weight' &&
-                key !== 'Compliance Weight' && key !== 'Volume' && key !== 'Created' && key !== 'Updated' &&
-                !isNaN(parseInt(data[key])) && parseInt(data[key]) >= 0) {
+            if (key !== 'ID' && key !== 'SKU' && key !== 'Product Name' &&
+              key !== 'Category' && key !== 'Brand' && key !== 'Image URL' &&
+              key !== 'Retail price' && key !== 'Deposit Fee' && key !== 'Wholesale cost' &&
+              key !== 'Description' && key !== 'Barcode' && key !== 'Net product weight' &&
+              key !== 'Compliance Weight' && key !== 'Volume' && key !== 'Created' && key !== 'Updated' &&
+              !isNaN(parseInt(data[key])) && parseInt(data[key]) >= 0) {
               if (!locationColumns.includes(key)) {
                 locationColumns.push(key);
               }
@@ -187,7 +187,7 @@ export const analyzeInventoryExport = async ({ csvData, autoCreateStores = true 
       let store = await context.entities.Store.findFirst({
         where: { name: location, userId: context.user.id }
       });
-      
+
       if (!store) {
         store = await context.entities.Store.create({
           data: {
@@ -207,7 +207,7 @@ export const analyzeInventoryExport = async ({ csvData, autoCreateStores = true 
     where: { gtin: { in: gtins } },
     include: { stockLevels: true }
   });
-  
+
   // Create lookup map for existing products
   const existingProductsMap = new Map();
   existingProducts.forEach(product => {
@@ -225,7 +225,7 @@ export const analyzeInventoryExport = async ({ csvData, autoCreateStores = true 
       newProducts.push(product);
     } else {
       // Check if product details changed
-      const hasChanges = 
+      const hasChanges =
         existing.name !== product.name ||
         existing.brand !== product.brand ||
         existing.category !== product.category ||
@@ -255,7 +255,7 @@ async function syncCategoriesInBackground(context, updatedProducts) {
   const syncStartTime = Date.now();
   const syncStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
   console.log(`[${syncStartTimestamp}] 🔄 Background category sync: Processing ${updatedProducts.length} products...`);
-  
+
   try {
     // Fetch all products that need category syncing
     const gtins = updatedProducts.map(p => p.gtin).filter(Boolean);
@@ -263,17 +263,17 @@ async function syncCategoriesInBackground(context, updatedProducts) {
       console.log(`[${syncStartTimestamp}] ⚠️ No products to sync (no GTINs)`);
       return;
     }
-    
+
     const productsToSync = await context.entities.ProductCatalog.findMany({
       where: { gtin: { in: gtins } },
       select: { id: true, gtin: true, parentCategory: true, subcategory: true }
     });
-    
+
     if (productsToSync.length === 0) {
       console.log(`[${syncStartTimestamp}] ⚠️ No products found in database to sync`);
       return;
     }
-    
+
     // Fetch ALL category definitions and subcategories once (bulk load)
     const allCategoryDefs = await context.entities.CategoryDefinition.findMany({
       where: { isActive: true },
@@ -283,11 +283,11 @@ async function syncCategoriesInBackground(context, updatedProducts) {
         }
       }
     });
-    
+
     // Build lookup maps for fast matching
     const categoryMap = new Map(); // category name -> CategoryDefinition
     const subcategoryMap = new Map(); // "categoryId:subcategoryName" -> CategorySubcategory
-    
+
     allCategoryDefs.forEach(cat => {
       categoryMap.set(cat.name.toLowerCase().trim(), cat);
       cat.subcategories.forEach(sub => {
@@ -295,46 +295,46 @@ async function syncCategoriesInBackground(context, updatedProducts) {
         subcategoryMap.set(key, sub);
       });
     });
-    
+
     const syncTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.log(`[${syncTimestamp}] Loaded ${allCategoryDefs.length} category definitions, processing ${productsToSync.length} products...`);
-    
+
     // Process products in batches and collect updates
     const categoryUpdates = []; // { productId, categoryDefinitionId, subcategoryId }
     const batchSize = 100;
     let processed = 0;
-    
+
     for (let i = 0; i < productsToSync.length; i += batchSize) {
       const batch = productsToSync.slice(i, i + batchSize);
-      
+
       for (const product of batch) {
         if (!product.parentCategory) continue;
-        
+
         const categoryName = product.parentCategory.toLowerCase().trim();
         const categoryDef = categoryMap.get(categoryName);
-        
+
         if (categoryDef) {
           const update = {
             productId: product.id,
             categoryDefinitionId: categoryDef.id,
             subcategoryId: null
           };
-          
+
           // Try to match subcategory
           if (product.subcategory && categoryDef.subcategories) {
             const subcategoryName = product.subcategory.toLowerCase().trim();
             const subKey = `${categoryDef.id}:${subcategoryName}`;
             const subcategoryDef = subcategoryMap.get(subKey);
-            
+
             if (subcategoryDef) {
               update.subcategoryId = subcategoryDef.id;
             }
           }
-          
+
           categoryUpdates.push(update);
         }
       }
-      
+
       processed += batch.length;
       if (processed % 500 === 0 || processed === productsToSync.length) {
         const progressTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
@@ -342,16 +342,16 @@ async function syncCategoriesInBackground(context, updatedProducts) {
         console.log(`[${progressTimestamp}] Category sync: Processed ${processed}/${productsToSync.length} products (${percentage}%) - ${categoryUpdates.length} matches found`);
       }
     }
-    
+
     // Bulk update products in batches
     if (categoryUpdates.length > 0) {
       const updateTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
       console.log(`[${updateTimestamp}] Applying ${categoryUpdates.length} category updates in batches...`);
-      
+
       const updateBatchSize = 50; // Reduced from 100 to prevent connection pool exhaustion
       for (let i = 0; i < categoryUpdates.length; i += updateBatchSize) {
         const batch = categoryUpdates.slice(i, i + updateBatchSize);
-        
+
         // Process sequentially within each batch to manage connections
         for (const update of batch) {
           await context.entities.ProductCatalog.update({
@@ -362,7 +362,7 @@ async function syncCategoriesInBackground(context, updatedProducts) {
             }
           });
         }
-        
+
         if ((i + updateBatchSize) % 500 === 0 || i + updateBatchSize >= categoryUpdates.length) {
           const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
           const totalUpdated = Math.min(i + updateBatchSize, categoryUpdates.length);
@@ -371,11 +371,11 @@ async function syncCategoriesInBackground(context, updatedProducts) {
         }
       }
     }
-    
+
     const syncDuration = ((Date.now() - syncStartTime) / 1000).toFixed(2);
     const syncCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.log(`[${syncCompleteTimestamp}] ✅ Background category sync complete: ${categoryUpdates.length} products updated in ${syncDuration}s`);
-    
+
   } catch (error) {
     const errorTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.error(`[${errorTimestamp}] ❌ Background category sync error:`, error.message);
@@ -396,7 +396,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   // Helper function to split category into parent and subcategory
   const splitCategory = (category) => {
     if (!category) return { parentCategory: null, subcategory: null };
-    
+
     // Handle various delimiters: " - ", " > ", "-", ">"
     const delimiters = [' - ', ' > ', '-', '>'];
     for (const delimiter of delimiters) {
@@ -408,7 +408,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         };
       }
     }
-    
+
     // If no delimiter found, treat entire category as parent
     return { parentCategory: category.trim(), subcategory: null };
   };
@@ -416,45 +416,45 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   // Helper function to extract format from product name (improved for multipacks)
   const extractFormat = (productName) => {
     if (!productName) return null;
-    
+
     // Clean up the product name
     const cleaned = productName.trim();
-    
+
     // Look for multipack patterns: "10 x 0.3g", "5x10mg", "12 x 100mg", etc.
     const multipackPattern = /(\d+)\s*[xX×]\s*(\d+\.?\d*\s*(g|mg|ml|oz|%))/i;
     const multipackMatch = cleaned.match(multipackPattern);
     if (multipackMatch) {
       return multipackMatch[0].trim(); // Returns "10 x 0.3g"
     }
-    
+
     // Extract format from last part after "-" or within parentheses
     const lastDashPart = cleaned.split('-').pop().trim();
-    
+
     // Look for patterns like "1g", "100mg", "0.5g", "10ml", etc.
     const formatMatch = lastDashPart.match(/(\d+\.?\d*\s*(g|mg|ml|oz|%))/i);
     if (formatMatch) {
       return formatMatch[0].trim();
     }
-    
+
     // Also check within parentheses
     const parenMatch = cleaned.match(/\(([^)]*(?:g|mg|ml|oz|%))\)/i);
     if (parenMatch) {
       return parenMatch[1].trim();
     }
-    
+
     return null;
   };
 
   // Helper function to parse unit count and unit size from product name
   const parseFormatDetails = (productName) => {
     if (!productName) return { unitCount: 1, unitSize: null, format: null };
-    
+
     const cleaned = productName.trim();
-    
+
     // Look for multipack patterns: "10 x 0.3g", "5x10mg", "12 x 100mg", etc.
     const multipackPattern = /(\d+)\s*[xX×]\s*(\d+\.?\d*\s*(g|mg|ml|oz|%))/i;
     const multipackMatch = cleaned.match(multipackPattern);
-    
+
     if (multipackMatch) {
       return {
         unitCount: parseInt(multipackMatch[1]),
@@ -462,7 +462,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         format: multipackMatch[0].trim() // "10 x 0.3g"
       };
     }
-    
+
     // Single unit - extract format
     const format = extractFormat(productName);
     return {
@@ -481,10 +481,10 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   // Helper function to extract strain type from category
   const extractStrainType = (parentCategory, subcategory) => {
     if (!parentCategory || !subcategory) return 'N/A';
-    
+
     const parent = parentCategory.toLowerCase();
     const sub = subcategory.toLowerCase();
-    
+
     // Check if it's a flower or pre-roll product
     if (parent.includes('flower') || parent.includes('pre-roll') || parent.includes('preroll')) {
       // Check subcategory for strain type
@@ -492,7 +492,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       if (sub.includes('hybrid')) return 'Hybrid';
       if (sub.includes('indica')) return 'Indica';
     }
-    
+
     return 'N/A';
   };
 
@@ -513,7 +513,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   const processingPromise = new Promise((resolve, reject) => {
     let rowCount = 0;
     const maxRows = 50000; // Limit to 50k rows to prevent hanging
-    
+
     readable
       .pipe(csvParser())
       .on('data', (data) => {
@@ -522,16 +522,16 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           reject(new Error(`File too large: More than ${maxRows} rows. Please split your CSV into smaller files.`));
           return;
         }
-        
+
         // Detect location columns (numeric values in columns)
         if (Object.keys(data).length > 0) {
           Object.keys(data).forEach(key => {
-            if (key !== 'ID' && key !== 'SKU' && key !== 'Product Name' && 
-                key !== 'Category' && key !== 'Brand' && key !== 'Image URL' &&
-                key !== 'Retail price' && key !== 'Deposit Fee' && key !== 'Wholesale cost' &&
-                key !== 'Description' && key !== 'Barcode' && key !== 'Net product weight' &&
-                key !== 'Compliance Weight' && key !== 'Volume' && key !== 'Created' && key !== 'Updated' &&
-                !isNaN(parseInt(data[key])) && parseInt(data[key]) >= 0) {
+            if (key !== 'ID' && key !== 'SKU' && key !== 'Product Name' &&
+              key !== 'Category' && key !== 'Brand' && key !== 'Image URL' &&
+              key !== 'Retail price' && key !== 'Deposit Fee' && key !== 'Wholesale cost' &&
+              key !== 'Description' && key !== 'Barcode' && key !== 'Net product weight' &&
+              key !== 'Compliance Weight' && key !== 'Volume' && key !== 'Created' && key !== 'Updated' &&
+              !isNaN(parseInt(data[key])) && parseInt(data[key]) >= 0) {
               if (!locationColumns.includes(key)) {
                 locationColumns.push(key);
               }
@@ -549,7 +549,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           const margin = calculateMargin(retailPrice, wholesaleCost);
           const strainType = extractStrainType(parentCategory, subcategory);
           const updated = data['Updated'] ? new Date(data['Updated']) : new Date();
-          
+
           const productData = {
             gtin,
             name: data['Product Name'].trim(),
@@ -569,7 +569,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
             updated,
             stockLevels: []
           };
-          
+
           // Collect stock levels for all locations
           Object.keys(data).forEach(key => {
             if (locationColumns.includes(key)) {
@@ -581,7 +581,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
               });
             }
           });
-          
+
           // Handle duplicates: keep the one with the most recent Updated date
           const existing = productsMap.get(gtin);
           if (!existing || productData.updated > existing.updated) {
@@ -598,7 +598,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
 
   // Convert Map to array
   const products = Array.from(productsMap.values());
-  
+
   const parseTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
   console.log(`[${parseTimestamp}] ✓ Stage 1 complete: Parsed ${products.length} products, detected ${locationColumns.length} locations`);
   console.log(`[${parseTimestamp}] Stage 2/4: Creating/updating stores...`);
@@ -608,18 +608,18 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   const userStores = await context.entities.Store.findMany({
     where: { userId: context.user.id }
   });
-  
+
   // Build storeMap by matching CSV location columns to existing stores
   // Check both name and reportName (like inventory logs upload does)
   const storeMap = {};
   const unmatchedLocations = [];
   for (const location of locationColumns) {
     // Try to find existing store by name or reportName
-    let store = userStores.find(s => 
-      s.name === location || 
+    let store = userStores.find(s =>
+      s.name === location ||
       (s.reportName && s.reportName === location)
     );
-    
+
     if (!store && autoCreateStores) {
       // Only create new store if autoCreateStores is true
       store = await context.entities.Store.create({
@@ -632,7 +632,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       // Add to userStores array so it's available for future iterations
       userStores.push(store);
     }
-    
+
     if (store) {
       storeMap[location] = store.id;
     } else {
@@ -640,13 +640,13 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       unmatchedLocations.push(location);
     }
   }
-  
+
   if (unmatchedLocations.length > 0) {
     const unmatchedTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.warn(`[${unmatchedTimestamp}] ⚠️  WARNING: ${unmatchedLocations.length} location(s) could not be matched to stores: ${unmatchedLocations.join(', ')}`);
     console.warn(`[${unmatchedTimestamp}] Stock levels for these locations will be skipped. Enable autoCreateStores or ensure store names/reportNames match CSV column names.`);
   }
-  
+
   const storeTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
   console.log(`[${storeTimestamp}] ✓ Stage 2 complete: ${Object.keys(storeMap).length} stores ready (${locationColumns.length} locations in CSV)`);
   console.log(`[${storeTimestamp}] Stage 3/4: Processing products (create/update/unchanged)...`);
@@ -666,7 +666,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     where: { gtin: { in: gtins } },
     include: { stockLevels: true }
   });
-  
+
   // Create lookup map for existing products
   const existingProductsMap = new Map();
   existingProducts.forEach(product => {
@@ -677,7 +677,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   const newProducts = [];
   const existingProductsToUpdate = [];
   const unchangedProducts = [];
-  
+
   const categorizeTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
   console.log(`[${categorizeTimestamp}] Categorizing ${products.length} products...`);
 
@@ -704,7 +704,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       });
     } else {
       // Check if product details changed
-      const hasChanges = 
+      const hasChanges =
         existing.name !== product.name ||
         existing.brand !== product.brand ||
         existing.category !== product.category ||
@@ -739,7 +739,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         unchangedProducts.push(product);
       }
     }
-    
+
     // Log progress every 1000 products
     if ((i + 1) % 1000 === 0 || i === products.length - 1) {
       const progressTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
@@ -747,7 +747,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       console.log(`[${progressTimestamp}] Categorized ${i + 1}/${products.length} products (${percentage}%) - ${newProducts.length} new, ${existingProductsToUpdate.length} to update, ${unchangedProducts.length} unchanged`);
     }
   }
-  
+
   const categorizeCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
   console.log(`[${categorizeCompleteTimestamp}] ✓ Categorization complete: ${newProducts.length} new, ${existingProductsToUpdate.length} to update, ${unchangedProducts.length} unchanged`);
 
@@ -770,14 +770,14 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         imageUrl: truncateField(p.imageUrl, 500),
         imageMigrationStatus: p.imageUrl ? 'PENDING' : null
       }));
-      
+
       const batchStartTime = Date.now();
       try {
         await context.entities.ProductCatalog.createMany({
           data: chunk,
           skipDuplicates: true // PostgreSQL supports this
         });
-        
+
         const batchEndTime = Date.now();
         const batchDuration = ((batchEndTime - batchStartTime) / 1000).toFixed(2);
         const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
@@ -801,15 +801,15 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         }
       }
     }
-    
+
     const createCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.log(`[${createCompleteTimestamp}] ✓ Product creation complete, fetching IDs...`);
-    
+
     // Fetch the created products to get their IDs
     createdProducts = await context.entities.ProductCatalog.findMany({
       where: { gtin: { in: newProducts.map(p => p.gtin) } }
     });
-    
+
     const fetchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.log(`[${fetchTimestamp}] ✓ Fetched ${createdProducts.length} product IDs`);
   }
@@ -826,7 +826,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         }))
       );
       results.push(...batchResults);
-      
+
       // Call progress callback after each batch
       if (onProgress) {
         onProgress(results.length, items.length);
@@ -842,24 +842,24 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     console.log(`[${updateStartTimestamp}] Updating ${existingProductsToUpdate.length} existing products in parallel (concurrency: 10)...`);
     const batchStartTime = Date.now();
     const concurrency = 10; // Process 10 products in parallel at a time
-    
+
     // Process all products with controlled concurrency
     await processInParallel(
-      existingProductsToUpdate, 
-      concurrency, 
+      existingProductsToUpdate,
+      concurrency,
       async (product) => {
         // Use existing product data from the map instead of re-querying
         const existing = existingProductsMap.get(product.gtin);
-        
+
         // Determine image URL and migration status
         const newImageUrl = truncateField(product.imageUrl, 500);
         const existingImageUrl = existing?.imageUrl;
-        
+
         // Preserve migrated images - don't overwrite if already migrated
         // Only update imageUrl from CSV if it's different, but keep migration status
         let imageUrlToUse = existingImageUrl || newImageUrl;
         let imageMigrationStatus = existing?.imageMigrationStatus;
-        
+
         // Set migration status to PENDING if:
         // 1. New image URL is provided and different from existing, OR
         // 2. No existing image URL but CSV has one
@@ -879,7 +879,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           imageUrlToUse = existingImageUrl; // Keep existing URL
           // imageMigrationStatus already set to 'MIGRATED' above
         }
-        
+
         await context.entities.ProductCatalog.update({
           where: { gtin: product.gtin },
           data: {
@@ -922,28 +922,28 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         }
       }
     );
-    
+
     const batchEndTime = Date.now();
     const batchDuration = ((batchEndTime - batchStartTime) / 1000).toFixed(2);
     const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     const avgRate = (existingProductsToUpdate.length / parseFloat(batchDuration)).toFixed(1);
     console.log(`[${batchTimestamp}] ✓ Updated ${existingProductsToUpdate.length} products in ${batchDuration}s (avg: ${avgRate} products/sec)`);
-    
+
     const updateCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.log(`[${updateCompleteTimestamp}] ✓ Product updates complete`);
-    
+
     // Category syncing will be done in background - don't block upload response
     const updatedProducts = existingProductsToUpdate.map(p => ({
       gtin: p.gtin,
       parentCategory: p.parentCategory,
       subcategory: p.subcategory
     }));
-    
+
     // Fire-and-forget: Sync categories in background
     if (updatedProducts.length > 0) {
       const syncStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
       console.log(`[${syncStartTimestamp}] 🔄 Starting background category sync for ${updatedProducts.length} products...`);
-      
+
       // Run in background (don't await)
       syncCategoriesInBackground(context, updatedProducts).catch(err => {
         const errorTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
@@ -964,7 +964,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     const unchangedCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.log(`[${unchangedCompleteTimestamp}] ✓ Updated lastSeen for ${unchangedProducts.length} products`);
   }
-  
+
   const productTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
   console.log(`[${productTimestamp}] ✓ Stage 3 complete: ${newProducts.length} created, ${existingProductsToUpdate.length} updated, ${unchangedProducts.length} unchanged`);
   console.log(`[${productTimestamp}] Stage 4/4: Updating stock levels...`);
@@ -1004,7 +1004,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       }
     }
   }
-  
+
   if (skippedStockLevels.length > 0) {
     const skipTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
     console.warn(`[${skipTimestamp}] ⚠️  Skipped ${skippedStockLevels.length} stock level(s) due to unmatched store locations`);
@@ -1024,14 +1024,14 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     console.log(`\n[${timestamp}] 🔄 UPDATING ${stockLevelUpdates.length} STOCK LEVELS...`);
     console.log(`[${timestamp}] Using DELETE + BULK INSERT strategy for maximum speed`);
     const startTime = Date.now();
-    
+
     try {
       // Step 1: Get unique store IDs and product IDs from this upload
       const storeIds = [...new Set(stockLevelUpdates.map(s => s.storeId))];
       const productIds = [...new Set(stockLevelUpdates.map(s => s.productId))];
-      
+
       console.log(`[${timestamp}] Step 1: Deleting existing stock levels for ${productIds.length} products across ${storeIds.length} stores...`);
-      
+
       // Delete existing stock levels for these products in these stores
       // This ensures we replace old inventory data with fresh data from the CSV
       // Only delete for stores that are in the current upload (preserve inventory for other stores)
@@ -1043,17 +1043,17 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           ]
         }
       });
-      
+
       const deleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
       console.log(`[${deleteTimestamp}] Step 2: Deleted ${deleteResult.count} old records, now bulk inserting ${stockLevelUpdates.length} new records...`);
-      
+
       // Step 2: Bulk insert all new stock levels in chunks
       const chunkSize = 1000; // PostgreSQL can handle large bulk inserts
       let totalInserted = 0;
-      
+
       for (let i = 0; i < stockLevelUpdates.length; i += chunkSize) {
         const chunk = stockLevelUpdates.slice(i, i + chunkSize);
-        
+
         await context.entities.StockLevel.createMany({
           data: chunk.map(stock => ({
             storeId: stock.storeId,
@@ -1063,9 +1063,9 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
             lastUpdated: new Date()
           }))
         });
-        
+
         totalInserted += chunk.length;
-        
+
         if (totalInserted % 5000 === 0 || totalInserted === stockLevelUpdates.length) {
           const insertTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
           const percentage = ((totalInserted / stockLevelUpdates.length) * 100).toFixed(1);
@@ -1073,12 +1073,12 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
           console.log(`[${insertTimestamp}] 📊 Inserted: ${totalInserted}/${stockLevelUpdates.length} (${percentage}%) - ${elapsed}s`);
         }
       }
-      
+
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
       const finalTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
       console.log(`[${finalTimestamp}] ✅ STOCK LEVELS COMPLETE: ${stockLevelUpdates.length} records in ${duration}s`);
       console.log(`[${finalTimestamp}] ⚡ Average: ${(stockLevelUpdates.length / parseFloat(duration)).toFixed(0)} records/second\n`);
-      
+
     } catch (error) {
       const errorTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
       console.error(`[${errorTimestamp}] ❌ Error in bulk stock level update:`, error.message);
@@ -1125,7 +1125,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   const startTime = Date.now();
   const csvSize = new Blob([csvData]).size;
   const ts = () => new Date().toISOString().split('T')[1].split('.')[0];
-  
+
   console.log(`\n[${ts()}] 📥 STARTING INVENTORY LOGS UPLOAD`);
   console.log(`[${ts()}] File size: ${(csvSize / 1024 / 1024).toFixed(2)}MB`);
   console.log(`[${ts()}] Stage 1/5: Parsing CSV...`);
@@ -1144,7 +1144,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   await new Promise((resolve, reject) => {
     let rowCount = 0;
     const maxRows = 50000;
-    
+
     readable
       .pipe(csvParser())
       .on('data', (data) => {
@@ -1153,7 +1153,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
           reject(new Error(`File too large: More than ${maxRows} rows.`));
           return;
         }
-        
+
         if (data.Product && data.Location && data.Date) {
           let parsedDate;
           try {
@@ -1162,7 +1162,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
           } catch (e) {
             parsedDate = new Date('2023-10-31');
           }
-          
+
           movements.push({
             productName: data.Product.trim(),
             sku: data.SKU?.trim() || null,
@@ -1182,7 +1182,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       .on('end', resolve)
       .on('error', reject);
   });
-  
+
   console.log(`[${ts()}] ✓ Stage 1 complete: Parsed ${movements.length} movement records`);
   console.log(`[${ts()}] Stage 2/5: Bulk lookup stores and products...`);
 
@@ -1190,11 +1190,11 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   const userStores = await context.entities.Store.findMany({
     where: { userId: context.user.id }
   });
-  
+
   if (userStores.length === 0) {
     throw new HttpError(400, 'No stores found. Please create a store first.');
   }
-  
+
   // Create store lookup map
   const storeMap = new Map();
   userStores.forEach(s => {
@@ -1207,10 +1207,10 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   const products = await context.entities.ProductCatalog.findMany({
     where: { gtin: { in: uniqueBarcodes } }
   });
-  
+
   const productMap = new Map();
   products.forEach(p => productMap.set(p.gtin, p));
-  
+
   console.log(`[${ts()}] ✓ Stage 2 complete: Found ${userStores.length} stores, ${products.length} products`);
   console.log(`[${ts()}] Stage 3/5: Creating snapshot and preparing data...`);
 
@@ -1228,11 +1228,11 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   const skippedRows = [];
   const unmatchedRecords = [];
   let newProductsNeeded = 0;
-  
+
   for (const movement of movements) {
     const storeId = storeMap.get(movement.location);
     let product = productMap.get(movement.barcode);
-    
+
     // Skip if no store found
     if (!storeId) {
       skippedRows.push({ row: movement.productName, reason: `Store not found: ${movement.location}` });
@@ -1252,7 +1252,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       });
       continue;
     }
-    
+
     // Skip if no barcode at all
     if (!movement.barcode) {
       skippedRows.push({ row: movement.productName, reason: 'Missing GTIN' });
@@ -1272,7 +1272,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       });
       continue;
     }
-    
+
     // Track products that need to be created
     if (!product) {
       newProductsNeeded++;
@@ -1280,7 +1280,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       skippedRows.push({ row: movement.productName, reason: 'Product not in catalog (upload inventory export first)' });
       continue;
     }
-    
+
     movementsToCreate.push({
       storeId,
       productId: product.id,
@@ -1293,7 +1293,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       notes: movement.notes
     });
   }
-  
+
   console.log(`[${ts()}] ✓ Stage 3 complete: ${movementsToCreate.length} movements ready, ${skippedRows.length} skipped`);
   if (newProductsNeeded > 0) {
     console.log(`[${ts()}] ⚠️  ${newProductsNeeded} movements skipped - products not in catalog (upload inventory export first)`);
@@ -1304,17 +1304,17 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   let totalCreated = 0;
   let totalDuplicates = 0;
   let uniqueMovements = []; // Declare outside if block for use in Stage 5
-  
+
   if (movementsToCreate.length > 0) {
     // Calculate date range for deduplication check
     const dates = movementsToCreate.map(m => m.date);
     const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
     const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
-    
+
     // Get store and product IDs from movements
     const storeIds = [...new Set(movementsToCreate.map(m => m.storeId))];
     const productIds = [...new Set(movementsToCreate.map(m => m.productId))];
-    
+
     // Fetch existing movements in this date range to check for duplicates
     console.log(`[${ts()}] Checking for existing movements in date range ${minDate.toISOString().split('T')[0]} to ${maxDate.toISOString().split('T')[0]}...`);
     const existingMovements = await context.entities.InventoryMovement.findMany({
@@ -1334,7 +1334,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
         employee: true
       }
     });
-    
+
     // Create a Set of existing movement keys for fast lookup
     // Key format: storeId_productId_date_type_changeQty_openingQty_closingQty
     const existingKeys = new Set();
@@ -1343,14 +1343,14 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       const key = `${m.storeId}_${m.productId}_${dateStr}_${m.type}_${m.changeQty}_${m.openingQty}_${m.closingQty}_${m.employee || ''}`;
       existingKeys.add(key);
     });
-    
+
     console.log(`[${ts()}] Found ${existingMovements.length} existing movements, checking for duplicates...`);
-    
+
     // Filter out duplicates
     movementsToCreate.forEach(m => {
       const dateStr = m.date.toISOString().split('T')[0]; // Normalize to date only
       const key = `${m.storeId}_${m.productId}_${dateStr}_${m.type}_${m.changeQty}_${m.openingQty}_${m.closingQty}_${m.employee || ''}`;
-      
+
       if (existingKeys.has(key)) {
         totalDuplicates++;
       } else {
@@ -1359,24 +1359,24 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
         existingKeys.add(key);
       }
     });
-    
+
     if (totalDuplicates > 0) {
       console.log(`[${ts()}] ⚠️  Skipped ${totalDuplicates} duplicate movements (already exist in database)`);
     }
-    
+
     // Bulk create only unique movements
     if (uniqueMovements.length > 0) {
       const chunkSize = 1000;
       for (let i = 0; i < uniqueMovements.length; i += chunkSize) {
         const chunk = uniqueMovements.slice(i, i + chunkSize);
-        
+
         await context.entities.InventoryMovement.createMany({
           data: chunk,
           skipDuplicates: true // Extra safety - PostgreSQL will skip if somehow duplicates slip through
         });
-        
+
         totalCreated += chunk.length;
-        
+
         if (totalCreated % 5000 === 0 || totalCreated === uniqueMovements.length) {
           const percentage = ((totalCreated / uniqueMovements.length) * 100).toFixed(1);
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -1385,14 +1385,14 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       }
     }
   }
-  
+
   console.log(`[${ts()}] ✓ Stage 4 complete: ${totalCreated} new movements created, ${totalDuplicates} duplicates skipped`);
   console.log(`[${ts()}] Stage 5/5: Updating stock levels (DELETE + BULK INSERT)...`);
 
   // STAGE 5: Update stock levels using DELETE + BULK INSERT (2-5 seconds)
   // Use unique movements for stock level calculation (duplicates would give same closing quantity anyway)
   const movementsForStock = uniqueMovements.length > 0 ? uniqueMovements : movementsToCreate;
-  
+
   if (movementsForStock.length > 0) {
     // Group by store+product and take the last closing quantity
     const stockMap = new Map();
@@ -1404,7 +1404,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
         quantity: m.closingQty
       });
     });
-    
+
     const stockUpdates = Array.from(stockMap.values());
     const storeIds = [...new Set(stockUpdates.map(s => s.storeId))];
     const productIds = [...new Set(stockUpdates.map(s => s.productId))];
@@ -1426,7 +1426,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
         lastUpdated: new Date()
       }))
     });
-    
+
     console.log(`[${ts()}] ✓ Stage 5 complete: Updated ${stockUpdates.length} stock levels`);
   }
 
@@ -1458,7 +1458,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   await invalidateCachePattern('cache:products_paginated:*');
   await invalidateCachePattern('cache:purchase_orders:*');
   await invalidateCachePattern('cache:rankings:*');
-  
+
   // Warm cache after upload (fire-and-forget)
   const stores = await context.entities.Store.findMany({
     where: { userId: context.user.id, isActive: true },
@@ -1468,7 +1468,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
     const storeIds = stores.map(s => s.id);
     const endDate = new Date();
     const startDate = new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
-    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(err => 
+    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(err =>
       console.warn('Cache warming failed after upload:', err.message)
     );
   }
@@ -1560,7 +1560,7 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
   const processingPromise = new Promise((resolve, reject) => {
     let rowCount = 0;
     const maxRows = 50000;
-    
+
     readable
       .pipe(csvParser())
       .on('data', (data) => {
@@ -1580,7 +1580,7 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
           const margin = calculateMargin(retailPrice, wholesaleCost);
           const strainType = extractStrainType(parentCategory, subcategory);
           const updated = data['Updated'] ? new Date(data['Updated']) : new Date();
-          
+
           const productData = {
             gtin,
             name: data['Product Name'].trim(),
@@ -1599,7 +1599,7 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
             size: data['Size']?.trim() || null,
             updated
           };
-          
+
           // Handle duplicates: keep most recent
           const existing = productsMap.get(gtin);
           if (!existing || productData.updated > existing.updated) {
@@ -1620,7 +1620,7 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
   const existingProducts = await context.entities.ProductCatalog.findMany({
     where: { gtin: { in: gtins } }
   });
-  
+
   const existingProductsMap = new Map();
   existingProducts.forEach(product => {
     existingProductsMap.set(product.gtin, product);
@@ -1674,7 +1674,7 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
     const chunkSize = 100;
     for (let i = 0; i < newProducts.length; i += chunkSize) {
       const chunk = newProducts.slice(i, i + chunkSize);
-      
+
       try {
         await context.entities.ProductCatalog.createMany({
           data: chunk
@@ -1699,7 +1699,7 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
     const chunkSize = 50; // Process in smaller chunks to manage connections
     for (let i = 0; i < updatedProducts.length; i += chunkSize) {
       const chunk = updatedProducts.slice(i, i + chunkSize);
-      
+
       // Process sequentially within each chunk
       for (const product of chunk) {
         await context.entities.ProductCatalog.update({
@@ -1729,7 +1729,7 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
   // Invalidate and warm cache after product catalog update
   await invalidateCachePattern('cache:base:*');
   await invalidateCachePattern('cache:filter_options:*');
-  
+
   // Warm cache after upload (fire-and-forget)
   const stores = await context.entities.Store.findMany({
     where: { userId: context.user.id, isActive: true },
@@ -1739,7 +1739,7 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
     const storeIds = stores.map(s => s.id);
     const endDate = new Date();
     const startDate = new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
-    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(err => 
+    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(err =>
       console.warn('Cache warming failed after product catalog upload:', err.message)
     );
   }
@@ -1789,7 +1789,7 @@ export const generatePrintableMenu = async ({ storeId, options: _options = {} },
 
   // Get products with stock levels
   const stockLevels = await context.entities.StockLevel.findMany({
-    where: { 
+    where: {
       storeId: parseInt(storeId),
       quantity: { gt: 0 }
     },
@@ -1858,7 +1858,7 @@ export const exportAnalyticsData = async ({ storeIds, filters }, context) => {
   analyticsData.forEach(store => {
     store.stockLevels.forEach(stock => {
       const product = stock.product;
-      
+
       // Apply filters if provided
       if (filters) {
         if (filters.categories && filters.categories.length > 0 && !filters.categories.includes(product.parentCategory)) {
@@ -1892,7 +1892,7 @@ export const exportAnalyticsData = async ({ storeIds, filters }, context) => {
   });
 
   // Convert to CSV string
-  const csvContent = csvRows.map(row => 
+  const csvContent = csvRows.map(row =>
     row.map(cell => {
       // Escape quotes and wrap in quotes if contains comma, quote, or newline
       const cellStr = String(cell);
@@ -2205,7 +2205,7 @@ export const exportOrderWorksheet = async (_args, context) => {
   });
 
   // Convert to CSV string
-  const csvContent = csvRows.map(row => 
+  const csvContent = csvRows.map(row =>
     row.map(cell => {
       const cellStr = String(cell);
       if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
@@ -2252,13 +2252,13 @@ export const enrichProductFormats = async (_args, context) => {
   // Helper to parse format details
   const parseFormatDetails = (productName) => {
     if (!productName) return { unitCount: 1, unitSize: null, format: null };
-    
+
     const cleaned = productName.trim();
-    
+
     // Look for multipack patterns: "10 x 0.3g", "5x10mg", "12 x 100mg", etc.
     const multipackPattern = /(\d+)\s*[xX×]\s*(\d+\.?\d*\s*(g|mg|ml|oz|%))/i;
     const multipackMatch = cleaned.match(multipackPattern);
-    
+
     if (multipackMatch) {
       return {
         unitCount: parseInt(multipackMatch[1]),
@@ -2266,7 +2266,7 @@ export const enrichProductFormats = async (_args, context) => {
         format: multipackMatch[0].trim()
       };
     }
-    
+
     // Single unit - extract format
     const lastDashPart = cleaned.split('-').pop().trim();
     const formatMatch = lastDashPart.match(/(\d+\.?\d*\s*(g|mg|ml|oz|%))/i);
@@ -2274,13 +2274,13 @@ export const enrichProductFormats = async (_args, context) => {
       const format = formatMatch[0].trim();
       return { unitCount: 1, unitSize: format, format };
     }
-    
+
     const parenMatch = cleaned.match(/\(([^)]*(?:g|mg|ml|oz|%))\)/i);
     if (parenMatch) {
       const format = parenMatch[1].trim();
       return { unitCount: 1, unitSize: format, format };
     }
-    
+
     return { unitCount: 1, unitSize: null, format: null };
   };
 
@@ -2295,20 +2295,20 @@ export const enrichProductFormats = async (_args, context) => {
   const chunkSize = 100;
   for (let i = 0; i < products.length; i += chunkSize) {
     const chunk = products.slice(i, i + chunkSize);
-    
+
     await Promise.all(chunk.map(async (product) => {
       const { unitCount, unitSize, format } = parseFormatDetails(product.name);
-      
+
       // Check if update is needed
-      const needsUpdate = 
+      const needsUpdate =
         (format && format !== product.format) ||
         (unitCount && unitCount !== product.unitCount) ||
         (unitSize && unitSize !== product.unitSize);
-      
+
       if (needsUpdate) {
         await context.entities.ProductCatalog.update({
           where: { id: product.id },
-          data: { 
+          data: {
             format: format || product.format,
             unitCount: unitCount || product.unitCount || 1,
             unitSize: unitSize || product.unitSize
@@ -2351,35 +2351,35 @@ function getTimeBucket(hour) {
 
 export const backfillWeeklySummaries = async ({ startDate, endDate }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   console.log('🔄 Starting weekly summary backfill...');
   console.log(`📅 Date range: ${startDate || 'earliest'} to ${endDate || 'now'}`);
-  
+
   // Get earliest movement date if startDate not provided
   const earliest = await context.entities.InventoryMovement.findFirst({
     orderBy: { date: 'asc' },
     select: { date: true }
   });
-  
+
   const start = startDate ? new Date(startDate) : (earliest?.date || new Date());
   const end = endDate ? new Date(endDate) : new Date();
-  
+
   // Get all user's stores
   const stores = await context.entities.Store.findMany({
     where: { userId: context.user.id, isActive: true }
   });
-  
+
   console.log(`🏪 Processing ${stores.length} store(s)`);
-  
+
   let currentWeek = getMonday(start);
   let weeksProcessed = 0;
-  
+
   while (currentWeek <= end) {
     const weekEnd = new Date(currentWeek);
     weekEnd.setDate(weekEnd.getDate() + 7);
-    
+
     console.log(`📊 Processing week of ${currentWeek.toISOString().split('T')[0]}...`);
-    
+
     for (const store of stores) {
       // Get all movements for this week and store
       const movements = await context.entities.InventoryMovement.findMany({
@@ -2398,23 +2398,23 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
           }
         }
       });
-      
+
       if (movements.length === 0) {
         continue;
       }
-      
+
       // Aggregate by product
       const productSummaries = new Map();
       const categorySummaries = new Map();
       const brandSummaries = new Map();
-      
+
       movements.forEach(m => {
         const dayOfWeek = m.date.getDay();
         const hour = m.date.getHours();
         const timeBucket = getTimeBucket(hour);
         const units = Math.abs(m.changeQty);
         const revenue = units * (m.product.retailPrice || 0);
-        
+
         // Product summaries
         const productKey = m.productId;
         if (!productSummaries.has(productKey)) {
@@ -2435,9 +2435,9 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
             unitsNight: 0
           });
         }
-        
+
         const summary = productSummaries.get(productKey);
-        
+
         if (m.type === 'sale') {
           summary.grossSales += revenue;
           summary.unitsSold += units;
@@ -2448,7 +2448,7 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
           summary.refunds += revenue;
           summary.refundUnits += units;
         }
-        
+
         // Category summaries
         const category = m.product.parentCategory || 'Uncategorized';
         if (!categorySummaries.has(category)) {
@@ -2467,7 +2467,7 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
         } else if (m.type === 'refund') {
           catSummary.refunds += revenue;
         }
-        
+
         // Brand summaries
         const brand = m.product.brand || 'Unknown';
         if (!brandSummaries.has(brand)) {
@@ -2485,7 +2485,7 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
           brandSummary.refunds += revenue;
         }
       });
-      
+
       // Insert product summaries
       for (const [productId, data] of productSummaries) {
         await context.entities.WeeklySalesSummary.upsert({
@@ -2533,7 +2533,7 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
           }
         });
       }
-      
+
       // Insert category summaries
       for (const [category, data] of categorySummaries) {
         await context.entities.WeeklyCategorySummary.upsert({
@@ -2563,7 +2563,7 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
           }
         });
       }
-      
+
       // Insert brand summaries
       for (const [brand, data] of brandSummaries) {
         await context.entities.WeeklyBrandSummary.upsert({
@@ -2592,13 +2592,13 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
         });
       }
     }
-    
+
     weeksProcessed++;
     currentWeek.setDate(currentWeek.getDate() + 7);
   }
-  
+
   console.log(`✅ Backfill complete! Processed ${weeksProcessed} weeks for ${stores.length} stores`);
-  
+
   // Invalidate cache after backfilling weekly summaries
   await invalidateCachePattern('cache:base:*');
   await invalidateCachePattern('cache:recent_sales:*');
@@ -2608,7 +2608,7 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
   await invalidateCachePattern('cache:rankings:*');
   await invalidateCachePattern('cache:sales_totals:*');
   await invalidateCachePattern('cache:products_paginated:*');
-  
+
   return {
     success: true,
     weeksProcessed,
@@ -2622,23 +2622,23 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
 
 export const updateBrandDistributors = async ({ brandName, distributorIds }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   // Create brand if it doesn't exist
   let brand = await context.entities.Brand.findUnique({
     where: { name: brandName }
   })
-  
+
   if (!brand) {
     brand = await context.entities.Brand.create({
       data: { name: brandName }
     })
   }
-  
+
   // Delete existing mappings
   await context.entities.BrandDistributor.deleteMany({
     where: { brandId: brand.id }
   })
-  
+
   // Create new mappings
   if (distributorIds && distributorIds.length > 0) {
     await context.entities.BrandDistributor.createMany({
@@ -2649,13 +2649,13 @@ export const updateBrandDistributors = async ({ brandName, distributorIds }, con
       }))
     })
   }
-  
+
   return { success: true }
 }
 
 export const createDistributor = async ({ name }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   return context.entities.Distributor.create({
     data: { name }
   })
@@ -2663,7 +2663,7 @@ export const createDistributor = async ({ name }, context) => {
 
 export const deleteDistributor = async ({ id }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   // Soft delete
   return context.entities.Distributor.update({
     where: { id },
@@ -2673,23 +2673,23 @@ export const deleteDistributor = async ({ id }, context) => {
 
 export const syncBrands = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   // Get all unique brands from ProductCatalog
   const products = await context.entities.ProductCatalog.findMany({
     where: { brand: { not: null } },
     select: { brand: true },
     distinct: ['brand']
   })
-  
+
   const uniqueBrands = [...new Set(products.map(p => p.brand).filter(Boolean))]
-  
+
   // Create Brand records for any that don't exist
   let created = 0
   for (const brandName of uniqueBrands) {
     const existing = await context.entities.Brand.findUnique({
       where: { name: brandName }
     })
-    
+
     if (!existing) {
       await context.entities.Brand.create({
         data: { name: brandName }
@@ -2697,13 +2697,13 @@ export const syncBrands = async (_args, context) => {
       created++
     }
   }
-  
+
   return { totalBrands: uniqueBrands.length, created }
 }
 
 export const seedDistributors = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   const distributors = [
     { name: 'Direct', sortOrder: 1 },
     { name: 'Open Fields', sortOrder: 2 },
@@ -2713,25 +2713,25 @@ export const seedDistributors = async (_args, context) => {
     { name: 'Valiant', sortOrder: 6 },
     { name: 'Lineage', sortOrder: 7 }
   ]
-  
+
   let created = 0
   for (const dist of distributors) {
     const existing = await context.entities.Distributor.findUnique({
       where: { name: dist.name }
     })
-    
+
     if (!existing) {
       await context.entities.Distributor.create({ data: dist })
       created++
     }
   }
-  
+
   return { created, total: distributors.length }
 }
 
 export const seedDefaultClassifications = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   const classifications = [
     { name: 'Sativa', displayOrder: 1 },
     { name: 'Hybrid', displayOrder: 2 },
@@ -2739,25 +2739,25 @@ export const seedDefaultClassifications = async (_args, context) => {
     { name: 'Blend', displayOrder: 4 },
     { name: 'CBD', displayOrder: 5 }
   ]
-  
+
   let created = 0
   for (const classification of classifications) {
     const existing = await context.entities.Classification.findUnique({
       where: { name: classification.name }
     })
-    
+
     if (!existing) {
       await context.entities.Classification.create({ data: classification })
       created++
     }
   }
-  
+
   return { created, total: classifications.length }
 }
 
 export const seedDefaultCategories = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   const categoriesData = [
     {
       name: 'Flower',
@@ -2888,15 +2888,15 @@ export const seedDefaultCategories = async (_args, context) => {
       ]
     }
   ]
-  
+
   let categoriesCreated = 0
   let subcategoriesCreated = 0
-  
+
   for (const categoryData of categoriesData) {
     let category = await context.entities.CategoryDefinition.findFirst({
       where: { name: categoryData.name }
     })
-    
+
     if (!category) {
       category = await context.entities.CategoryDefinition.create({
         data: {
@@ -2906,7 +2906,7 @@ export const seedDefaultCategories = async (_args, context) => {
       })
       categoriesCreated++
     }
-    
+
     // Create subcategories
     for (let i = 0; i < categoryData.subcategories.length; i++) {
       const subcatName = categoryData.subcategories[i]
@@ -2916,7 +2916,7 @@ export const seedDefaultCategories = async (_args, context) => {
           name: subcatName
         }
       })
-      
+
       if (!existing) {
         await context.entities.CategorySubcategory.create({
           data: {
@@ -2929,7 +2929,7 @@ export const seedDefaultCategories = async (_args, context) => {
       }
     }
   }
-  
+
   return {
     categoriesCreated,
     subcategoriesCreated,
@@ -2939,62 +2939,62 @@ export const seedDefaultCategories = async (_args, context) => {
 
 export const updateProductEnrichment = async ({ productId, updates }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   const product = await context.entities.ProductCatalog.findUnique({
     where: { id: productId }
   })
-  
+
   if (!product) { throw new HttpError(404, 'Product not found') }
-  
+
   // Track changes for audit trail
   const changes = []
   const data = {}
-  
+
   if (updates.thc !== undefined && updates.thc !== product.thc) {
     changes.push({ field: 'thc', oldValue: String(product.thc || ''), newValue: String(updates.thc || '') })
     data.thc = updates.thc
   }
-  
+
   if (updates.cbd !== undefined && updates.cbd !== product.cbd) {
     changes.push({ field: 'cbd', oldValue: String(product.cbd || ''), newValue: String(updates.cbd || '') })
     data.cbd = updates.cbd
   }
-  
+
   if (updates.cannabinoidProfile !== undefined) {
     changes.push({ field: 'cannabinoidProfile', oldValue: JSON.stringify(product.cannabinoidProfile || {}), newValue: JSON.stringify(updates.cannabinoidProfile || {}) })
     data.cannabinoidProfile = updates.cannabinoidProfile
   }
-  
+
   if (updates.classificationId !== undefined && updates.classificationId !== product.classificationId) {
     changes.push({ field: 'classificationId', oldValue: String(product.classificationId || ''), newValue: String(updates.classificationId || '') })
     data.classificationId = updates.classificationId
   }
-  
+
   if (updates.categoryDefinitionId !== undefined && updates.categoryDefinitionId !== product.categoryDefinitionId) {
     changes.push({ field: 'categoryDefinitionId', oldValue: String(product.categoryDefinitionId || ''), newValue: String(updates.categoryDefinitionId || '') })
     data.categoryDefinitionId = updates.categoryDefinitionId
   }
-  
+
   if (updates.subcategoryId !== undefined && updates.subcategoryId !== product.subcategoryId) {
     changes.push({ field: 'subcategoryId', oldValue: String(product.subcategoryId || ''), newValue: String(updates.subcategoryId || '') })
     data.subcategoryId = updates.subcategoryId
   }
-  
+
   if (updates.format !== undefined && updates.format !== product.format) {
     changes.push({ field: 'format', oldValue: product.format || '', newValue: updates.format || '' })
     data.format = updates.format
   }
-  
+
   if (updates.distributorId !== undefined && updates.distributorId !== product.distributorId) {
     changes.push({ field: 'distributorId', oldValue: String(product.distributorId || ''), newValue: String(updates.distributorId || '') })
     data.distributorId = updates.distributorId
   }
-  
+
   const updated = await context.entities.ProductCatalog.update({
     where: { id: productId },
     data
   })
-  
+
   // Create enrichment audit records
   for (const change of changes) {
     await context.entities.ProductEnrichment.create({
@@ -3007,7 +3007,7 @@ export const updateProductEnrichment = async ({ productId, updates }, context) =
       }
     })
   }
-  
+
   return updated
 }
 
@@ -3017,7 +3017,7 @@ export const updateProductCannabinoids = async ({ productId, thc, cbd, cannabino
 
 export const bulkUpdateProducts = async ({ productIds, updates }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   const results = []
   for (const productId of productIds) {
     try {
@@ -3027,19 +3027,19 @@ export const bulkUpdateProducts = async ({ productIds, updates }, context) => {
       results.push({ productId, success: false, error: error.message })
     }
   }
-  
+
   return { results, total: productIds.length, successful: results.filter(r => r.success).length }
 }
 
 export const createClassification = async ({ name, displayOrder }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   const existing = await context.entities.Classification.findUnique({
     where: { name }
   })
-  
+
   if (existing) { throw new HttpError(400, 'Classification already exists') }
-  
+
   return await context.entities.Classification.create({
     data: {
       name,
@@ -3050,12 +3050,12 @@ export const createClassification = async ({ name, displayOrder }, context) => {
 
 export const updateClassification = async ({ id, name, displayOrder, isActive }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   const data = {}
   if (name !== undefined) data.name = name
   if (displayOrder !== undefined) data.displayOrder = displayOrder
   if (isActive !== undefined) data.isActive = isActive
-  
+
   return await context.entities.Classification.update({
     where: { id },
     data
@@ -3064,7 +3064,7 @@ export const updateClassification = async ({ id, name, displayOrder, isActive },
 
 export const deleteClassification = async ({ id }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   // Soft delete
   return await context.entities.Classification.update({
     where: { id },
@@ -3074,7 +3074,7 @@ export const deleteClassification = async ({ id }, context) => {
 
 export const createCategoryDefinition = async ({ name, displayOrder }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   return await context.entities.CategoryDefinition.create({
     data: {
       name,
@@ -3085,12 +3085,12 @@ export const createCategoryDefinition = async ({ name, displayOrder }, context) 
 
 export const updateCategoryDefinition = async ({ id, name, displayOrder, isActive }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   const data = {}
   if (name !== undefined) data.name = name
   if (displayOrder !== undefined) data.displayOrder = displayOrder
   if (isActive !== undefined) data.isActive = isActive
-  
+
   return await context.entities.CategoryDefinition.update({
     where: { id },
     data
@@ -3099,7 +3099,7 @@ export const updateCategoryDefinition = async ({ id, name, displayOrder, isActiv
 
 export const deleteCategoryDefinition = async ({ id }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   // Soft delete
   return await context.entities.CategoryDefinition.update({
     where: { id },
@@ -3109,7 +3109,7 @@ export const deleteCategoryDefinition = async ({ id }, context) => {
 
 export const createSubcategory = async ({ categoryId, name, displayOrder }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   return await context.entities.CategorySubcategory.create({
     data: {
       categoryId,
@@ -3121,12 +3121,12 @@ export const createSubcategory = async ({ categoryId, name, displayOrder }, cont
 
 export const updateSubcategory = async ({ id, name, displayOrder, isActive }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   const data = {}
   if (name !== undefined) data.name = name
   if (displayOrder !== undefined) data.displayOrder = displayOrder
   if (isActive !== undefined) data.isActive = isActive
-  
+
   return await context.entities.CategorySubcategory.update({
     where: { id },
     data
@@ -3135,7 +3135,7 @@ export const updateSubcategory = async ({ id, name, displayOrder, isActive }, co
 
 export const deleteSubcategory = async ({ id }, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   // Soft delete
   return await context.entities.CategorySubcategory.update({
     where: { id },
@@ -3145,9 +3145,9 @@ export const deleteSubcategory = async ({ id }, context) => {
 
 export const syncProductCategoriesToDefinitions = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   console.log('🔄 Starting category sync...');
-  
+
   // Get all category definitions for lookup (case-insensitive matching)
   const allCategoryDefs = await context.entities.CategoryDefinition.findMany({
     where: { isActive: true },
@@ -3157,11 +3157,11 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
       }
     }
   });
-  
+
   // Create lookup maps with normalization and aliases
   const categoryMap = new Map();
   const subcategoryMap = new Map();
-  
+
   // Comprehensive category name normalization
   const normalizeCategoryName = (name) => {
     if (!name) return '';
@@ -3169,7 +3169,7 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
       .replace(/\s+/g, ' ') // Normalize whitespace
       .replace(/[^\w\s-]/g, ''); // Remove special chars except hyphens and spaces
   };
-  
+
   // Comprehensive CSV to CategoryDefinition mapping
   // Maps CSV category names (from inventory export) to CategoryDefinition names
   const csvCategoryMapping = {
@@ -3178,17 +3178,17 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
     'vape concentrate': 'vapes',
     'vapes': 'vapes',
     'vpt vaping accessories': 'accessories',
-    
+
     // Pre-roll variations - all map to "Pre-rolls"
     'pre-roll': 'pre-rolls',
     'pre-rolls': 'pre-rolls',
     'preroll': 'pre-rolls',
     'prerolls': 'pre-rolls',
-    
+
     // Extract/Oil variations
     'oils': 'extracts',
     'extracts': 'extracts',
-    
+
     // Direct matches
     'accessories': 'accessories',
     'seeds': 'seeds',
@@ -3199,14 +3199,14 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
     'concentrates': 'concentrates',
     'teas': 'beverages', // Teas are beverages
   };
-  
+
   // Build category map with all variations
   allCategoryDefs.forEach(cat => {
     const normalizedName = normalizeCategoryName(cat.name);
-    
+
     // Store direct match
     categoryMap.set(normalizedName, cat);
-    
+
     // Store plural/singular variations
     if (normalizedName.endsWith('s')) {
       const singular = normalizedName.slice(0, -1);
@@ -3215,31 +3215,31 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
       const plural = normalizedName + 's';
       categoryMap.set(plural, cat);
     }
-    
+
     // Store all CSV mappings that point to this category
     Object.entries(csvCategoryMapping).forEach(([csvName, defName]) => {
       if (normalizeCategoryName(defName) === normalizedName) {
         categoryMap.set(csvName, cat);
       }
     });
-    
+
     cat.subcategories.forEach(sub => {
       const subKey = `${cat.id}:${normalizeCategoryName(sub.name)}`;
       subcategoryMap.set(subKey, sub);
     });
   });
-  
+
   // Fuzzy matching function for categories
   const findBestCategoryMatch = (csvCategoryName) => {
     if (!csvCategoryName) return null;
-    
+
     const normalized = normalizeCategoryName(csvCategoryName);
-    
+
     // Step 1: Try exact match first
     if (categoryMap.has(normalized)) {
       return categoryMap.get(normalized);
     }
-    
+
     // Step 2: Try the explicit mapping table
     if (csvCategoryMapping[normalized]) {
       const mappedName = normalizeCategoryName(csvCategoryMapping[normalized]);
@@ -3247,18 +3247,18 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
         return categoryMap.get(mappedName);
       }
     }
-    
+
     // Step 3: Try removing spaces for matching (e.g., "pre-roll" vs "pre roll")
     const noSpaces = normalized.replace(/\s+/g, '');
     if (categoryMap.has(noSpaces)) {
       return categoryMap.get(noSpaces);
     }
-    
+
     // Step 4: Try fuzzy matching - check if any category name contains the CSV name or vice versa
     for (const [key, category] of categoryMap.entries()) {
       const keyNoSpaces = key.replace(/\s+/g, '');
       const normalizedNoSpaces = normalized.replace(/\s+/g, '');
-      
+
       // Check if one contains the other (case-insensitive substring match)
       if (normalizedNoSpaces.includes(keyNoSpaces) || keyNoSpaces.includes(normalizedNoSpaces)) {
         // Only match if similarity is reasonable (at least 50% of the shorter string)
@@ -3269,15 +3269,15 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
         }
       }
     }
-    
+
     return null;
   };
-  
+
   console.log(`📊 Found ${allCategoryDefs.length} category definitions with ${subcategoryMap.size} subcategories`);
   console.log(`📋 Category definitions:`, allCategoryDefs.map(c => c.name).join(', '));
   console.log(`🗺️  Category map size: ${categoryMap.size}`);
   console.log(`🔍 Sample category map keys:`, Array.from(categoryMap.keys()).slice(0, 10).join(', '));
-  
+
   const products = await context.entities.ProductCatalog.findMany({
     where: {
       OR: [
@@ -3293,41 +3293,41 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
       subcategory: true
     }
   });
-  
+
   console.log(`📦 Found ${products.length} products to sync`);
-  
+
   let synced = 0;
   let categoryMatched = 0;
   let categoryNotFound = 0;
   let subcategoryMatched = 0;
   let subcategoryNotFound = 0;
-  
+
   // Collect unique category names for debugging
   const uniqueCategories = new Set();
-  
+
   for (const product of products) {
     if (product.parentCategory) {
       uniqueCategories.add(product.parentCategory);
       // Use fuzzy matching
       const categoryDef = findBestCategoryMatch(product.parentCategory);
-      
+
       // Debug first few matches
       if (categoryNotFound < 5) {
         const normalized = normalizeCategoryName(product.parentCategory);
         console.log(`🔍 Trying to match: "${product.parentCategory}" -> normalized: "${normalized}"`);
         console.log(`   Found match: ${categoryDef ? categoryDef.name : 'NO MATCH'}`);
       }
-      
+
       if (categoryDef) {
         const updateData = { categoryDefinitionId: categoryDef.id };
         categoryMatched++;
-        
+
         if (product.subcategory) {
           // Normalize subcategory name for matching
           const normalizedSubcategory = normalizeCategoryName(product.subcategory);
           const subKey = `${categoryDef.id}:${normalizedSubcategory}`;
           const subcategoryDef = subcategoryMap.get(subKey);
-          
+
           if (subcategoryDef) {
             updateData.subcategoryId = subcategoryDef.id;
             subcategoryMatched++;
@@ -3336,7 +3336,7 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
             console.log(`  ⚠️ Subcategory not found: "${product.subcategory}" for category "${categoryDef.name}" (product: ${product.name})`);
           }
         }
-        
+
         await context.entities.ProductCatalog.update({
           where: { id: product.id },
           data: updateData
@@ -3348,7 +3348,7 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
       }
     }
   }
-  
+
   console.log(`✅ Category sync complete:`);
   console.log(`   - Categories matched: ${categoryMatched}`);
   console.log(`   - Categories not found: ${categoryNotFound}`);
@@ -3356,9 +3356,9 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
   console.log(`   - Subcategories not found: ${subcategoryNotFound}`);
   console.log(`   - Total synced: ${synced}/${products.length}`);
   console.log(`📊 Unique categories in products:`, Array.from(uniqueCategories).slice(0, 20).join(', '));
-  
-  return { 
-    synced, 
+
+  return {
+    synced,
     total: products.length,
     categoryMatched,
     categoryNotFound,
@@ -3369,9 +3369,9 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
 
 export const syncProductClassifications = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   console.log('🔄 Starting classification sync for all products...')
-  
+
   // Get all classifications for lookup
   const classifications = await context.entities.Classification.findMany({
     where: { isActive: true }
@@ -3380,7 +3380,7 @@ export const syncProductClassifications = async (_args, context) => {
   classifications.forEach(c => {
     classificationMap.set(c.name.toLowerCase(), c.id)
   })
-  
+
   // Get all products with strainType but no classificationId
   const products = await context.entities.ProductCatalog.findMany({
     where: {
@@ -3394,21 +3394,21 @@ export const syncProductClassifications = async (_args, context) => {
       strainType: true
     }
   })
-  
+
   console.log(`📦 Found ${products.length} products to sync`)
-  
+
   let synced = 0
   let skipped = 0
-  
+
   // Process in chunks
   const chunkSize = 100
   for (let i = 0; i < products.length; i += chunkSize) {
     const chunk = products.slice(i, i + chunkSize)
-    
+
     await Promise.all(chunk.map(async (product) => {
       if (product.strainType && product.strainType !== 'N/A') {
         const classificationId = classificationMap.get(product.strainType.toLowerCase())
-        
+
         if (classificationId) {
           await context.entities.ProductCatalog.update({
             where: { id: product.id },
@@ -3422,12 +3422,12 @@ export const syncProductClassifications = async (_args, context) => {
         skipped++
       }
     }))
-    
+
     console.log(`Progress: ${Math.min(i + chunkSize, products.length)}/${products.length}`)
   }
-  
+
   console.log(`✅ Classification sync complete: ${synced} synced, ${skipped} skipped`)
-  
+
   return {
     totalProducts: products.length,
     synced,
@@ -3437,21 +3437,21 @@ export const syncProductClassifications = async (_args, context) => {
 
 export const syncAllProductEnrichments = async (args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   console.log('🔄 Starting comprehensive product enrichment sync...')
-  
+
   // Sync classifications
   const classificationResult = await syncProductClassifications(args, context)
-  
+
   // Sync categories
   const categoryResult = await syncProductCategoriesToDefinitions(args, context)
-  
+
   console.log('\n📊 Enrichment Sync Summary:');
   console.log(`   Classifications: ${classificationResult.synced} synced`);
   console.log(`   Categories: ${categoryResult.synced} synced (${categoryResult.categoryMatched} matched, ${categoryResult.categoryNotFound} not found)`);
   console.log(`   Subcategories: ${categoryResult.subcategoryMatched} matched, ${categoryResult.subcategoryNotFound} not found`);
   console.log(`   Total: ${classificationResult.synced + categoryResult.synced} products updated\n`);
-  
+
   return {
     classifications: classificationResult,
     categories: categoryResult,
@@ -3461,9 +3461,9 @@ export const syncAllProductEnrichments = async (args, context) => {
 
 export const configureS3CORS = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   console.log('🔧 Configuring CORS on S3 bucket...')
-  
+
   try {
     await configureBucketCORS()
     return { success: true, message: 'CORS configured successfully' }
@@ -3475,16 +3475,16 @@ export const configureS3CORS = async (_args, context) => {
 
 export const migrateProductImages = async (args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   console.log('🖼️ Starting product image migration...')
-  
+
   const batchSize = args?.batchSize || 10
-  
+
   try {
     const results = await migrateAllProductImages(context, batchSize)
-    
+
     console.log(`✅ Image migration complete: ${results.migrated.length} migrated, ${results.failed.length} failed, ${results.skipped.length} skipped`)
-    
+
     return {
       migrated: results.migrated.length,
       failed: results.failed.length,
@@ -3503,11 +3503,11 @@ export const migrateProductImages = async (args, context) => {
 
 export const checkS3Storage = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   try {
     const { listS3Objects } = await import('./services/imageMigration.js')
     const result = await listS3Objects('productimages/', 1000)
-    
+
     return {
       objectCount: result.count,
       sampleObjects: result.objects.slice(0, 20).map(obj => ({
@@ -3526,30 +3526,30 @@ export const checkS3Storage = async (_args, context) => {
 
 export const checkImageMigrationStatus = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   try {
     const stats = await context.entities.ProductCatalog.groupBy({
       by: ['imageMigrationStatus'],
       _count: { id: true }
     })
-    
+
     const totalWithImages = await context.entities.ProductCatalog.count({
       where: { imageUrl: { not: null } }
     })
-    
+
     const migrated = await context.entities.ProductCatalog.count({
       where: { imageMigrationStatus: 'MIGRATED' }
     })
-    
+
     const withS3Paths = await context.entities.ProductCatalog.count({
-      where: { 
+      where: {
         OR: [
           { imageStoragePath: { not: null } },
           { imageThumbnailPath: { not: null } }
         ]
       }
     })
-    
+
     return {
       totalWithImages,
       migrated,
@@ -3572,40 +3572,40 @@ export const checkImageMigrationStatus = async (_args, context) => {
  */
 export const cleanupOctoberNovember2025 = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-  
+
   const startTime = Date.now();
   const ts = () => new Date().toISOString().split('T')[1].split('.')[0];
-  
+
   console.log(`\n[${ts()}] 🧹 STARTING CLEANUP: October & November 2025`);
-  
+
   try {
     // Date range: October 1, 2025 to November 30, 2025
     const startDate = new Date('2025-10-01T00:00:00.000Z');
     const endDate = new Date('2025-11-30T23:59:59.999Z');
-    
+
     // Calculate week boundaries for summary tables
     // Week start is Monday, so we need to include weeks that overlap with Oct-Nov
     // Oct 1, 2025 is a Wednesday, so the week starts Sept 29, 2025
     // Nov 30, 2025 is a Sunday, so the week ends Dec 1, 2025
     const weekStartDate = new Date('2025-09-29T00:00:00.000Z'); // Monday before Oct 1
     const weekEndDate = new Date('2025-12-02T00:00:00.000Z'); // Monday after Nov 30
-    
+
     console.log(`[${ts()}] Date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
     console.log(`[${ts()}] Week range: ${weekStartDate.toISOString().split('T')[0]} to ${weekEndDate.toISOString().split('T')[0]}`);
-    
+
     // Get user's store IDs
     const userStores = await context.entities.Store.findMany({
       where: { userId: context.user.id },
       select: { id: true }
     });
-    
+
     if (userStores.length === 0) {
       throw new HttpError(400, 'No stores found for user');
     }
-    
+
     const storeIds = userStores.map(s => s.id);
     console.log(`[${ts()}] Processing ${storeIds.length} stores...`);
-    
+
     // 1. Delete InventoryMovement records
     console.log(`[${ts()}] Step 1/5: Deleting InventoryMovement records...`);
     const movementDeleteResult = await context.entities.InventoryMovement.deleteMany({
@@ -3615,7 +3615,7 @@ export const cleanupOctoberNovember2025 = async (_args, context) => {
       }
     });
     console.log(`[${ts()}] ✓ Deleted ${movementDeleteResult.count} InventoryMovement records`);
-    
+
     // 2. Delete WeeklySalesSummary records
     console.log(`[${ts()}] Step 2/5: Deleting WeeklySalesSummary records...`);
     const weeklySalesDeleteResult = await context.entities.WeeklySalesSummary.deleteMany({
@@ -3625,7 +3625,7 @@ export const cleanupOctoberNovember2025 = async (_args, context) => {
       }
     });
     console.log(`[${ts()}] ✓ Deleted ${weeklySalesDeleteResult.count} WeeklySalesSummary records`);
-    
+
     // 3. Delete WeeklyCategorySummary records
     console.log(`[${ts()}] Step 3/5: Deleting WeeklyCategorySummary records...`);
     const weeklyCategoryDeleteResult = await context.entities.WeeklyCategorySummary.deleteMany({
@@ -3635,7 +3635,7 @@ export const cleanupOctoberNovember2025 = async (_args, context) => {
       }
     });
     console.log(`[${ts()}] ✓ Deleted ${weeklyCategoryDeleteResult.count} WeeklyCategorySummary records`);
-    
+
     // 4. Delete WeeklyBrandSummary records
     console.log(`[${ts()}] Step 4/5: Deleting WeeklyBrandSummary records...`);
     const weeklyBrandDeleteResult = await context.entities.WeeklyBrandSummary.deleteMany({
@@ -3645,7 +3645,7 @@ export const cleanupOctoberNovember2025 = async (_args, context) => {
       }
     });
     console.log(`[${ts()}] ✓ Deleted ${weeklyBrandDeleteResult.count} WeeklyBrandSummary records`);
-    
+
     // 5. Delete InventorySnapshot records from that period (optional but helpful)
     console.log(`[${ts()}] Step 5/5: Deleting InventorySnapshot records...`);
     const snapshotDeleteResult = await context.entities.InventorySnapshot.deleteMany({
@@ -3655,7 +3655,7 @@ export const cleanupOctoberNovember2025 = async (_args, context) => {
       }
     });
     console.log(`[${ts()}] ✓ Deleted ${snapshotDeleteResult.count} InventorySnapshot records`);
-    
+
     // Invalidate all caches
     console.log(`[${ts()}] Invalidating caches...`);
     await invalidateCachePattern('cache:base:*');
@@ -3668,7 +3668,7 @@ export const cleanupOctoberNovember2025 = async (_args, context) => {
     await invalidateCachePattern('cache:products_paginated:*');
     await invalidateCachePattern('cache:purchase_orders:*');
     await invalidateCachePattern('cache:rankings:*');
-    
+
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`\n[${ts()}] ✅ CLEANUP COMPLETE!`);
     console.log(`[${ts()}] 📊 Total time: ${duration}s`);
@@ -3678,7 +3678,7 @@ export const cleanupOctoberNovember2025 = async (_args, context) => {
     console.log(`[${ts()}]   - WeeklyCategorySummary: ${weeklyCategoryDeleteResult.count}`);
     console.log(`[${ts()}]   - WeeklyBrandSummary: ${weeklyBrandDeleteResult.count}`);
     console.log(`[${ts()}]   - InventorySnapshots: ${snapshotDeleteResult.count}\n`);
-    
+
     return {
       success: true,
       deleted: {
@@ -3695,7 +3695,7 @@ export const cleanupOctoberNovember2025 = async (_args, context) => {
       duration: parseFloat(duration),
       message: `Successfully deleted ${movementDeleteResult.count} movements and related summary data for October-November 2025`
     };
-    
+
   } catch (error) {
     console.error(`[${ts()}] ❌ Cleanup failed:`, error.message);
     throw new HttpError(500, `Cleanup failed: ${error.message}`);
@@ -3984,4 +3984,132 @@ export const exportProductActions = async ({ status = 'ACTIVE', actionType }, co
   } catch (error) {
     throw new HttpError(500, `Failed to export product actions: ${error.message}`);
   }
+};
+
+// ============================================================================
+// POS Account Management
+// ============================================================================
+
+import { encrypt, decrypt } from './server/encryption.js';
+
+/**
+ * Create a new POS account with encrypted credentials
+ */
+export const createPOSAccount = async ({ name, posType, username, password, loginUrl }, context) => {
+  if (!context.user) { throw new HttpError(401); }
+
+  try {
+    const encryptedUsername = encrypt(username);
+    const encryptedPassword = encrypt(password);
+
+    const account = await context.entities.POSAccount.create({
+      data: {
+        userId: context.user.id,
+        name,
+        posType,
+        username: encryptedUsername,
+        password: encryptedPassword,
+        loginUrl: loginUrl || null
+      }
+    });
+
+    console.log(`✅ Created POS account: ${name} (${posType})`);
+    return { id: account.id, name: account.name, posType: account.posType };
+  } catch (error) {
+    console.error('Failed to create POS account:', error);
+    throw new HttpError(500, `Failed to create POS account: ${error.message}`);
+  }
+};
+
+/**
+ * Update an existing POS account
+ */
+export const updatePOSAccount = async ({ id, name, posType, username, password, loginUrl }, context) => {
+  if (!context.user) { throw new HttpError(401); }
+
+  const account = await context.entities.POSAccount.findUnique({
+    where: { id }
+  });
+
+  if (!account || account.userId !== context.user.id) {
+    throw new HttpError(403, 'Not authorized to update this account');
+  }
+
+  const updateData = {
+    name,
+    posType,
+    loginUrl: loginUrl || null
+  };
+
+  // Only encrypt and update credentials if provided
+  if (username) {
+    updateData.username = encrypt(username);
+  }
+  if (password) {
+    updateData.password = encrypt(password);
+  }
+
+  await context.entities.POSAccount.update({
+    where: { id },
+    data: updateData
+  });
+
+  console.log(`✅ Updated POS account: ${name}`);
+  return { success: true };
+};
+
+/**
+ * Delete a POS account
+ */
+export const deletePOSAccount = async ({ id }, context) => {
+  if (!context.user) { throw new HttpError(401); }
+
+  const account = await context.entities.POSAccount.findUnique({
+    where: { id }
+  });
+
+  if (!account || account.userId !== context.user.id) {
+    throw new HttpError(403, 'Not authorized to delete this account');
+  }
+
+  await context.entities.POSAccount.delete({
+    where: { id }
+  });
+
+  console.log(`✅ Deleted POS account: ${account.name}`);
+  return { success: true };
+};
+
+/**
+ * Link a store to a POS account
+ */
+export const linkStoreToPOSAccount = async ({ storeId, posAccountId, externalStoreId }, context) => {
+  if (!context.user) { throw new HttpError(401); }
+
+  const store = await context.entities.Store.findUnique({
+    where: { id: storeId }
+  });
+
+  if (!store || store.userId !== context.user.id) {
+    throw new HttpError(403, 'Not authorized to update this store');
+  }
+
+  const account = await context.entities.POSAccount.findUnique({
+    where: { id: posAccountId }
+  });
+
+  if (!account || account.userId !== context.user.id) {
+    throw new HttpError(403, 'Not authorized to use this POS account');
+  }
+
+  await context.entities.Store.update({
+    where: { id: storeId },
+    data: {
+      posAccountId,
+      externalStoreId: externalStoreId || null
+    }
+  });
+
+  console.log(`✅ Linked store ${store.name} to POS account ${account.name}`);
+  return { success: true };
 };
