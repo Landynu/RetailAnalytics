@@ -1910,6 +1910,38 @@ export const exportAnalyticsData = async ({ storeIds, filters }, context) => {
   };
 };
 
+/**
+ * Clear analytics-related caches to force fresh data on next query
+ * This clears: rankings, sales totals, sparklines, and other computed metrics
+ * Does NOT clear base product data or historical imports
+ */
+export const clearAnalyticsCache = async (_args, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  console.log(`[CACHE] Clearing analytics caches for user ${context.user.id}`);
+
+  // Clear all analytics-related caches
+  const patterns = [
+    'cache:base:rankings*',      // 14-day rankings data
+    'cache:base:sales_totals*',  // Sales aggregations
+    'cache:sparklines*',         // Trend sparklines
+    'cache:recent_sales*',       // Recent sales movements
+    'cache:older_sales*',        // Historical sales data
+    'cache:brands_distributors*' // Brand/distributor lists
+  ];
+
+  let totalDeleted = 0;
+  for (const pattern of patterns) {
+    const deleted = await invalidateCachePattern(pattern);
+    totalDeleted += deleted;
+    console.log(`[CACHE] Cleared ${deleted} keys matching: ${pattern}`);
+  }
+
+  console.log(`[CACHE] Total analytics cache keys cleared: ${totalDeleted}`);
+
+  return { success: true, keysCleared: totalDeleted };
+};
+
 export const toggleStoreActive = async ({ storeId }, context) => {
   if (!context.user) { throw new HttpError(401) }
 

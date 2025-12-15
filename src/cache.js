@@ -442,7 +442,7 @@ export async function warmOrderingAnalyticsCache(context, storeIds, startDate, e
     const currentWeekStart = new Date(today);
     currentWeekStart.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
     currentWeekStart.setHours(0, 0, 0, 0);
-    
+
     // Base product where (no user filters)
     const productIdsWithRecentSales = await context.entities.WeeklySalesSummary.findMany({
       where: {
@@ -474,8 +474,7 @@ export async function warmOrderingAnalyticsCache(context, storeIds, startDate, e
       allProductIdsForRankings,
       weeklySalesData,
       movementSalesData,
-      allPOs,
-      allRankingsSalesData
+      allPOs
     ] = await Promise.all([
       // All products matching base filter (unfiltered)
       context.entities.ProductCatalog.findMany({
@@ -487,10 +486,20 @@ export async function warmOrderingAnalyticsCache(context, storeIds, startDate, e
           }
         }
       }),
-      // All product IDs for rankings
+      // All product IDs for rankings (with fields needed for Power BI conditional grouping)
       context.entities.ProductCatalog.findMany({
         where: baseProductWhere,
-        select: { id: true, subcategory: true }
+        select: {
+          id: true,
+          subcategory: true,
+          parentCategory: true,
+          format: true,
+          strainType: true,
+          stockLevels: {
+            where: { storeId: { in: storeIds } },
+            select: { quantity: true }
+          }
+        }
       }),
       // Weekly sales summaries (complete weeks)
       context.entities.WeeklySalesSummary.findMany({
@@ -522,15 +531,6 @@ export async function warmOrderingAnalyticsCache(context, storeIds, startDate, e
         },
         select: { productId: true, date: true, changeQty: true },
         orderBy: { date: 'desc' }
-      }),
-      // Rankings data (all products)
-      context.entities.WeeklySalesSummary.groupBy({
-        by: ['productId'],
-        where: {
-          storeId: { in: storeIds },
-          weekStart: { gte: weekBoundaries.start, lt: currentWeekStart }
-        },
-        _sum: { unitsSold: true }
       })
     ]);
     
@@ -545,12 +545,20 @@ export async function warmOrderingAnalyticsCache(context, storeIds, startDate, e
     });
     await setCached(baseProductsKey, allProducts, 3600, 'base:products'); // 1 hour TTL
     
-    // Cache rankings products
+    // Cache rankings products (transform to include computed totalInventory)
     const baseRankingsProductsKey = generateCacheKey('base:rankings_products', {
       storeIds: storeIdsKey,
       includeHidden: includeHiddenCategories
     });
-    await setCached(baseRankingsProductsKey, allProductIdsForRankings, 3600, 'base:rankings_products');
+    const transformedRankingsProducts = allProductIdsForRankings.map(p => ({
+      id: p.id,
+      subcategory: p.subcategory,
+      parentCategory: p.parentCategory,
+      format: p.format,
+      strainType: p.strainType,
+      totalInventory: p.stockLevels ? p.stockLevels.reduce((sum, sl) => sum + sl.quantity, 0) : 0
+    }));
+    await setCached(baseRankingsProductsKey, transformedRankingsProducts, 3600, 'base:rankings_products');
     
     // Process and cache sales totals
     const salesMap = new Map();
@@ -628,21 +636,7 @@ export async function warmOrderingAnalyticsCache(context, storeIds, startDate, e
         ])
       )
     }, 3600, 'base:purchase_orders');
-    
-    // Cache rankings
-    const rankingsSalesMap = new Map();
-    allRankingsSalesData.forEach(item => {
-      rankingsSalesMap.set(item.productId, item._sum.unitsSold || 0);
-    });
-    
-    const baseRankingsKey = generateCacheKey('base:rankings', {
-      storeIds: storeIdsKey,
-      dateRange: `${weekBoundaries.start.toISOString().split('T')[0]}_${currentWeekStart.toISOString().split('T')[0]}`
-    });
-    await setCached(baseRankingsKey, {
-      rankingsSalesMap: Object.fromEntries(rankingsSalesMap)
-    }, 3600, 'base:rankings');
-    
+
     const warmDuration = Date.now() - warmStartTime;
     console.log(`[CACHE] ✅ Cache warm complete: ${warmDuration}ms | Products: ${allProducts.length} | Sales: ${salesMap.size} | POs: ${lastPOMap.size}`);
     

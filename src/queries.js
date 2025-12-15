@@ -1543,14 +1543,32 @@ export const getOrderingAnalytics = async ({
 
   if (baseProducts) {
     // Load from cache - rankings products already loaded in parallel
-    allProductIdsForRankings = cachedRankingsProducts || baseProducts.map(p => ({ id: p.id, subcategory: p.subcategory }));
+    // Include parentCategory, format, strainType, and inventory for Power BI-style conditional ranking
+    allProductIdsForRankings = cachedRankingsProducts || baseProducts.map(p => ({
+      id: p.id,
+      subcategory: p.subcategory,
+      parentCategory: p.parentCategory,
+      format: p.format,
+      strainType: p.strainType,
+      totalInventory: p.stockLevels ? p.stockLevels.reduce((sum, sl) => sum + sl.quantity, 0) : 0
+    }));
   } else {
     // Base cache miss - fetch all products (unfiltered) and cache them
     const dbResults = await Promise.all([
       timedQuery('all_product_ids_rankings', () =>
         context.entities.ProductCatalog.findMany({
           where: baseProductWhere,
-          select: { id: true, subcategory: true }
+          select: {
+            id: true,
+            subcategory: true,
+            parentCategory: true,
+            format: true,
+            strainType: true,
+            stockLevels: {
+              where: { storeId: { in: storeIdList } },
+              select: { quantity: true }
+            }
+          }
         }), { stores: storeIdList.length }
       ),
       timedQuery('base_products', () =>
@@ -1566,7 +1584,15 @@ export const getOrderingAnalytics = async ({
       )
     ]);
 
-    allProductIdsForRankings = dbResults[0];
+    // Transform raw DB results to include computed totalInventory
+    allProductIdsForRankings = dbResults[0].map(p => ({
+      id: p.id,
+      subcategory: p.subcategory,
+      parentCategory: p.parentCategory,
+      format: p.format,
+      strainType: p.strainType,
+      totalInventory: p.stockLevels ? p.stockLevels.reduce((sum, sl) => sum + sl.quantity, 0) : 0
+    }));
     baseProducts = dbResults[1];
 
     // Cache base products for future use (non-blocking)
@@ -1624,15 +1650,11 @@ export const getOrderingAnalytics = async ({
     storeIds: storeIdsKey
   });
 
-  const baseRankingsKey = generateCacheKey('base:rankings', {
-    storeIds: storeIdsKey,
-    dateRange: `${weekBoundaries.start.toISOString().split('T')[0]}_${currentWeekStart.toISOString().split('T')[0]}`
-  });
-
-  // Parallelize cache checks for base sales_totals, purchase_orders, and rankings using batch
-  const [cachedBaseSales, cachedBasePOs, cachedBaseRankings] = await getCachedBatch(
-    [baseSalesTotalsKey, basePOsKey, baseRankingsKey],
-    ['base:sales_totals', 'base:purchase_orders', 'base:rankings']
+  // Parallelize cache checks for base sales_totals and purchase_orders
+  // Rankings now use salesMap directly (same date range as UI), no separate rankings cache needed
+  const [cachedBaseSales, cachedBasePOs] = await getCachedBatch(
+    [baseSalesTotalsKey, basePOsKey],
+    ['base:sales_totals', 'base:purchase_orders']
   );
 
   // If cached purchase orders exist but are empty, treat as cache miss to force refresh
@@ -1642,7 +1664,6 @@ export const getOrderingAnalytics = async ({
   let weeklySalesData = null;
   let movementSalesTotals = null;
   let allPOs = null;
-  let allRankingsSalesData = null;
 
   if (cachedBaseSales) {
     // Reconstruct base salesMap from cache, then filter to only include filtered products
@@ -1687,9 +1708,10 @@ export const getOrderingAnalytics = async ({
     // Need to fetch from database - but we need ALL products, not just filtered ones
     // Fetch base data for all products matching baseProductWhere
 
-    // Parallelize ALL base data queries: sales, purchase orders, and rankings
+    // Parallelize ALL base data queries: sales and purchase orders
     // Note: Purchase orders already fetched above if cache was invalid
-    const [salesQueryResults, freshPOs, allRankingsSalesData] = await Promise.all([
+    // Note: Rankings data fetched separately above
+    const [salesQueryResults, freshPOs] = await Promise.all([
       // Sales queries (weekly + movements)
       Promise.all([
         // Get sales totals from WeeklySalesSummary (complete weeks only, exclude current incomplete week)
@@ -1732,19 +1754,7 @@ export const getOrderingAnalytics = async ({
           select: { productId: true, date: true, changeQty: true },
           orderBy: { date: 'desc' }
         }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
-      ) : Promise.resolve([])),
-      // Rankings sales (independent, can run in parallel)
-      allBaseProductIds.length > 0 ? timedQuery('rankings_sales', () =>
-        context.entities.WeeklySalesSummary.groupBy({
-          by: ['productId'],
-          where: {
-            storeId: { in: storeIdList },
-            productId: { in: allBaseProductIds },
-            weekStart: { gte: weekBoundaries.start, lt: currentWeekStart }
-          },
-          _sum: { unitsSold: true }
-        }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
-      ) : Promise.resolve([])
+      ) : Promise.resolve([]))
     ]);
 
     // Destructure sales results
@@ -2002,70 +2012,6 @@ export const getOrderingAnalytics = async ({
   }
   olderSaleData = olderSaleData || [];
 
-  // Process rankings data (from base cache)
-  let rankingsSalesMap = new Map();
-
-  if (cachedBaseRankings) {
-    // Reconstruct base rankingsSalesMap from cache, then filter to filtered products
-    const baseRankingsSalesMap = new Map();
-    if (cachedBaseRankings.rankingsSalesMap) {
-      Object.entries(cachedBaseRankings.rankingsSalesMap).forEach(([productId, sales]) => {
-        baseRankingsSalesMap.set(parseInt(productId), sales);
-      });
-    }
-
-    // Filter to only include filtered products
-    allFilteredProductIds.forEach(productId => {
-      if (baseRankingsSalesMap.has(productId)) {
-        rankingsSalesMap.set(productId, baseRankingsSalesMap.get(productId));
-      }
-    });
-  } else {
-    // Build rankings from base salesMap we already have (much faster than querying DB)
-    // The salesMap contains all base products with their sales totals
-    const baseRankingsSalesMap = new Map();
-
-    // Reconstruct base salesMap from cache if available, otherwise use what we built
-    let fullBaseSalesMap = null;
-    if (cachedBaseSales && cachedBaseSales.salesMap) {
-      fullBaseSalesMap = new Map();
-      Object.entries(cachedBaseSales.salesMap).forEach(([productId, sales]) => {
-        fullBaseSalesMap.set(parseInt(productId), sales);
-      });
-    } else if (salesMap && allRankingsSalesData) {
-      // Rankings sales data already fetched in parallel above with sales queries
-      // Use the data we already have
-
-      allRankingsSalesData.forEach(item => {
-        baseRankingsSalesMap.set(item.productId, item._sum.unitsSold || 0);
-      });
-    }
-
-    // If we have fullBaseSalesMap from cache, use it
-    if (fullBaseSalesMap) {
-      fullBaseSalesMap.forEach((sales, productId) => {
-        baseRankingsSalesMap.set(productId, sales.totalSales || 0);
-      });
-    }
-
-    // Cache the base rankingsSalesMap (non-blocking)
-    if (baseRankingsSalesMap.size > 0) {
-      const baseRankingsToCache = {
-        rankingsSalesMap: Object.fromEntries(baseRankingsSalesMap)
-      };
-      setCached(baseRankingsKey, baseRankingsToCache, 3600, 'base:rankings').catch(err =>
-        console.warn(`Cache write failed for base:rankings:`, err.message)
-      );
-    }
-
-    // Filter to only include filtered products
-    allFilteredProductIds.forEach(productId => {
-      if (baseRankingsSalesMap.has(productId)) {
-        rankingsSalesMap.set(productId, baseRankingsSalesMap.get(productId));
-      }
-    });
-  }
-
   olderSaleData.forEach(summary => {
     if (!lastSaleMap.has(summary.productId)) {
       // Convert weekStart from cache (string) to Date object if needed
@@ -2155,28 +2101,76 @@ export const getOrderingAnalytics = async ({
   }
 
 
-  // rankingsSalesMap already built above (from cache or database)
+  // rankingsSalesMap already built above (from cache or database) - now uses 14-day sales
 
-  // Calculate subcategory rankings using ALL products (base filter only)
-  const subcategoryGroups = {};
+  // ============================================================================
+  // Power BI-style Category Ranking Logic
+  // ============================================================================
+  // Implements conditional grouping matching Power BI "Cat Rank Display" measure:
+  // 1. Flower category → Group by Format + Parent Category (e.g., all "3.5g Flower" together)
+  // 2. Other with subcategory → Group by Subcategory only
+  // 3. Other without subcategory → Group by Parent Category (only items also without subcategory)
+  //
+  // Additionally: Only include products with inventory > 0 in rankings (matching Power BI filter)
+  // ============================================================================
+
+  /**
+   * Generate a ranking group key based on Power BI conditional logic
+   * @param {Object} product - Product with parentCategory, subcategory, format, totalInventory
+   * @returns {string} The group key for ranking purposes
+   */
+  const getRankingGroupKey = (product) => {
+    const parentCategory = product.parentCategory || '';
+    const subcategory = product.subcategory || '';
+    const format = product.format || '';
+    const isFlower = parentCategory === 'Flower';
+    const hasSubcategory = subcategory && subcategory.trim() !== '';
+
+    if (isFlower) {
+      // Flower → match Format + Parent Category (e.g., "Flower|3.5g")
+      return `${parentCategory}|${format}`;
+    } else if (hasSubcategory) {
+      // Other with subcategory → match Subcategory only
+      // Note: For Pre-Rolls, subcategory already contains strain (e.g., "Indica", "Hybrid", "Sativa")
+      return `subcat:${subcategory}`;
+    } else {
+      // Other with no subcategory → match Parent Category only (for items also without subcategory)
+      return `parent_no_subcat:${parentCategory}`;
+    }
+  };
+
+  // Group products by their ranking group key, filtering out products with 0 inventory
+  // Use salesMap (same date range as UI) for ranking - this matches what users see in the sales column
+  const rankingGroups = {};
   allProductIdsForRankings.forEach(p => {
-    const subcat = p.subcategory || 'Uncategorized';
-    if (!subcategoryGroups[subcat]) subcategoryGroups[subcat] = [];
-    subcategoryGroups[subcat].push({
+    // Power BI filter: Only include products with inventory > 0
+    if (p.totalInventory <= 0) return;
+
+    const groupKey = getRankingGroupKey(p);
+    if (!rankingGroups[groupKey]) rankingGroups[groupKey] = [];
+
+    // Get sales from salesMap (same data shown in UI) - use totalSales for ranking
+    const productSales = salesMap.get(p.id);
+    const totalSalesForRanking = productSales ? productSales.totalSales : 0;
+
+    rankingGroups[groupKey].push({
       id: p.id,
-      totalSales: rankingsSalesMap.get(p.id) || 0
+      totalSales: totalSalesForRanking
     });
   });
 
-  // Assign ranks based on full dataset (by subcategory)
+  // Assign ranks based on total sales (same date range as UI) within each group
   const rankingsMap = new Map();
-  Object.keys(subcategoryGroups).forEach(subcat => {
-    subcategoryGroups[subcat].sort((a, b) => b.totalSales - a.totalSales);
-    const subcategoryTotal = subcategoryGroups[subcat].length;
-    subcategoryGroups[subcat].forEach((p, idx) => {
+  Object.keys(rankingGroups).forEach(groupKey => {
+    // Sort by total sales descending (highest sales = rank 1)
+    rankingGroups[groupKey].sort((a, b) => b.totalSales - a.totalSales);
+    const groupTotal = rankingGroups[groupKey].length;
+
+    // Assign ranks (dense ranking - each position gets sequential rank)
+    rankingGroups[groupKey].forEach((p, idx) => {
       rankingsMap.set(p.id, {
         categoryRank: idx + 1,
-        categoryTotal: subcategoryTotal,
+        categoryTotal: groupTotal,
         isTop10: idx < 10
       });
     });
@@ -2582,6 +2576,211 @@ export const getOrderingAnalytics = async ({
       units: allUnits,
       sizes: allSizes
     }
+  };
+};
+
+// Lightweight query for out-of-stock products (products with sales but zero inventory)
+export const getOutOfStockProducts = async ({
+  storeIds = null,
+  dateRange = null,
+  includeHiddenCategories = false
+}, context) => {
+  if (!context.user) { throw new HttpError(401) }
+
+  // Get user's stores
+  const stores = await context.entities.Store.findMany({
+    where: {
+      userId: context.user.id,
+      isActive: true,
+      ...(storeIds && storeIds.length > 0 ? { id: { in: storeIds } } : {})
+    },
+    select: { id: true, name: true, isFavourite: true }
+  });
+
+  // If no specific stores selected, use favourites or all active stores
+  let selectedStores = stores;
+  if (!storeIds || storeIds.length === 0) {
+    const favourites = stores.filter(s => s.isFavourite);
+    selectedStores = favourites.length > 0 ? favourites : stores;
+  }
+
+  const storeIdList = selectedStores.map(s => s.id);
+  if (storeIdList.length === 0) {
+    return { products: [], count: 0 };
+  }
+
+  // Calculate date range
+  const endDate = dateRange?.end ? new Date(dateRange.end) : new Date();
+  const startDate = dateRange?.start ? new Date(dateRange.start) : new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+  // Calculate week boundaries (Monday-Sunday) for WeeklySalesSummary queries
+  const weekBoundaries = calculateWeekBoundaries(startDate, endDate);
+
+  // Current week start (Monday at midnight) - sales from this week are in InventoryMovement, not WeeklySalesSummary
+  const now = new Date();
+  const currentDay = now.getDay();
+  const currentWeekStart = new Date(now);
+  currentWeekStart.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+  currentWeekStart.setHours(0, 0, 0, 0);
+
+  // Query both data sources in parallel:
+  // 1. WeeklySalesSummary for complete weeks
+  // 2. InventoryMovement for exact date range (catches current incomplete week)
+  const [weeklySalesData, movementSalesData] = await Promise.all([
+    // WeeklySalesSummary: use week-aligned boundaries, exclude current incomplete week
+    context.entities.WeeklySalesSummary.findMany({
+      where: {
+        storeId: { in: storeIdList },
+        weekStart: { gte: weekBoundaries.start, lt: currentWeekStart },
+        unitsSold: { gt: 0 }
+      },
+      select: {
+        productId: true,
+        unitsSold: true,
+        storeId: true,
+        weekStart: true
+      }
+    }),
+    // InventoryMovement: exact date range for current/incomplete week data
+    context.entities.InventoryMovement.findMany({
+      where: {
+        storeId: { in: storeIdList },
+        type: 'sale',
+        date: { gte: startDate, lte: endDate }
+      },
+      select: {
+        productId: true,
+        storeId: true,
+        changeQty: true,
+        date: true
+      }
+    })
+  ]);
+
+  // Build set of complete weeks from WeeklySalesSummary
+  const completeWeeksSet = new Set();
+  weeklySalesData.forEach(item => {
+    const weekStart = item.weekStart instanceof Date ? item.weekStart : new Date(item.weekStart);
+    completeWeeksSet.add(weekStart.getTime());
+  });
+
+  // Aggregate sales by product from both sources
+  const productSalesMap = new Map();
+
+  // Add WeeklySalesSummary data
+  weeklySalesData.forEach(sale => {
+    const existing = productSalesMap.get(sale.productId) || { totalSales: 0, locationSales: {} };
+    existing.totalSales += sale.unitsSold;
+    existing.locationSales[sale.storeId] = (existing.locationSales[sale.storeId] || 0) + sale.unitsSold;
+    productSalesMap.set(sale.productId, existing);
+  });
+
+  // Add InventoryMovement data (only from weeks NOT already in WeeklySalesSummary to avoid double-counting)
+  movementSalesData.forEach(movement => {
+    const movementDate = new Date(movement.date);
+    // Determine which week this movement belongs to (Monday of that week)
+    const movementDay = movementDate.getDay();
+    const movementWeekStart = new Date(movementDate);
+    movementWeekStart.setDate(movementDate.getDate() - (movementDay === 0 ? 6 : movementDay - 1));
+    movementWeekStart.setHours(0, 0, 0, 0);
+    const movementWeekStartTime = movementWeekStart.getTime();
+
+    // Only include if this week is NOT in the complete weeks set (to avoid double-counting)
+    const isCurrentIncompleteWeek = movementWeekStartTime >= currentWeekStart.getTime();
+    const isNotInCompleteWeeks = !completeWeeksSet.has(movementWeekStartTime);
+
+    if (isCurrentIncompleteWeek || isNotInCompleteWeeks) {
+      const existing = productSalesMap.get(movement.productId) || { totalSales: 0, locationSales: {} };
+      const unitsSold = Math.abs(movement.changeQty);
+      existing.totalSales += unitsSold;
+      existing.locationSales[movement.storeId] = (existing.locationSales[movement.storeId] || 0) + unitsSold;
+      productSalesMap.set(movement.productId, existing);
+    }
+  });
+
+  const productIdsWithSales = Array.from(productSalesMap.keys());
+
+  console.log(`[OUT_OF_STOCK] Found ${weeklySalesData.length} WeeklySalesSummary records, ${movementSalesData.length} InventoryMovement records`);
+  console.log(`[OUT_OF_STOCK] ${productIdsWithSales.length} unique products with sales in period`);
+
+  if (productIdsWithSales.length === 0) {
+    return { products: [], count: 0 };
+  }
+
+  // Get these products with their current stock levels
+  const products = await context.entities.ProductCatalog.findMany({
+    where: {
+      id: { in: productIdsWithSales },
+      ...(includeHiddenCategories ? {} : {
+        parentCategory: { notIn: ['Accessories', 'Accessory', 'VPT'] }
+      })
+    },
+    include: {
+      stockLevels: {
+        where: { storeId: { in: storeIdList } },
+        select: { storeId: true, quantity: true, store: { select: { id: true, name: true } } }
+      },
+      distributor: {
+        select: { id: true, name: true }
+      }
+    }
+  });
+
+  console.log(`[OUT_OF_STOCK] Fetched ${products.length} products from catalog`);
+
+  // Filter to only products with zero inventory at ALL selected stores
+  const outOfStockProducts = products.filter(product => {
+    const totalInventory = product.stockLevels.reduce((sum, sl) => sum + sl.quantity, 0);
+    return totalInventory === 0;
+  });
+
+  console.log(`[OUT_OF_STOCK] ${outOfStockProducts.length} products have zero inventory`);
+
+  // Calculate period days for velocity
+  const periodDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));
+  const weeksInPeriod = periodDays / 7;
+
+  // Build response with sales data
+  const result = outOfStockProducts.map(product => {
+    const sales = productSalesMap.get(product.id) || { totalSales: 0, locationSales: {} };
+    const velocity = weeksInPeriod > 0 ? sales.totalSales / weeksInPeriod : 0;
+
+    return {
+      id: product.id,
+      gtin: product.gtin,
+      name: product.name,
+      brand: product.brand,
+      parentCategory: product.parentCategory,
+      subcategory: product.subcategory,
+      strainType: product.strainType,
+      format: product.format,
+      unitCount: product.unitCount,
+      unitSize: product.unitSize,
+      status: product.status,
+      retailPrice: product.retailPrice,
+      wholesaleCost: product.wholesaleCost,
+      margin: product.margin,
+      caseSize: product.caseSize || 12,
+      totalInventory: 0,
+      locationInventory: product.stockLevels.map(sl => ({
+        storeId: sl.storeId,
+        storeName: sl.store.name,
+        quantity: sl.quantity
+      })),
+      totalSales: sales.totalSales,
+      locationSales: Object.entries(sales.locationSales).map(([storeId, units]) => ({
+        storeId: parseInt(storeId),
+        units
+      })),
+      velocity,
+      weeksLeft: 0,
+      distributors: product.distributor ? [{ id: product.distributor.id, name: product.distributor.name }] : []
+    };
+  });
+
+  return {
+    products: result,
+    count: result.length
   };
 };
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from 'wasp/client/operations';
-import { getOrderingAnalytics, getOrCreateOrderWorksheet, getUserStores, getDistributors, getClassifications, getCategoryDefinitions, getProductActions } from 'wasp/client/operations';
-import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats, seedDistributors, syncBrands } from 'wasp/client/operations';
+import { getOrderingAnalytics, getOutOfStockProducts, getOrCreateOrderWorksheet, getUserStores, getDistributors, getClassifications, getCategoryDefinitions, getProductActions } from 'wasp/client/operations';
+import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats, seedDistributors, syncBrands, clearAnalyticsCache } from 'wasp/client/operations';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -102,6 +102,9 @@ const OrderingDashboard = () => {
     distributors: []
   });
 
+  // Stock status tab state: 'inStock' or 'outOfStock'
+  const [stockTab, setStockTab] = useState('inStock');
+
   const [allProducts, setAllProducts] = useState([]);
   const [allAnalyticsData, setAllAnalyticsData] = useState(null);
 
@@ -154,6 +157,20 @@ const OrderingDashboard = () => {
   const { data: classifications } = useQuery(getClassifications);
   const { data: categoryDefinitions } = useQuery(getCategoryDefinitions);
 
+  // Fetch out-of-stock products only when that tab is selected (lazy loading)
+  const {
+    data: outOfStockData,
+    isLoading: isLoadingOutOfStock
+  } = useQuery(
+    getOutOfStockProducts,
+    {
+      storeIds: selectedStoreIds,
+      dateRange,
+      includeHiddenCategories
+    },
+    { enabled: stockTab === 'outOfStock' } // Only fetch when tab is active
+  );
+
   // Fetch active product actions for highlighting DO_NOT_REORDER items
   const { data: productActionsData } = useQuery(getProductActions, {
     status: 'ACTIVE'
@@ -199,7 +216,7 @@ const OrderingDashboard = () => {
       // Only replace if full data has more products or different data
       const fullProductCount = fullAnalytics.products?.length || 0;
       const currentProductCount = allProducts.length;
-      
+
       // Replace if full data has more products or is complete
       if (fullProductCount > currentProductCount || fullAnalytics.totalCount !== undefined) {
         setAllAnalyticsData(fullAnalytics);
@@ -249,6 +266,74 @@ const OrderingDashboard = () => {
     if (!allProducts || allProducts.length === 0) return [];
     return filterProductsClientSide(allProducts, filters);
   }, [allProducts, filters, filterProductsClientSide]);
+
+  // Filter products by stock status based on selected stores
+  const filterByStockStatus = React.useCallback((products, tab, storesList) => {
+    if (!storesList || storesList.length === 0) return [];
+    const storeIdsToCheck = storesList.map(s => s.id);
+
+    if (tab === 'inStock') {
+      // In Stock: Product has inventory > 0 at ANY selected store
+      return products.filter(product => {
+        const hasInventoryAtSelectedStores = product.locationInventory?.some(
+          loc => storeIdsToCheck.includes(loc.storeId) && loc.quantity > 0
+        );
+        return hasInventoryAtSelectedStores;
+      });
+    } else {
+      // Out of Stock: Product has no inventory at ANY of the selected stores AND had sales in the period
+      return products.filter(product => {
+        // Must have had sales in the period
+        if (!product.totalSales || product.totalSales === 0) return false;
+
+        // Check if product has no inventory at any of the selected stores
+        const hasInventoryAtSelectedStores = product.locationInventory?.some(
+          loc => storeIdsToCheck.includes(loc.storeId) && loc.quantity > 0
+        );
+        return !hasInventoryAtSelectedStores;
+      });
+    }
+  }, []);
+
+  // Apply stock status filtering based on active tab
+  const stockFilteredProducts = React.useMemo(() => {
+    if (stockTab === 'outOfStock') {
+      // Use dedicated out-of-stock query data (already filtered by the query)
+      if (!outOfStockData?.products) return [];
+      // Apply client-side filters to out-of-stock products
+      return filterProductsClientSide(outOfStockData.products, filters);
+    } else {
+      // In stock: filter from main analytics data
+      if (!filteredProducts || filteredProducts.length === 0) return [];
+      return filterByStockStatus(filteredProducts, stockTab, displayStores);
+    }
+  }, [filteredProducts, stockTab, displayStores, filterByStockStatus, outOfStockData, filters, filterProductsClientSide]);
+
+  // Calculate counts for tab badges
+  const { inStockCount, outOfStockCount } = React.useMemo(() => {
+    if (!displayStores || displayStores.length === 0) {
+      return { inStockCount: 0, outOfStockCount: 0 };
+    }
+
+    // In stock count from main analytics
+    let inStock = 0;
+    if (filteredProducts && filteredProducts.length > 0) {
+      const storeIdsToCheck = displayStores.map(s => s.id);
+      filteredProducts.forEach(product => {
+        const hasInventoryAtSelectedStores = product.locationInventory?.some(
+          loc => storeIdsToCheck.includes(loc.storeId) && loc.quantity > 0
+        );
+        if (hasInventoryAtSelectedStores) {
+          inStock++;
+        }
+      });
+    }
+
+    // Out of stock count from dedicated query
+    const outOfStock = outOfStockData?.count || 0;
+
+    return { inStockCount: inStock, outOfStockCount: outOfStock };
+  }, [filteredProducts, displayStores, outOfStockData]);
 
   // DnD sensors for column reordering
   const sensors = useSensors(
@@ -344,7 +429,11 @@ const OrderingDashboard = () => {
   const handleRefreshData = async () => {
     setIsRefreshing(true);
     try {
-      // Invalidate all queries to force fresh data fetch
+      // Clear server-side analytics caches first (rankings, sales totals, etc.)
+      const result = await clearAnalyticsCache();
+      console.log(`Cleared ${result.keysCleared} cache keys`);
+
+      // Invalidate all React Query caches to force fresh data fetch
       await queryClient.invalidateQueries();
       // Reset loading flags to trigger fresh data load
       setHasInitialPageLoaded(false);
@@ -354,6 +443,8 @@ const OrderingDashboard = () => {
 
       // Wait a bit for queries to start refetching
       await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (error) {
+      console.error('Error refreshing data:', error);
     } finally {
       setIsRefreshing(false);
     }
@@ -503,35 +594,35 @@ const OrderingDashboard = () => {
   }, [filteredProducts]);
 
   const sortedProducts = React.useMemo(() => {
-    if (!filteredProducts || filteredProducts.length === 0) return [];
-    let sorted = [...filteredProducts];
-    
+    if (!stockFilteredProducts || stockFilteredProducts.length === 0) return [];
+    let sorted = [...stockFilteredProducts];
+
     // Filter out products from hidden categories
     if (hiddenCategories.size > 0) {
       sorted = sorted.filter(product => {
         return !hiddenCategories.has(product.parentCategory);
       });
     }
-    
+
     if (sortConfig.key) {
       sorted.sort((a, b) => {
         let aVal = a[sortConfig.key];
         let bVal = b[sortConfig.key];
-        
+
         // Special handling for distributor (which can be an array)
         if (sortConfig.key === 'distributor') {
           // Get first distributor alphabetically for products with multiple distributors
           const aDistributors = a.distributors || [];
           const bDistributors = b.distributors || [];
-          aVal = aDistributors.length > 0 ? 
+          aVal = aDistributors.length > 0 ?
             aDistributors.map(d => d.name).sort()[0].toLowerCase() : '';
-          bVal = bDistributors.length > 0 ? 
+          bVal = bDistributors.length > 0 ?
             bDistributors.map(d => d.name).sort()[0].toLowerCase() : '';
         } else if (sortConfig.key === 'brand' || sortConfig.key === 'name') {
           aVal = (aVal || '').toLowerCase();
           bVal = (bVal || '').toLowerCase();
         }
-        
+
         if (aVal == null || aVal === '') return 1;
         if (bVal == null || bVal === '') return -1;
         if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -540,7 +631,7 @@ const OrderingDashboard = () => {
       });
     }
     return sorted;
-  }, [filteredProducts, sortConfig, hiddenCategories]);
+  }, [stockFilteredProducts, sortConfig, hiddenCategories]);
 
   // Calculate filtered salesMatrix from filtered products (respects client-side filters)
   const filteredSalesMatrix = React.useMemo(() => {
@@ -727,7 +818,11 @@ const OrderingDashboard = () => {
                   )}
                 </div>
                 <p className="text-slate-700 mt-2 font-medium">
-                  Analysis for {allAnalyticsData?.periodDays || 14} days ({new Date(dateRange.start).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })} - {new Date(dateRange.end).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}) • Showing {sortedProducts.length} of {allProducts.length} products
+                  Analysis for {allAnalyticsData?.periodDays || 14} days ({new Date(dateRange.start).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })} - {new Date(dateRange.end).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}) • {stockTab === 'outOfStock' ? (
+                    <span className="text-red-600">Out of Stock: {sortedProducts.length} products</span>
+                  ) : (
+                    <>Showing {sortedProducts.length} of {allProducts.length} products</>
+                  )}
                   {isLoadingFullData && hasInitialPageLoaded && (fullAnalytics?.totalCount || initialAnalytics?.totalCount) && (
                     <span className="text-blue-600 ml-2">
                       (Loading {(fullAnalytics?.totalCount || initialAnalytics?.totalCount)} total...)
@@ -804,9 +899,47 @@ const OrderingDashboard = () => {
                   selectedIds={selectedStoreIds}
                   onChange={setSelectedStoreIds}
                 />
-                <Badge variant="secondary" className="h-8 px-3 text-sm font-semibold bg-gradient-to-r from-teal-50 to-blue-50 text-teal-800 border-teal-200/50 rounded-lg shadow-sm">
-                  {sortedProducts.length} Products
-                </Badge>
+                {/* Stock Status Tabs */}
+                <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                  <button
+                    onClick={() => setStockTab('inStock')}
+                    className={`px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-2 ${
+                      stockTab === 'inStock'
+                        ? 'bg-gradient-to-r from-teal-500 to-blue-500 text-white'
+                        : 'bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    In Stock
+                    <span className={`px-1.5 py-0.5 text-xs rounded-md font-semibold ${
+                      stockTab === 'inStock'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {inStockCount}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setStockTab('outOfStock')}
+                    className={`px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-2 ${
+                      stockTab === 'outOfStock'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-white text-slate-600 hover:bg-red-50'
+                    }`}
+                  >
+                    Out of Stock
+                    <span className={`px-1.5 py-0.5 text-xs rounded-md font-semibold ${
+                      stockTab === 'outOfStock'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {stockTab === 'outOfStock' && isLoadingOutOfStock ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        outOfStockCount
+                      )}
+                    </span>
+                  </button>
+                </div>
               </div>
               <DateRangeFilter dateRange={dateRange} onChange={setDateRange} />
               <FilterDropdown

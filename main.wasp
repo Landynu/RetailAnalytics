@@ -81,6 +81,11 @@ action exportAnalyticsData {
   entities: [Store, ProductCatalog, StockLevel, InventoryMovement]
 }
 
+action clearAnalyticsCache {
+  fn: import { clearAnalyticsCache } from "@src/actions.js",
+  entities: []
+}
+
 action toggleStoreActive {
   fn: import { toggleStoreActive } from "@src/actions.js",
   entities: [Store]
@@ -169,6 +174,11 @@ query getDailySalesAnalytics {
 query getOrderingAnalytics {
   fn: import { getOrderingAnalytics } from "@src/queries.js",
   entities: [Store, ProductCatalog, StockLevel, InventoryMovement, WeeklySalesSummary, Brand, Distributor, BrandDistributor]
+}
+
+query getOutOfStockProducts {
+  fn: import { getOutOfStockProducts } from "@src/queries.js",
+  entities: [Store, ProductCatalog, StockLevel, WeeklySalesSummary, InventoryMovement, Distributor]
 }
 
 query getOrCreateOrderWorksheet {
