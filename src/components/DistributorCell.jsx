@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Check, ChevronsUpDown } from 'lucide-react';
@@ -7,10 +7,17 @@ import { updateBrandDistributors } from 'wasp/client/operations';
 
 const DistributorCell = ({ brand, distributors, allDistributors }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedIds, setSelectedIds] = useState(distributors.map(d => d.id));
+  const [selectedIds, setSelectedIds] = useState(() => distributors.map(d => d.id));
   const [isLoading, setIsLoading] = useState(false);
   // Optimistic update state
   const [optimisticDistributors, setOptimisticDistributors] = useState(null);
+
+  // Sync selectedIds when distributors prop changes (e.g., after refetch)
+  useEffect(() => {
+    if (!isOpen && !optimisticDistributors) {
+      setSelectedIds(distributors.map(d => d.id));
+    }
+  }, [distributors, isOpen, optimisticDistributors]);
   
   const handleToggle = (distId) => {
     const newSelected = selectedIds.includes(distId)
@@ -75,6 +82,8 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
           size="sm"
           onClick={(e) => {
             e.stopPropagation();
+            // Sync selectedIds with current displayed distributors when opening
+            setSelectedIds(displayDistributors.map(d => d.id));
             setIsOpen(true);
           }}
           className="h-6 px-2"
