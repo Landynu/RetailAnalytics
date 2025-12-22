@@ -1108,6 +1108,20 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   await invalidateCachePattern('cache:rankings:*');
   console.log(`[${cacheTimestamp}] ✓ Cache invalidation complete\n`);
 
+  // Warm cache after upload (fire-and-forget)
+  const stores = await context.entities.Store.findMany({
+    where: { userId: context.user.id, isActive: true },
+    select: { id: true }
+  });
+  if (stores.length > 0) {
+    const storeIds = stores.map(s => s.id);
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
+    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(err =>
+      console.warn('Cache warming failed after export upload:', err.message)
+    );
+  }
+
   return {
     snapshot,
     newProducts: results.newProducts,
@@ -1387,48 +1401,10 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   }
 
   console.log(`[${ts()}] ✓ Stage 4 complete: ${totalCreated} new movements created, ${totalDuplicates} duplicates skipped`);
-  console.log(`[${ts()}] Stage 5/5: Updating stock levels (DELETE + BULK INSERT)...`);
 
-  // STAGE 5: Update stock levels using DELETE + BULK INSERT (2-5 seconds)
-  // Use unique movements for stock level calculation (duplicates would give same closing quantity anyway)
-  const movementsForStock = uniqueMovements.length > 0 ? uniqueMovements : movementsToCreate;
-
-  if (movementsForStock.length > 0) {
-    // Group by store+product and take the last closing quantity
-    const stockMap = new Map();
-    movementsForStock.forEach(m => {
-      const key = `${m.storeId}-${m.productId}`;
-      stockMap.set(key, {
-        storeId: m.storeId,
-        productId: m.productId,
-        quantity: m.closingQty
-      });
-    });
-
-    const stockUpdates = Array.from(stockMap.values());
-    const storeIds = [...new Set(stockUpdates.map(s => s.storeId))];
-    const productIds = [...new Set(stockUpdates.map(s => s.productId))];
-
-    // Delete existing stock levels
-    await context.entities.StockLevel.deleteMany({
-      where: {
-        AND: [
-          { storeId: { in: storeIds } },
-          { productId: { in: productIds } }
-        ]
-      }
-    });
-
-    // Bulk insert new stock levels
-    await context.entities.StockLevel.createMany({
-      data: stockUpdates.map(s => ({
-        ...s,
-        lastUpdated: new Date()
-      }))
-    });
-
-    console.log(`[${ts()}] ✓ Stage 5 complete: Updated ${stockUpdates.length} stock levels`);
-  }
+  // NOTE: Stock levels are NOT updated from logs. The inventory export is the
+  // authoritative source for current stock. Logs only provide transaction history
+  // for sales analytics (InventoryMovement records).
 
   // Save unmatched records for review
   if (unmatchedRecords.length > 0) {

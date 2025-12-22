@@ -492,7 +492,7 @@ const OrderingDashboard = () => {
       sizes: filters.sizes,
       distributors: filters.distributors
     });
-    const brands = [...new Set(brandFiltered.map(p => p.brand).filter(Boolean))].sort();
+    const brands = [...new Set(brandFiltered.map(p => p.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
     // Build category options (from all products)
     const categories = [...new Set(baseProducts.map(p => p.parentCategory).filter(Boolean))].sort();

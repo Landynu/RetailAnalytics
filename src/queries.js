@@ -2491,7 +2491,7 @@ export const getOrderingAnalytics = async ({
   const unitsOptions = [...new Set(unitsFiltered.map(p => p.unitCount).filter(Boolean))];
   const sizesOptions = [...new Set(sizesFiltered.map(p => p.unitSize).filter(Boolean))];
 
-  const smartBrands = brandOptions.sort();
+  const smartBrands = brandOptions.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   const allCategoriesSet = new Set(categoryOptions);
   if (!includeHiddenCategories) {
     allCategoriesSet.add('Accessories');
