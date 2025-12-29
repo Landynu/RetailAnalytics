@@ -242,13 +242,22 @@ const OrderingFilters = ({
                   <span
                     onClick={(e) => {
                       if (e.ctrlKey || e.metaKey) {
+                        // Multi-select: add/remove category without clearing other filters
                         if (isSelected) {
                           setFilters({ ...filters, categories: filters.categories.filter(c => c !== cat) });
                         } else {
                           setFilters({ ...filters, categories: [...filters.categories, cat] });
                         }
                       } else {
-                        setFilters({ ...filters, categories: [cat] });
+                        // Single select: clear category-dependent filters (subcategories, units, sizes)
+                        // but preserve cross-category filters (brands, distributors)
+                        setFilters({
+                          ...filters,
+                          categories: [cat],
+                          subcategories: [],
+                          units: [],
+                          sizes: []
+                        });
                       }
                     }}
                     className={`flex-1 cursor-pointer hover:underline ${
