@@ -21,14 +21,15 @@ const CategoryCell = ({ product, categoryDefinitions, onCategoryChange }) => {
     setOptimisticCategory(category);
     
     try {
-      await updateProductEnrichment({ 
-        productId: product.id, 
-        updates: { 
+      await updateProductEnrichment({
+        productId: product.id,
+        updates: {
           categoryDefinitionId: categoryId || null,
           subcategoryId: null // Clear subcategory when category changes
-        } 
+        }
       });
-      setTimeout(() => setOptimisticCategory(null), 500);
+      // Keep the optimistic state as the persisted value - don't clear it
+      // The value has been saved to the database and should remain displayed
       if (onCategoryChange) onCategoryChange(categoryId);
     } catch (error) {
       setOptimisticCategory(null);
@@ -48,9 +49,9 @@ const CategoryCell = ({ product, categoryDefinitions, onCategoryChange }) => {
     return (
       <div className="flex items-center gap-2 min-w-[120px]">
         {displayCategory ? (
-          <Badge 
+          <Badge
             variant="outline"
-            className={cn("text-xs", optimisticCategory && "opacity-70")}
+            className={cn("text-xs", isLoading && "opacity-70")}
           >
             {displayCategory.name}
           </Badge>

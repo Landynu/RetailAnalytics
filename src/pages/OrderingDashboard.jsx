@@ -226,6 +226,18 @@ const OrderingDashboard = () => {
     }
   }, [fullAnalytics, hasFullDataLoaded, allProducts.length]);
 
+  // Sync data when queries are refetched (after action invalidation)
+  // This detects when the query data object reference changes (indicating a refetch)
+  const prevFullAnalyticsRef = React.useRef(fullAnalytics);
+  useEffect(() => {
+    // Only run if we already loaded full data and the reference changed (indicating refetch)
+    if (hasFullDataLoaded && fullAnalytics && fullAnalytics !== prevFullAnalyticsRef.current) {
+      setAllAnalyticsData(fullAnalytics);
+      setAllProducts(fullAnalytics.products || []);
+    }
+    prevFullAnalyticsRef.current = fullAnalytics;
+  }, [fullAnalytics, hasFullDataLoaded]);
+
   // Reset loading flags when dependencies change
   useEffect(() => {
     setHasInitialPageLoaded(false);
@@ -946,28 +958,28 @@ const OrderingDashboard = () => {
                 label="Units"
                 options={mergedFilterOptions.units || []}
                 selectedValues={filters.units}
-                onChange={(values) => setFilters({ ...filters, units: values })}
+                onChange={(values) => setFilters(prev => ({ ...prev, units: values }))}
                 icon={Package}
               />
               <FilterDropdown
                 label="Size"
                 options={mergedFilterOptions.sizes || []}
                 selectedValues={filters.sizes}
-                onChange={(values) => setFilters({ ...filters, sizes: values })}
+                onChange={(values) => setFilters(prev => ({ ...prev, sizes: values }))}
                 icon={Tag}
               />
               <FilterDropdown
                 label="Subcategories"
                 options={mergedFilterOptions.subcategories || []}
                 selectedValues={filters.subcategories}
-                onChange={(values) => setFilters({ ...filters, subcategories: values })}
+                onChange={(values) => setFilters(prev => ({ ...prev, subcategories: values }))}
                 icon={Package}
               />
               <FilterDropdown
                 label="Distributors"
                 options={mergedFilterOptions.distributors || []}
                 selectedValues={filters.distributors}
-                onChange={(values) => setFilters({ ...filters, distributors: values })}
+                onChange={(values) => setFilters(prev => ({ ...prev, distributors: values }))}
                 icon={Package}
               />
               <ColumnVisibilityMenu

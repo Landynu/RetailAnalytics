@@ -42,12 +42,12 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
     setIsOpen(false);
     
     try {
-      await updateBrandDistributors({ 
-        brandName: brand, 
-        distributorIds: selectedIds 
+      await updateBrandDistributors({
+        brandName: brand,
+        distributorIds: selectedIds
       });
-      // Clear optimistic state after successful save (real data will come from refetch)
-      setTimeout(() => setOptimisticDistributors(null), 500);
+      // Keep the optimistic state as the persisted value - don't clear it
+      // The value has been saved to the database and should remain displayed
     } catch (error) {
       // Revert optimistic update on error
       setOptimisticDistributors(null);
@@ -69,7 +69,7 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
             <Badge
               key={d.id}
               variant={d.isPrimary ? 'default' : 'outline'}
-              className={cn("text-xs", optimisticDistributors && "opacity-70")}
+              className={cn("text-xs", isLoading && "opacity-70")}
             >
               {d.name}
             </Badge>

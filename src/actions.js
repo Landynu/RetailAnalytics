@@ -2658,6 +2658,9 @@ export const updateBrandDistributors = async ({ brandName, distributorIds }, con
     })
   }
 
+  // Invalidate the brands_distributors cache so the change is reflected immediately
+  await invalidateCachePattern('cache:brands_distributors:*');
+
   return { success: true }
 }
 
@@ -3014,6 +3017,11 @@ export const updateProductEnrichment = async ({ productId, updates }, context) =
         newValue: change.newValue
       }
     })
+  }
+
+  // Invalidate base product caches so the change is reflected immediately
+  if (changes.length > 0) {
+    await invalidateCachePattern('cache:base:*');
   }
 
   return updated

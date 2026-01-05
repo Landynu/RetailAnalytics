@@ -21,11 +21,12 @@ const StrainTypeCell = ({ product, classifications }) => {
     setOptimisticClassification(classification);
     
     try {
-      await updateProductEnrichment({ 
-        productId: product.id, 
-        updates: { classificationId: classificationId || null } 
+      await updateProductEnrichment({
+        productId: product.id,
+        updates: { classificationId: classificationId || null }
       });
-      setTimeout(() => setOptimisticClassification(null), 500);
+      // Keep the optimistic state as the persisted value - don't clear it
+      // The value has been saved to the database and should remain displayed
     } catch (error) {
       setOptimisticClassification(null);
       setSelectedId(product.classificationId);
@@ -54,10 +55,10 @@ const StrainTypeCell = ({ product, classifications }) => {
     return (
       <div className="flex items-center gap-2 min-w-[120px]">
         {displayClassification ? (
-          <Badge 
+          <Badge
             className={cn(
               `${getStrainColor(displayClassification.name)} text-white text-xs font-semibold shadow-sm rounded-lg`,
-              optimisticClassification && "opacity-70"
+              isLoading && "opacity-70"
             )}
           >
             {displayClassification.name}

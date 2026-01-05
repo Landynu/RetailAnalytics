@@ -28,11 +28,12 @@ const SubcategoryCell = ({ product, categoryDefinitions }) => {
     setOptimisticSubcategory(subcategory);
     
     try {
-      await updateProductEnrichment({ 
-        productId: product.id, 
-        updates: { subcategoryId: subcategoryId || null } 
+      await updateProductEnrichment({
+        productId: product.id,
+        updates: { subcategoryId: subcategoryId || null }
       });
-      setTimeout(() => setOptimisticSubcategory(null), 500);
+      // Keep the optimistic state as the persisted value - don't clear it
+      // The value has been saved to the database and should remain displayed
     } catch (error) {
       setOptimisticSubcategory(null);
       setSelectedId(product.subcategoryId);
@@ -57,9 +58,9 @@ const SubcategoryCell = ({ product, categoryDefinitions }) => {
     return (
       <div className="flex items-center gap-2 min-w-[120px]">
         {displaySubcategory ? (
-          <Badge 
+          <Badge
             variant="outline"
-            className={cn("text-xs", optimisticSubcategory && "opacity-70")}
+            className={cn("text-xs", isLoading && "opacity-70")}
           >
             {displaySubcategory.name}
           </Badge>
