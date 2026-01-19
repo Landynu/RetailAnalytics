@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link } from 'wasp/client/router';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -13,6 +13,39 @@ import ActionMenu from './ActionMenu';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 
 const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, onAddToOrder, onRowClick, isLoadingTrends = false, rowIndex = 0, hasDoNotReorderAction = false, activeActions = [] }) => {
+  // Optimistic updates for fields that affect other cells (e.g., category affects subcategory)
+  const [optimisticUpdates, setOptimisticUpdates] = useState({});
+
+  // Merge product with optimistic updates
+  const effectiveProduct = useMemo(() => ({
+    ...product,
+    ...optimisticUpdates
+  }), [product, optimisticUpdates]);
+
+  // Handler for category changes - updates optimistic state so SubcategoryCell can react
+  const handleCategoryChange = (categoryDefinitionId) => {
+    setOptimisticUpdates(prev => ({
+      ...prev,
+      categoryDefinitionId,
+      subcategoryId: null // Clear subcategory when category changes
+    }));
+  };
+
+  // Handler for classification changes
+  const handleClassificationChange = (classificationId) => {
+    setOptimisticUpdates(prev => ({
+      ...prev,
+      classificationId
+    }));
+  };
+
+  // Handler for subcategory changes
+  const handleSubcategoryChange = (subcategoryId) => {
+    setOptimisticUpdates(prev => ({
+      ...prev,
+      subcategoryId
+    }));
+  };
   const getStrainColor = (strainType) => {
     switch(strainType) {
       case 'Sativa': return 'bg-green-500';
@@ -254,9 +287,10 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
       case 'classification':
         return (
           <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
-            <StrainTypeCell 
-              product={product}
+            <StrainTypeCell
+              product={effectiveProduct}
               classifications={column.classifications || []}
+              onClassificationChange={handleClassificationChange}
             />
           </td>
         );
@@ -264,10 +298,10 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
       case 'category':
         return (
           <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
-            <CategoryCell 
-              product={product}
+            <CategoryCell
+              product={effectiveProduct}
               categoryDefinitions={column.categoryDefinitions || []}
-              onCategoryChange={() => {}}
+              onCategoryChange={handleCategoryChange}
             />
           </td>
         );
@@ -275,9 +309,10 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
       case 'subcategory':
         return (
           <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
-            <SubcategoryCell 
-              product={product}
+            <SubcategoryCell
+              product={effectiveProduct}
               categoryDefinitions={column.categoryDefinitions || []}
+              onSubcategoryChange={handleSubcategoryChange}
             />
           </td>
         );

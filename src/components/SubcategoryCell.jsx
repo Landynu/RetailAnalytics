@@ -5,28 +5,29 @@ import { Check, ChevronsUpDown } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { updateProductEnrichment } from 'wasp/client/operations';
 
-const SubcategoryCell = ({ product, categoryDefinitions }) => {
+const SubcategoryCell = ({ product, categoryDefinitions, onSubcategoryChange }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(product.subcategoryId);
   const [isLoading, setIsLoading] = useState(false);
   const [optimisticSubcategory, setOptimisticSubcategory] = useState(null);
-  
+
   // Get subcategories for the selected category
   const availableSubcategories = useMemo(() => {
     if (!product.categoryDefinitionId) return [];
     const category = categoryDefinitions.find(c => c.id === product.categoryDefinitionId);
     return category?.subcategories || [];
   }, [product.categoryDefinitionId, categoryDefinitions]);
-  
+
   const handleSelect = async (subcategoryId) => {
     setSelectedId(subcategoryId);
     setIsLoading(true);
     setIsOpen(false);
-    
-    // Optimistic update
+
+    // Optimistic update - notify parent immediately
     const subcategory = availableSubcategories.find(s => s.id === subcategoryId);
     setOptimisticSubcategory(subcategory);
-    
+    if (onSubcategoryChange) onSubcategoryChange(subcategoryId);
+
     try {
       await updateProductEnrichment({
         productId: product.id,
@@ -37,6 +38,8 @@ const SubcategoryCell = ({ product, categoryDefinitions }) => {
     } catch (error) {
       setOptimisticSubcategory(null);
       setSelectedId(product.subcategoryId);
+      // Revert parent's optimistic state on error
+      if (onSubcategoryChange) onSubcategoryChange(product.subcategoryId);
       alert('Error updating subcategory: ' + error.message);
       setIsOpen(true);
     } finally {

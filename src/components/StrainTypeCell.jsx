@@ -5,21 +5,22 @@ import { Check, ChevronsUpDown } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { updateProductEnrichment } from 'wasp/client/operations';
 
-const StrainTypeCell = ({ product, classifications }) => {
+const StrainTypeCell = ({ product, classifications, onClassificationChange }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(product.classificationId);
   const [isLoading, setIsLoading] = useState(false);
   const [optimisticClassification, setOptimisticClassification] = useState(null);
-  
+
   const handleSelect = async (classificationId) => {
     setSelectedId(classificationId);
     setIsLoading(true);
     setIsOpen(false);
-    
-    // Optimistic update
+
+    // Optimistic update - notify parent immediately
     const classification = classifications.find(c => c.id === classificationId);
     setOptimisticClassification(classification);
-    
+    if (onClassificationChange) onClassificationChange(classificationId);
+
     try {
       await updateProductEnrichment({
         productId: product.id,
@@ -30,6 +31,8 @@ const StrainTypeCell = ({ product, classifications }) => {
     } catch (error) {
       setOptimisticClassification(null);
       setSelectedId(product.classificationId);
+      // Revert parent's optimistic state on error
+      if (onClassificationChange) onClassificationChange(product.classificationId);
       alert('Error updating classification: ' + error.message);
       setIsOpen(true);
     } finally {

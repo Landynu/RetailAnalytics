@@ -15,11 +15,12 @@ const CategoryCell = ({ product, categoryDefinitions, onCategoryChange }) => {
     setSelectedId(categoryId);
     setIsLoading(true);
     setIsOpen(false);
-    
-    // Optimistic update
+
+    // Optimistic update - notify parent immediately so SubcategoryCell can react
     const category = categoryDefinitions.find(c => c.id === categoryId);
     setOptimisticCategory(category);
-    
+    if (onCategoryChange) onCategoryChange(categoryId);
+
     try {
       await updateProductEnrichment({
         productId: product.id,
@@ -30,10 +31,11 @@ const CategoryCell = ({ product, categoryDefinitions, onCategoryChange }) => {
       });
       // Keep the optimistic state as the persisted value - don't clear it
       // The value has been saved to the database and should remain displayed
-      if (onCategoryChange) onCategoryChange(categoryId);
     } catch (error) {
       setOptimisticCategory(null);
       setSelectedId(product.categoryDefinitionId);
+      // Revert parent's optimistic state on error
+      if (onCategoryChange) onCategoryChange(product.categoryDefinitionId);
       alert('Error updating category: ' + error.message);
       setIsOpen(true);
     } finally {
