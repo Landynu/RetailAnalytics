@@ -3329,7 +3329,24 @@ export const getProductActions = async ({ status = 'ACTIVE', actionType, groupBy
             subcategory: true,
             wholesaleCost: true,
             retailPrice: true,
-            margin: true
+            margin: true,
+            stockLevels: {
+              where: {
+                store: {
+                  isFavourite: true
+                }
+              },
+              select: {
+                quantity: true,
+                store: {
+                  select: {
+                    id: true,
+                    name: true,
+                    friendlyName: true
+                  }
+                }
+              }
+            }
           }
         }
       },

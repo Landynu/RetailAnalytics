@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { Link } from 'wasp/client/router';
 import { getProductActions } from 'wasp/client/operations';
@@ -107,6 +107,55 @@ const ActionsPage = () => {
     status,
     groupBy: 'actionType'
   });
+
+  // Auto-complete actions when inventory reaches 0 (once per day)
+  const hasCheckedRef = useRef(false);
+
+  useEffect(() => {
+    if (!actionsData?.grouped || status !== 'ACTIVE' || hasCheckedRef.current) return;
+
+    // Check if we've already run today
+    const STORAGE_KEY = 'actionsAutoCompleteLastRun';
+    const lastRun = localStorage.getItem(STORAGE_KEY);
+    const today = new Date().toDateString();
+
+    if (lastRun === today) {
+      hasCheckedRef.current = true;
+      return;
+    }
+
+    const autoCompleteZeroInventory = async () => {
+      hasCheckedRef.current = true;
+      const allActions = Object.values(actionsData.grouped).flat();
+      let completedCount = 0;
+
+      for (const action of allActions) {
+        // Check if total inventory is 0
+        const totalInventory = action.product.stockLevels?.reduce(
+          (sum, stock) => sum + stock.quantity, 0
+        ) ?? null;
+
+        if (totalInventory === 0) {
+          try {
+            await completeProductAction({ actionId: action.id });
+            completedCount++;
+          } catch (error) {
+            console.error('Error auto-completing action:', error);
+          }
+        }
+      }
+
+      // Mark as run for today
+      localStorage.setItem(STORAGE_KEY, today);
+
+      // Refetch if any actions were completed
+      if (completedCount > 0) {
+        refetch();
+      }
+    };
+
+    autoCompleteZeroInventory();
+  }, [actionsData, status, refetch]);
 
   const handleUpdateNotes = async (actionId) => {
     try {
@@ -365,6 +414,20 @@ const ActionsPage = () => {
                                         Margin: {(action.product.margin * 100).toFixed(1)}%
                                       </span>
                                     )}
+                                  </div>
+                                )}
+                                {action.product.stockLevels && action.product.stockLevels.length > 0 && (
+                                  <div className="flex gap-3 mt-1 text-sm">
+                                    <Package className="h-4 w-4 text-muted-foreground" />
+                                    {action.product.stockLevels.map((stock, idx) => (
+                                      <span key={idx} className={cn(
+                                        "font-medium",
+                                        stock.quantity === 0 ? "text-red-600" :
+                                        stock.quantity <= 5 ? "text-orange-600" : "text-emerald-600"
+                                      )}>
+                                        {stock.store.friendlyName || stock.store.name}: {stock.quantity} units
+                                      </span>
+                                    ))}
                                   </div>
                                 )}
                               </div>

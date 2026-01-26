@@ -3957,7 +3957,25 @@ export const exportProductActions = async ({ status = 'ACTIVE', actionType }, co
             brand: true,
             gtin: true,
             parentCategory: true,
-            subcategory: true
+            subcategory: true,
+            wholesaleCost: true,
+            retailPrice: true,
+            stockLevels: {
+              where: {
+                store: {
+                  isFavourite: true
+                }
+              },
+              select: {
+                quantity: true,
+                store: {
+                  select: {
+                    name: true,
+                    friendlyName: true
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -3971,6 +3989,9 @@ export const exportProductActions = async ({ status = 'ACTIVE', actionType }, co
       'GTIN',
       'Category',
       'Subcategory',
+      'Wholesale Cost',
+      'Retail Price',
+      'Locations',
       'Action Type',
       'Status',
       'Notes',
@@ -3978,18 +3999,29 @@ export const exportProductActions = async ({ status = 'ACTIVE', actionType }, co
       'Completed Date'
     ];
 
-    const rows = actions.map(a => [
-      a.product.name,
-      a.product.brand || '',
-      a.product.gtin,
-      a.product.parentCategory || '',
-      a.product.subcategory || '',
-      a.actionType,
-      a.status,
-      a.notes || '',
-      new Date(a.createdAt).toLocaleDateString('en-US', { timeZone: 'America/Chicago' }),
-      a.completedAt ? new Date(a.completedAt).toLocaleDateString('en-US', { timeZone: 'America/Chicago' }) : ''
-    ]);
+    const rows = actions.map(a => {
+      // Get locations with inventory > 0
+      const locationsWithStock = (a.product.stockLevels || [])
+        .filter(sl => sl.quantity > 0)
+        .map(sl => `${sl.store.friendlyName || sl.store.name} (${sl.quantity})`)
+        .join('; ');
+
+      return [
+        a.product.name,
+        a.product.brand || '',
+        a.product.gtin,
+        a.product.parentCategory || '',
+        a.product.subcategory || '',
+        a.product.wholesaleCost != null ? a.product.wholesaleCost.toFixed(2) : '',
+        a.product.retailPrice != null ? a.product.retailPrice.toFixed(2) : '',
+        locationsWithStock,
+        a.actionType,
+        a.status,
+        a.notes || '',
+        new Date(a.createdAt).toLocaleDateString('en-US', { timeZone: 'America/Chicago' }),
+        a.completedAt ? new Date(a.completedAt).toLocaleDateString('en-US', { timeZone: 'America/Chicago' }) : ''
+      ];
+    });
 
     const csvContent = [
       headers.join(','),
