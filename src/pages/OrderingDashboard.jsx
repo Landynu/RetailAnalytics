@@ -639,6 +639,11 @@ const OrderingDashboard = () => {
         if (bVal == null || bVal === '') return -1;
         if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
         if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        // Secondary sort by product name alphabetically
+        const aName = (a.name || '').toLowerCase();
+        const bName = (b.name || '').toLowerCase();
+        if (aName < bName) return -1;
+        if (aName > bName) return 1;
         return 0;
       });
     }
