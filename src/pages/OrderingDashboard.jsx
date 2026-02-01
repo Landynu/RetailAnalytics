@@ -1027,7 +1027,7 @@ const OrderingDashboard = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] bg-white">
+          <div className="overflow-auto rounded-xl border border-slate-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] bg-white" style={{ maxHeight: 'calc(100vh - 420px)' }}>
             {allAnalyticsData && (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
