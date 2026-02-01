@@ -19,6 +19,7 @@ model User {
     role             String  @default("ANALYST") // ADMIN, ANALYST
     permissions      String? // JSON string for granular permissions
     stores           Store[]
+    posAccounts      POSAccount[]
     unmatchedRecords UnmatchedRecord[]
     orderWorksheets  OrderWorksheet[]
     productActions   ProductAction[]
@@ -100,8 +101,11 @@ model Store {
     snapshots     InventorySnapshot[]
     stockLevels   StockLevel[]
     movements     InventoryMovement[]
-    inventories Inventory[] // Legacy relation
-    
+    inventories   Inventory[] // Legacy relation
+    weeklySalesSummaries    WeeklySalesSummary[]
+    weeklyCategorySummaries WeeklyCategorySummary[]
+    weeklyBrandSummaries    WeeklyBrandSummary[]
+
     @@index([userId, isActive])
     @@index([posAccountId])
 }

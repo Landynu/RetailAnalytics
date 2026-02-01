@@ -47,7 +47,7 @@ const FilterDropdown = ({
   };
 
   const handleApply = () => {
-    if (JSON.stringify(pendingValues.sort()) !== JSON.stringify(selectedValues.sort())) {
+    if (JSON.stringify([...pendingValues].sort()) !== JSON.stringify([...selectedValues].sort())) {
       onChange(pendingValues);
     }
     setIsOpen(false);
@@ -58,7 +58,7 @@ const FilterDropdown = ({
     setIsOpen(false);
   };
 
-  const hasPendingChanges = JSON.stringify(pendingValues.sort()) !== JSON.stringify(selectedValues.sort());
+  const hasPendingChanges = JSON.stringify([...pendingValues].sort()) !== JSON.stringify([...selectedValues].sort());
 
   const getDisplayText = () => {
     if (selectedValues.length === 0) {
