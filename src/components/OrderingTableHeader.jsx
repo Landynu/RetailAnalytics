@@ -36,9 +36,9 @@ const DraggableHeader = ({ column, children, onSort, sortConfig }) => {
     <th
       ref={setNodeRef}
       style={style}
-      className={`group px-4 py-4 font-semibold text-sm border-r border-b border-slate-300/50 bg-gradient-to-b from-[#14b8a6]/10 via-[#0ea5e9]/5 to-[#2563eb]/10 text-slate-800 relative ${
+      className={`group px-4 py-4 font-semibold text-sm border-r border-b border-slate-300/50 bg-gradient-to-b from-[#e6f7f5] via-[#eef6fc] to-[#eef2fb] text-slate-800 relative ${
         column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
-      } ${!column.isLocation && column.sortKey ? 'cursor-pointer hover:from-[#14b8a6]/15 hover:via-[#0ea5e9]/10 hover:to-[#2563eb]/15 transition-all duration-200' : ''} ${isDragging ? 'z-50' : ''}`}
+      } ${!column.isLocation && column.sortKey ? 'cursor-pointer hover:from-[#d9f2ef] hover:via-[#e3f1fa] hover:to-[#e4ebf8] transition-all duration-200' : ''} ${isDragging ? 'z-50' : ''}`}
       onClick={handleHeaderClick}
     >
       <div className={`flex items-center gap-1 ${

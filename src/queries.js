@@ -2077,6 +2077,8 @@ export const getOrderingAnalytics = async ({
       brand: product.brand,
       parentCategory: product.parentCategory,
       subcategory: product.subcategory,
+      categoryDefinitionId: product.categoryDefinitionId,
+      subcategoryId: product.subcategoryId,
       strainType: product.strainType,
       format: product.format,
       unitCount: product.unitCount,
