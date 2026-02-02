@@ -32,117 +32,117 @@ page SignupPage {
 }
 
 action uploadInventory {
-  fn: import { uploadInventory } from "@src/actions.js",
+  fn: import { uploadInventory } from "@src/actions/inventory.js",
   entities: [Store, Inventory, Product]
 }
 
 action analyzeInventoryExport {
-  fn: import { analyzeInventoryExport } from "@src/actions.js",
+  fn: import { analyzeInventoryExport } from "@src/actions/inventory.js",
   entities: [Store, ProductCatalog, Category, InventorySnapshot, StockLevel]
 }
 
 action uploadInventoryExport {
-  fn: import { uploadInventoryExport } from "@src/actions.js",
+  fn: import { uploadInventoryExport } from "@src/actions/inventory.js",
   entities: [Store, ProductCatalog, Category, InventorySnapshot, StockLevel, Classification, CategoryDefinition, CategorySubcategory]
 }
 
 action uploadInventoryLogs {
-  fn: import { uploadInventoryLogs } from "@src/actions.js",
+  fn: import { uploadInventoryLogs } from "@src/actions/inventoryLogs.js",
   entities: [Store, ProductCatalog, InventoryMovement, StockLevel, InventorySnapshot, UnmatchedRecord, WeeklySalesSummary]
 }
 
 action uploadProductCatalog {
-  fn: import { uploadProductCatalog } from "@src/actions.js",
+  fn: import { uploadProductCatalog } from "@src/actions/productCatalog.js",
   entities: [ProductCatalog, WeeklySalesSummary, InventoryMovement]
 }
 
 action createStore {
-  fn: import { createStore } from "@src/actions.js",
+  fn: import { createStore } from "@src/actions/store.js",
   entities: [Store]
 }
 
 action updateStoreBranding {
-  fn: import { updateStoreBranding } from "@src/actions.js",
+  fn: import { updateStoreBranding } from "@src/actions/store.js",
   entities: [Store]
 }
 
 action generateSmartMenu {
-  fn: import { generateSmartMenu } from "@src/actions.js",
+  fn: import { generateSmartMenu } from "@src/actions/menu.js",
   entities: [Store, Inventory, Product]
 }
 
 action generatePrintableMenu {
-  fn: import { generatePrintableMenu } from "@src/actions.js",
+  fn: import { generatePrintableMenu } from "@src/actions/menu.js",
   entities: [Store, ProductCatalog, StockLevel]
 }
 
 action exportAnalyticsData {
-  fn: import { exportAnalyticsData } from "@src/actions.js",
+  fn: import { exportAnalyticsData } from "@src/actions/analytics.js",
   entities: [Store, ProductCatalog, StockLevel, InventoryMovement]
 }
 
 action clearAnalyticsCache {
-  fn: import { clearAnalyticsCache } from "@src/actions.js",
+  fn: import { clearAnalyticsCache } from "@src/actions/analytics.js",
   entities: []
 }
 
 action toggleStoreActive {
-  fn: import { toggleStoreActive } from "@src/actions.js",
+  fn: import { toggleStoreActive } from "@src/actions/store.js",
   entities: [Store]
 }
 
 action toggleStoreFavourite {
-  fn: import { toggleStoreFavourite } from "@src/actions.js",
+  fn: import { toggleStoreFavourite } from "@src/actions/store.js",
   entities: [Store]
 }
 
 action toggleStorePrimary {
-  fn: import { toggleStorePrimary } from "@src/actions.js",
+  fn: import { toggleStorePrimary } from "@src/actions/store.js",
   entities: [Store]
 }
 
 query getSalesTrends {
-  fn: import { getSalesTrends } from "@src/queries.js",
+  fn: import { getSalesTrends } from "@src/queries/inventory.js",
   entities: [Store, ProductCatalog, StockLevel, InventorySnapshot]
 }
 
 query getUserStores {
-  fn: import { getUserStores } from "@src/queries.js",
+  fn: import { getUserStores } from "@src/queries/store.js",
   entities: [Store]
 }
 
 query getStoreById {
-  fn: import { getStoreById } from "@src/queries.js",
+  fn: import { getStoreById } from "@src/queries/store.js",
   entities: [Store]
 }
 
 query getInventoryDashboard {
-  fn: import { getInventoryDashboard } from "@src/queries.js",
+  fn: import { getInventoryDashboard } from "@src/queries/inventory.js",
   entities: [Store, ProductCatalog, StockLevel, Category]
 }
 
 query getTopProductsByCategory {
-  fn: import { getTopProductsByCategory } from "@src/queries.js",
+  fn: import { getTopProductsByCategory } from "@src/queries/inventory.js",
   entities: [Store, ProductCatalog, StockLevel, Category]
 }
 
 query getInventoryMovements {
-  fn: import { getInventoryMovements } from "@src/queries.js",
+  fn: import { getInventoryMovements } from "@src/queries/inventory.js",
   entities: [Store, ProductCatalog, InventoryMovement]
 }
 
 query getProductInventoryMovements {
-  fn: import { getProductInventoryMovements } from "@src/queries.js",
+  fn: import { getProductInventoryMovements } from "@src/queries/inventory.js",
   entities: [ProductCatalog, InventoryMovement, Store]
 }
 
 query getCategoryBreakdown {
-  fn: import { getCategoryBreakdown } from "@src/queries.js",
+  fn: import { getCategoryBreakdown } from "@src/queries/inventory.js",
   entities: [Store, ProductCatalog, StockLevel, Category]
 }
 
 query getMenuData {
-  fn: import { getMenuData } from "@src/queries.js",
+  fn: import { getMenuData } from "@src/queries/inventory.js",
   entities: [Store, ProductCatalog, StockLevel, Category]
 }
 
@@ -182,117 +182,117 @@ query getOutOfStockProducts {
 }
 
 query getOrCreateOrderWorksheet {
-  fn: import { getOrCreateOrderWorksheet } from "@src/actions.js",
+  fn: import { getOrCreateOrderWorksheet } from "@src/actions/orderWorksheet.js",
   entities: [OrderWorksheet, OrderWorksheetItem, ProductCatalog]
 }
 
 action addToOrderWorksheet {
-  fn: import { addToOrderWorksheet } from "@src/actions.js",
+  fn: import { addToOrderWorksheet } from "@src/actions/orderWorksheet.js",
   entities: [OrderWorksheet, OrderWorksheetItem, ProductCatalog]
 }
 
 action updateOrderWorksheetItem {
-  fn: import { updateOrderWorksheetItem } from "@src/actions.js",
+  fn: import { updateOrderWorksheetItem } from "@src/actions/orderWorksheet.js",
   entities: [OrderWorksheet, OrderWorksheetItem, ProductCatalog]
 }
 
 action removeFromOrderWorksheet {
-  fn: import { removeFromOrderWorksheet } from "@src/actions.js",
+  fn: import { removeFromOrderWorksheet } from "@src/actions/orderWorksheet.js",
   entities: [OrderWorksheet, OrderWorksheetItem]
 }
 
 action clearOrderWorksheet {
-  fn: import { clearOrderWorksheet } from "@src/actions.js",
+  fn: import { clearOrderWorksheet } from "@src/actions/orderWorksheet.js",
   entities: [OrderWorksheet, OrderWorksheetItem]
 }
 
 action exportOrderWorksheet {
-  fn: import { exportOrderWorksheet } from "@src/actions.js",
+  fn: import { exportOrderWorksheet } from "@src/actions/orderWorksheet.js",
   entities: [OrderWorksheet, OrderWorksheetItem, ProductCatalog]
 }
 
 action deleteInventoryMovementsByDateRange {
-  fn: import { deleteInventoryMovementsByDateRange } from "@src/actions.js",
+  fn: import { deleteInventoryMovementsByDateRange } from "@src/actions/cleanup.js",
   entities: [InventoryMovement, Store]
 }
 
 action markProductStatus {
-  fn: import { markProductStatus } from "@src/actions.js",
+  fn: import { markProductStatus } from "@src/actions/product.js",
   entities: [ProductCatalog]
 }
 
 action enrichProductFormats {
-  fn: import { enrichProductFormats } from "@src/actions.js",
+  fn: import { enrichProductFormats } from "@src/actions/product.js",
   entities: [ProductCatalog]
 }
 
 action backfillWeeklySummaries {
-  fn: import { backfillWeeklySummaries } from "@src/actions.js",
+  fn: import { backfillWeeklySummaries } from "@src/actions/weeklySummary.js",
   entities: [Store, ProductCatalog, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary]
 }
 
 query getBrandDistributors {
-  fn: import { getBrandDistributors } from "@src/queries.js",
+  fn: import { getBrandDistributors } from "@src/queries/brandDistributor.js",
   entities: [Brand, Distributor, BrandDistributor, InventoryMovement, ProductCatalog]
 }
 
 query getDistributors {
-  fn: import { getDistributors } from "@src/queries.js",
+  fn: import { getDistributors } from "@src/queries/brandDistributor.js",
   entities: [Distributor]
 }
 
 action updateBrandDistributors {
-  fn: import { updateBrandDistributors } from "@src/actions.js",
+  fn: import { updateBrandDistributors } from "@src/actions/brandDistributor.js",
   entities: [Brand, BrandDistributor, Distributor]
 }
 
 action createDistributor {
-  fn: import { createDistributor } from "@src/actions.js",
+  fn: import { createDistributor } from "@src/actions/brandDistributor.js",
   entities: [Distributor]
 }
 
 action deleteDistributor {
-  fn: import { deleteDistributor } from "@src/actions.js",
+  fn: import { deleteDistributor } from "@src/actions/brandDistributor.js",
   entities: [Distributor, BrandDistributor]
 }
 
 action syncBrands {
-  fn: import { syncBrands } from "@src/actions.js",
+  fn: import { syncBrands } from "@src/actions/brandDistributor.js",
   entities: [Brand, ProductCatalog]
 }
 
 action seedDistributors {
-  fn: import { seedDistributors } from "@src/actions.js",
+  fn: import { seedDistributors } from "@src/actions/brandDistributor.js",
   entities: [Distributor]
 }
 
 action seedDefaultClassifications {
-  fn: import { seedDefaultClassifications } from "@src/actions.js",
+  fn: import { seedDefaultClassifications } from "@src/actions/classification.js",
   entities: [Classification]
 }
 
 action seedDefaultCategories {
-  fn: import { seedDefaultCategories } from "@src/actions.js",
+  fn: import { seedDefaultCategories } from "@src/actions/category.js",
   entities: [CategoryDefinition, CategorySubcategory]
 }
 
 query getProductCatalog {
-  fn: import { getProductCatalog } from "@src/queries.js",
+  fn: import { getProductCatalog } from "@src/queries/productCatalog.js",
   entities: [ProductCatalog, Classification, CategoryDefinition, CategorySubcategory, Distributor, StockLevel, Store]
 }
 
 query getClassifications {
-  fn: import { getClassifications } from "@src/queries.js",
+  fn: import { getClassifications } from "@src/queries/productCatalog.js",
   entities: [Classification]
 }
 
 query getCategoryDefinitions {
-  fn: import { getCategoryDefinitions } from "@src/queries.js",
+  fn: import { getCategoryDefinitions } from "@src/queries/productCatalog.js",
   entities: [CategoryDefinition, CategorySubcategory]
 }
 
 query getProductById {
-  fn: import { getProductById } from "@src/queries.js",
+  fn: import { getProductById } from "@src/queries/productCatalog.js",
   entities: [ProductCatalog, Classification, CategoryDefinition, CategorySubcategory, Distributor, ProductEnrichment, StockLevel, Store, InventoryMovement]
 }
 
@@ -303,140 +303,140 @@ page ProductDetailPage {
 }
 
 action updateProductEnrichment {
-  fn: import { updateProductEnrichment } from "@src/actions.js",
+  fn: import { updateProductEnrichment } from "@src/actions/product.js",
   entities: [ProductCatalog, ProductEnrichment]
 }
 
 action updateProductCannabinoids {
-  fn: import { updateProductCannabinoids } from "@src/actions.js",
+  fn: import { updateProductCannabinoids } from "@src/actions/product.js",
   entities: [ProductCatalog, ProductEnrichment]
 }
 
 action bulkUpdateProducts {
-  fn: import { bulkUpdateProducts } from "@src/actions.js",
+  fn: import { bulkUpdateProducts } from "@src/actions/product.js",
   entities: [ProductCatalog, ProductEnrichment]
 }
 
 action createClassification {
-  fn: import { createClassification } from "@src/actions.js",
+  fn: import { createClassification } from "@src/actions/classification.js",
   entities: [Classification]
 }
 
 action updateClassification {
-  fn: import { updateClassification } from "@src/actions.js",
+  fn: import { updateClassification } from "@src/actions/classification.js",
   entities: [Classification]
 }
 
 action deleteClassification {
-  fn: import { deleteClassification } from "@src/actions.js",
+  fn: import { deleteClassification } from "@src/actions/classification.js",
   entities: [Classification]
 }
 
 action createCategoryDefinition {
-  fn: import { createCategoryDefinition } from "@src/actions.js",
+  fn: import { createCategoryDefinition } from "@src/actions/category.js",
   entities: [CategoryDefinition]
 }
 
 action updateCategoryDefinition {
-  fn: import { updateCategoryDefinition } from "@src/actions.js",
+  fn: import { updateCategoryDefinition } from "@src/actions/category.js",
   entities: [CategoryDefinition]
 }
 
 action deleteCategoryDefinition {
-  fn: import { deleteCategoryDefinition } from "@src/actions.js",
+  fn: import { deleteCategoryDefinition } from "@src/actions/category.js",
   entities: [CategoryDefinition]
 }
 
 action createSubcategory {
-  fn: import { createSubcategory } from "@src/actions.js",
+  fn: import { createSubcategory } from "@src/actions/category.js",
   entities: [CategorySubcategory]
 }
 
 action updateSubcategory {
-  fn: import { updateSubcategory } from "@src/actions.js",
+  fn: import { updateSubcategory } from "@src/actions/category.js",
   entities: [CategorySubcategory]
 }
 
 action deleteSubcategory {
-  fn: import { deleteSubcategory } from "@src/actions.js",
+  fn: import { deleteSubcategory } from "@src/actions/category.js",
   entities: [CategorySubcategory]
 }
 
 action syncProductCategoriesToDefinitions {
-  fn: import { syncProductCategoriesToDefinitions } from "@src/actions.js",
+  fn: import { syncProductCategoriesToDefinitions } from "@src/actions/productSync.js",
   entities: [ProductCatalog, CategoryDefinition, CategorySubcategory]
 }
 
 action syncProductClassifications {
-  fn: import { syncProductClassifications } from "@src/actions.js",
+  fn: import { syncProductClassifications } from "@src/actions/productSync.js",
   entities: [ProductCatalog, Classification]
 }
 
 action syncAllProductEnrichments {
-  fn: import { syncAllProductEnrichments } from "@src/actions.js",
+  fn: import { syncAllProductEnrichments } from "@src/actions/productSync.js",
   entities: [ProductCatalog, Classification, CategoryDefinition, CategorySubcategory]
 }
 
 action configureS3CORS {
-  fn: import { configureS3CORS } from "@src/actions.js"
+  fn: import { configureS3CORS } from "@src/actions/s3.js"
 }
 
 action migrateProductImages {
-  fn: import { migrateProductImages } from "@src/actions.js",
+  fn: import { migrateProductImages } from "@src/actions/s3.js",
   entities: [ProductCatalog]
 }
 
 action checkS3Storage {
-  fn: import { checkS3Storage } from "@src/actions.js"
+  fn: import { checkS3Storage } from "@src/actions/s3.js"
 }
 
 action checkImageMigrationStatus {
-  fn: import { checkImageMigrationStatus } from "@src/actions.js",
+  fn: import { checkImageMigrationStatus } from "@src/actions/s3.js",
   entities: [ProductCatalog]
 }
 
 action cleanupOctoberNovember2025 {
-  fn: import { cleanupOctoberNovember2025 } from "@src/actions.js",
+  fn: import { cleanupOctoberNovember2025 } from "@src/actions/cleanup.js",
   entities: [Store, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary, InventorySnapshot]
 }
 
 action createProductAction {
-  fn: import { createProductAction } from "@src/actions.js",
+  fn: import { createProductAction } from "@src/actions/productAction.js",
   entities: [ProductAction, ProductCatalog]
 }
 
 action updateProductAction {
-  fn: import { updateProductAction } from "@src/actions.js",
+  fn: import { updateProductAction } from "@src/actions/productAction.js",
   entities: [ProductAction]
 }
 
 action completeProductAction {
-  fn: import { completeProductAction } from "@src/actions.js",
+  fn: import { completeProductAction } from "@src/actions/productAction.js",
   entities: [ProductAction]
 }
 
 action reactivateProductAction {
-  fn: import { reactivateProductAction } from "@src/actions.js",
+  fn: import { reactivateProductAction } from "@src/actions/productAction.js",
   entities: [ProductAction]
 }
 
 action deleteProductAction {
-  fn: import { deleteProductAction } from "@src/actions.js",
+  fn: import { deleteProductAction } from "@src/actions/productAction.js",
   entities: [ProductAction]
 }
 
 action exportProductActions {
-  fn: import { exportProductActions } from "@src/actions.js",
+  fn: import { exportProductActions } from "@src/actions/productAction.js",
   entities: [ProductAction, ProductCatalog]
 }
 
 query getProductActions {
-  fn: import { getProductActions } from "@src/queries.js",
+  fn: import { getProductActions } from "@src/queries/productAction.js",
   entities: [ProductAction, ProductCatalog]
 }
 
 query getActiveActionsByProduct {
-  fn: import { getActiveActionsByProduct } from "@src/queries.js",
+  fn: import { getActiveActionsByProduct } from "@src/queries/productAction.js",
   entities: [ProductAction]
 }
 
@@ -451,27 +451,27 @@ action scrapePOS {
 }
 
 action createPOSAccount {
-  fn: import { createPOSAccount } from "@src/actions.js",
+  fn: import { createPOSAccount } from "@src/actions/pos.js",
   entities: [POSAccount]
 }
 
 action updatePOSAccount {
-  fn: import { updatePOSAccount } from "@src/actions.js",
+  fn: import { updatePOSAccount } from "@src/actions/pos.js",
   entities: [POSAccount]
 }
 
 action deletePOSAccount {
-  fn: import { deletePOSAccount } from "@src/actions.js",
+  fn: import { deletePOSAccount } from "@src/actions/pos.js",
   entities: [POSAccount, Store]
 }
 
 action linkStoreToPOSAccount {
-  fn: import { linkStoreToPOSAccount } from "@src/actions.js",
+  fn: import { linkStoreToPOSAccount } from "@src/actions/pos.js",
   entities: [Store, POSAccount]
 }
 
 query getPOSAccounts {
-  fn: import { getPOSAccounts } from "@src/queries.js",
+  fn: import { getPOSAccounts } from "@src/queries/pos.js",
   entities: [POSAccount, Store]
 }
 
@@ -489,7 +489,7 @@ job scheduledScrape {
 job backfillWeeklySummariesJob {
   executor: PgBoss,
   perform: {
-    fn: import { backfillWeeklySummaries } from "@src/actions.js"
+    fn: import { backfillWeeklySummaries } from "@src/actions/weeklySummary.js"
   },
   schedule: {
     cron: "0 3 * * *" // Run at 3 AM daily

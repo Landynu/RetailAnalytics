@@ -1,0 +1,124 @@
+import { HttpError } from 'wasp/server';
+import { encrypt } from '../server/encryption.js';
+
+/**
+ * Create a new POS account with encrypted credentials
+ */
+export const createPOSAccount = async ({ name, posType, username, password, loginUrl }, context) => {
+  if (!context.user) { throw new HttpError(401); }
+
+  try {
+    const encryptedUsername = encrypt(username);
+    const encryptedPassword = encrypt(password);
+
+    const account = await context.entities.POSAccount.create({
+      data: {
+        userId: context.user.id,
+        name,
+        posType,
+        username: encryptedUsername,
+        password: encryptedPassword,
+        loginUrl: loginUrl || null
+      }
+    });
+
+    console.log(`✅ Created POS account: ${name} (${posType})`);
+    return { id: account.id, name: account.name, posType: account.posType };
+  } catch (error) {
+    console.error('Failed to create POS account:', error);
+    throw new HttpError(500, `Failed to create POS account: ${error.message}`);
+  }
+};
+
+/**
+ * Update an existing POS account
+ */
+export const updatePOSAccount = async ({ id, name, posType, username, password, loginUrl }, context) => {
+  if (!context.user) { throw new HttpError(401); }
+
+  const account = await context.entities.POSAccount.findUnique({
+    where: { id }
+  });
+
+  if (!account || account.userId !== context.user.id) {
+    throw new HttpError(403, 'Not authorized to update this account');
+  }
+
+  const updateData = {
+    name,
+    posType,
+    loginUrl: loginUrl || null
+  };
+
+  // Only encrypt and update credentials if provided
+  if (username) {
+    updateData.username = encrypt(username);
+  }
+  if (password) {
+    updateData.password = encrypt(password);
+  }
+
+  await context.entities.POSAccount.update({
+    where: { id },
+    data: updateData
+  });
+
+  console.log(`✅ Updated POS account: ${name}`);
+  return { success: true };
+};
+
+/**
+ * Delete a POS account
+ */
+export const deletePOSAccount = async ({ id }, context) => {
+  if (!context.user) { throw new HttpError(401); }
+
+  const account = await context.entities.POSAccount.findUnique({
+    where: { id }
+  });
+
+  if (!account || account.userId !== context.user.id) {
+    throw new HttpError(403, 'Not authorized to delete this account');
+  }
+
+  await context.entities.POSAccount.delete({
+    where: { id }
+  });
+
+  console.log(`✅ Deleted POS account: ${account.name}`);
+  return { success: true };
+};
+
+/**
+ * Link a store to a POS account
+ */
+export const linkStoreToPOSAccount = async ({ storeId, posAccountId, externalStoreId }, context) => {
+  if (!context.user) { throw new HttpError(401); }
+
+  const store = await context.entities.Store.findUnique({
+    where: { id: storeId }
+  });
+
+  if (!store || store.userId !== context.user.id) {
+    throw new HttpError(403, 'Not authorized to update this store');
+  }
+
+  const account = await context.entities.POSAccount.findUnique({
+    where: { id: posAccountId }
+  });
+
+  if (!account || account.userId !== context.user.id) {
+    throw new HttpError(403, 'Not authorized to use this POS account');
+  }
+
+  await context.entities.Store.update({
+    where: { id: storeId },
+    data: {
+      posAccountId,
+      externalStoreId: externalStoreId || null
+    }
+  });
+
+  console.log(`✅ Linked store ${store.name} to POS account ${account.name}`);
+  return { success: true };
+};

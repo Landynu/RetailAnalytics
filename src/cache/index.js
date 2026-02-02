@@ -1,6 +1,4 @@
-// Re-export all cache functions from modular files
-// This file provides backwards compatibility for existing imports
-
+// Re-export all cache functions for convenient imports
 export {
   getRedisClient,
   isRedisAvailable,
@@ -8,7 +6,7 @@ export {
   getCachedBatch,
   setCached,
   deleteCached
-} from './cache/redis.js';
+} from './redis.js';
 
 export {
   generateCacheKey,
@@ -17,9 +15,9 @@ export {
   clearAllCache,
   getCacheStats,
   timedQuery
-} from './cache/utils.js';
+} from './utils.js';
 
 export {
   calculateWeekBoundaries,
   warmOrderingAnalyticsCache
-} from './cache/warmCache.js';
+} from './warmCache.js';

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "cartogopher": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/home/landyn/CartoGopherFull/cartogopher-mcp-v1.js"
+      ],
+      "env": {
+        "CARTOGOPHER_API_KEY": "cg_trial_78043ef08bdf4d867872313ed927a180d4ef05b002e49518529b1b7efd303cfa"
+      }
+    }
+  }
+}
