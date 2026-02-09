@@ -147,37 +147,37 @@ query getMenuData {
 }
 
 query getStoreAnalytics {
-  fn: import { getStoreAnalytics } from "@src/queries.js",
+  fn: import { getStoreAnalytics } from "@src/queries/analytics.js",
   entities: [Store, ProductCatalog, StockLevel, InventoryMovement]
 }
 
 query getGlobalAnalytics {
-  fn: import { getGlobalAnalytics } from "@src/queries.js",
+  fn: import { getGlobalAnalytics } from "@src/queries/analytics.js",
   entities: [Store, ProductCatalog, StockLevel]
 }
 
 query getGlobalAnalyticsFiltered {
-  fn: import { getGlobalAnalyticsFiltered } from "@src/queries.js",
+  fn: import { getGlobalAnalyticsFiltered } from "@src/queries/analytics.js",
   entities: [Store, ProductCatalog, StockLevel, InventoryMovement]
 }
 
 query getGlobalSalesAnalytics {
-  fn: import { getGlobalSalesAnalytics } from "@src/queries.js",
+  fn: import { getGlobalSalesAnalytics } from "@src/queries/globalSalesAnalytics.js",
   entities: [Store, ProductCatalog, WeeklySalesSummary]
 }
 
 query getDailySalesAnalytics {
-  fn: import { getDailySalesAnalytics } from "@src/queries.js",
+  fn: import { getDailySalesAnalytics } from "@src/queries/dailySalesAnalytics.js",
   entities: [Store, ProductCatalog, InventoryMovement]
 }
 
 query getOrderingAnalytics {
-  fn: import { getOrderingAnalytics } from "@src/queries.js",
+  fn: import { getOrderingAnalytics } from "@src/queries/ordering.js",
   entities: [Store, ProductCatalog, StockLevel, InventoryMovement, WeeklySalesSummary, Brand, Distributor, BrandDistributor]
 }
 
 query getOutOfStockProducts {
-  fn: import { getOutOfStockProducts } from "@src/queries.js",
+  fn: import { getOutOfStockProducts } from "@src/queries/outOfStock.js",
   entities: [Store, ProductCatalog, StockLevel, WeeklySalesSummary, InventoryMovement, Distributor]
 }
 
