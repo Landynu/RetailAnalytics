@@ -12,7 +12,6 @@ export const getOutOfStockProducts = async ({
   // Get user's stores
   const stores = await context.entities.Store.findMany({
     where: {
-      userId: context.user.id,
       isActive: true,
       ...(storeIds && storeIds.length > 0 ? { id: { in: storeIds } } : {})
     },

@@ -40,8 +40,8 @@ export const updatePOSAccount = async ({ id, name, posType, username, password, 
     where: { id }
   });
 
-  if (!account || account.userId !== context.user.id) {
-    throw new HttpError(403, 'Not authorized to update this account');
+  if (!account) {
+    throw new HttpError(404, 'POS account not found');
   }
 
   const updateData = {
@@ -77,8 +77,8 @@ export const deletePOSAccount = async ({ id }, context) => {
     where: { id }
   });
 
-  if (!account || account.userId !== context.user.id) {
-    throw new HttpError(403, 'Not authorized to delete this account');
+  if (!account) {
+    throw new HttpError(404, 'POS account not found');
   }
 
   await context.entities.POSAccount.delete({
@@ -99,16 +99,16 @@ export const linkStoreToPOSAccount = async ({ storeId, posAccountId, externalSto
     where: { id: storeId }
   });
 
-  if (!store || store.userId !== context.user.id) {
-    throw new HttpError(403, 'Not authorized to update this store');
+  if (!store) {
+    throw new HttpError(404, 'Store not found');
   }
 
   const account = await context.entities.POSAccount.findUnique({
     where: { id: posAccountId }
   });
 
-  if (!account || account.userId !== context.user.id) {
-    throw new HttpError(403, 'Not authorized to use this POS account');
+  if (!account) {
+    throw new HttpError(404, 'POS account not found');
   }
 
   await context.entities.Store.update({

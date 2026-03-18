@@ -35,7 +35,7 @@ export const getProductCatalog = async (args, context) => {
   if (filters.inStock === true) {
     // Get user's stores
     const userStores = await context.entities.Store.findMany({
-      where: { userId: context.user.id, isActive: true },
+      where: { isActive: true },
       select: { id: true }
     })
     const storeIds = userStores.map(s => s.id)
@@ -80,7 +80,6 @@ export const getProductCatalog = async (args, context) => {
         stockLevels: {
           where: {
             store: {
-              userId: context.user.id,
               isActive: true
             }
           },
@@ -137,9 +136,9 @@ export const getCategoryDefinitions = async (args, context) => {
 export const getProductById = async ({ productId }, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  // Get user's stores for stock level filtering
+  // Get active stores for stock level filtering
   const userStores = await context.entities.Store.findMany({
-    where: { userId: context.user.id, isActive: true },
+    where: { isActive: true },
     select: { id: true }
   })
   const storeIds = userStores.map(s => s.id)

@@ -107,7 +107,6 @@ export const exportProductActions = async ({ status = 'ACTIVE', actionType }, co
 
   try {
     const whereClause = {
-      userId: context.user.id,
       status: status || undefined
     };
 

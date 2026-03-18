@@ -21,8 +21,8 @@ export const updateStoreBranding = async ({ storeId, branding }, context) => {
     where: { id: storeId }
   });
 
-  if (!store || store.userId !== context.user.id) {
-    throw new HttpError(403);
+  if (!store) {
+    throw new HttpError(404);
   }
 
   const updatedStore = await context.entities.Store.update({
@@ -46,8 +46,8 @@ export const toggleStoreActive = async ({ storeId }, context) => {
     where: { id: parseInt(storeId) }
   });
 
-  if (!store || store.userId !== context.user.id) {
-    throw new HttpError(403);
+  if (!store) {
+    throw new HttpError(404);
   }
 
   const updatedStore = await context.entities.Store.update({
@@ -69,8 +69,8 @@ export const toggleStoreFavourite = async ({ storeId }, context) => {
     where: { id: parseInt(storeId) }
   });
 
-  if (!store || store.userId !== context.user.id) {
-    throw new HttpError(403);
+  if (!store) {
+    throw new HttpError(404);
   }
 
   // Can only favourite active stores
@@ -95,8 +95,8 @@ export const toggleStorePrimary = async ({ storeId }, context) => {
     where: { id: parseInt(storeId) }
   });
 
-  if (!store || store.userId !== context.user.id) {
-    throw new HttpError(403);
+  if (!store) {
+    throw new HttpError(404);
   }
 
   // Can only set primary on active stores
@@ -104,11 +104,10 @@ export const toggleStorePrimary = async ({ storeId }, context) => {
     throw new HttpError(400, 'Cannot set a disabled store as primary');
   }
 
-  // If setting as primary, unset all other stores for this user
+  // If setting as primary, unset all other stores
   if (!store.isPrimary) {
     await context.entities.Store.updateMany({
       where: {
-        userId: context.user.id,
         isPrimary: true
       },
       data: {

@@ -29,7 +29,7 @@ export const getOrderingAnalytics = async ({
   const periodDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));
 
   // Build store filter
-  const storeWhere = { userId: context.user.id, isActive: true };
+  const storeWhere = { isActive: true };
   if (storeIds && storeIds.length > 0) {
     storeWhere.id = { in: storeIds.map(id => parseInt(id)) };
   }

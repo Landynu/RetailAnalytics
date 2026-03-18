@@ -72,9 +72,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   console.log(`[${ts()}] Stage 2/5: Bulk lookup stores and products...`);
 
   // STAGE 2: Bulk lookup stores and products (1-2 seconds)
-  const userStores = await context.entities.Store.findMany({
-    where: { userId: context.user.id }
-  });
+  const userStores = await context.entities.Store.findMany();
 
   if (userStores.length === 0) {
     throw new HttpError(400, 'No stores found. Please create a store first.');
@@ -308,7 +306,7 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
 
   // Warm cache after upload (fire-and-forget)
   const stores = await context.entities.Store.findMany({
-    where: { userId: context.user.id, isActive: true },
+    where: { isActive: true },
     select: { id: true }
   });
   if (stores.length > 0) {

@@ -3,9 +3,7 @@ import { HttpError } from 'wasp/server';
 export const getUserStores = async (args, context) => {
   if (!context.user) { throw new HttpError(401) };
 
-  return context.entities.Store.findMany({
-    where: { userId: context.user.id }
-  });
+  return context.entities.Store.findMany();
 }
 
 export const getStoreById = async ({ storeId }, context) => {
@@ -15,7 +13,7 @@ export const getStoreById = async ({ storeId }, context) => {
     where: { id: parseInt(storeId) }
   });
 
-  if (!store || store.userId !== context.user.id) {
+  if (!store) {
     throw new HttpError(404)
   }
 

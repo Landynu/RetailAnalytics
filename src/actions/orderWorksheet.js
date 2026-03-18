@@ -5,7 +5,6 @@ export const getOrCreateOrderWorksheet = async (_args, context) => {
 
   // Find or create the user's current order worksheet
   let worksheet = await context.entities.OrderWorksheet.findFirst({
-    where: { userId: context.user.id },
     include: {
       items: {
         include: {
@@ -40,7 +39,6 @@ export const addToOrderWorksheet = async ({ productId, quantity, notes }, contex
 
   // Get or create worksheet
   let worksheet = await context.entities.OrderWorksheet.findFirst({
-    where: { userId: context.user.id },
     orderBy: { updatedAt: 'desc' }
   });
 
@@ -90,8 +88,8 @@ export const updateOrderWorksheetItem = async ({ itemId, userQuantity, notes }, 
     }
   });
 
-  if (!item || item.worksheet.userId !== context.user.id) {
-    throw new HttpError(403);
+  if (!item) {
+    throw new HttpError(404);
   }
 
   const updatedItem = await context.entities.OrderWorksheetItem.update({
@@ -118,8 +116,8 @@ export const removeFromOrderWorksheet = async ({ itemId }, context) => {
     }
   });
 
-  if (!item || item.worksheet.userId !== context.user.id) {
-    throw new HttpError(403);
+  if (!item) {
+    throw new HttpError(404);
   }
 
   await context.entities.OrderWorksheetItem.delete({
@@ -133,7 +131,6 @@ export const clearOrderWorksheet = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
   const worksheet = await context.entities.OrderWorksheet.findFirst({
-    where: { userId: context.user.id },
     orderBy: { updatedAt: 'desc' }
   });
 
@@ -152,7 +149,6 @@ export const exportOrderWorksheet = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
   const worksheet = await context.entities.OrderWorksheet.findFirst({
-    where: { userId: context.user.id },
     include: {
       items: {
         include: {

@@ -23,12 +23,11 @@ export const cleanupOctoberNovember2025 = async (_args, context) => {
 
     // Get user's store IDs
     const userStores = await context.entities.Store.findMany({
-      where: { userId: context.user.id },
       select: { id: true }
     });
 
     if (userStores.length === 0) {
-      throw new HttpError(400, 'No stores found for user');
+      throw new HttpError(400, 'No stores found');
     }
 
     const storeIds = userStores.map(s => s.id);
@@ -147,12 +146,11 @@ export const deleteInventoryMovementsByDateRange = async ({ startDate, endDate, 
       console.log(`[${ts()}] Stores: ${targetStoreIds.join(', ')}`);
     } else {
       const userStores = await context.entities.Store.findMany({
-        where: { userId: context.user.id },
         select: { id: true, name: true }
       });
 
       if (userStores.length === 0) {
-        throw new HttpError(400, 'No stores found for user');
+        throw new HttpError(400, 'No stores found');
       }
 
       targetStoreIds = userStores.map(s => s.id);

@@ -17,12 +17,18 @@ export default function Login() {
                 }
               }}
             />
-            <div className="mt-4 text-center">
-              If you don't have an account go to{" "}
-              <Link to="/signup" className="text-primary-500 hover:text-primary-800 underline">
-                sign up
-              </Link>
-              .
+            <div className="mt-4 text-center text-sm text-gray-600 space-y-2">
+              <div>
+                If you don't have an account go to{" "}
+                <Link to="/signup" className="text-primary-500 hover:text-primary-800 underline">
+                  sign up
+                </Link>
+              </div>
+              <div>
+                <Link to="/request-password-reset" className="text-primary-500 hover:text-primary-800 underline">
+                  Forgot your password?
+                </Link>
+              </div>
             </div>
           </div>
         </div>

@@ -4,9 +4,7 @@ export const getProductActions = async ({ status = 'ACTIVE', actionType, groupBy
   if (!context.user) throw new HttpError(401);
 
   try {
-    const whereClause = {
-      userId: context.user.id
-    };
+    const whereClause = {};
 
     if (status) {
       whereClause.status = status;
@@ -79,7 +77,6 @@ export const getActiveActionsByProduct = async ({ productId }, context) => {
     const actions = await context.entities.ProductAction.findMany({
       where: {
         productId: parseInt(productId),
-        userId: context.user.id,
         status: 'ACTIVE'
       },
       orderBy: { createdAt: 'desc' }

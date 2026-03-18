@@ -15,14 +15,26 @@ generator client {
 }
 
 model User {
-    id               Int     @id @default(autoincrement())
-    role             String  @default("ANALYST") // ADMIN, ANALYST
-    permissions      String? // JSON string for granular permissions
+    id               Int            @id @default(autoincrement())
+    role             String         @default("ANALYST") // ADMIN, ANALYST
+    permissions      String?        // JSON string for granular permissions
     stores           Store[]
     posAccounts      POSAccount[]
     unmatchedRecords UnmatchedRecord[]
     orderWorksheets  OrderWorksheet[]
     productActions   ProductAction[]
+    invitationsSent  Invitation[]   @relation("InvitedBy")
+}
+
+model Invitation {
+    id        Int      @id @default(autoincrement())
+    email     String   @unique
+    token     String   @unique @default(uuid())
+    invitedBy Int
+    inviter   User     @relation("InvitedBy", fields: [invitedBy], references: [id])
+    status    String   @default("PENDING") // PENDING, ACCEPTED, EXPIRED
+    createdAt DateTime @default(now())
+    expiresAt DateTime
 }
 
 model Brand {

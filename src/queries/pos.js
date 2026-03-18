@@ -4,9 +4,7 @@ export const getPOSAccounts = async (args, context) => {
   if (!context.user) { throw new HttpError(401); }
 
   const accounts = await context.entities.POSAccount.findMany({
-    where: {
-      userId: context.user.id
-    },
+    where: {},
     include: {
       stores: {
         select: {

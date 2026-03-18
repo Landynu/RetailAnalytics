@@ -7,7 +7,6 @@ export const exportAnalyticsData = async ({ storeIds, filters }, context) => {
   // Get the filtered analytics data using the query logic
   const analyticsData = await context.entities.Store.findMany({
     where: {
-      userId: context.user.id,
       ...(storeIds && storeIds.length > 0 ? { id: { in: storeIds.map(id => parseInt(id)) } } : {})
     },
     include: {

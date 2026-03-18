@@ -76,7 +76,7 @@ export const getInventoryDashboard = async ({ storeId, dateRange }, context) => 
     where: { id: parseInt(storeId) }
   });
 
-  if (!store || store.userId !== context.user.id) {
+  if (!store) {
     throw new HttpError(404);
   }
 

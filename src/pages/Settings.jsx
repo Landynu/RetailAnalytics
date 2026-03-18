@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery } from 'wasp/client/operations';
-import { getPOSAccounts, getUserStores, createPOSAccount, updatePOSAccount, deletePOSAccount, linkStoreToPOSAccount, scrapePOS } from 'wasp/client/operations';
+import { getPOSAccounts, getUserStores, createPOSAccount, updatePOSAccount, deletePOSAccount, linkStoreToPOSAccount, scrapePOS, sendInvitation, revokeInvitation, getInvitations } from 'wasp/client/operations';
 import { Button } from '../components/ui/button';
-import { Plus, RefreshCw, Trash2, Link as LinkIcon, Settings as SettingsIcon } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Link as LinkIcon, Settings as SettingsIcon, Mail, UserPlus, X } from 'lucide-react';
 
 const SettingsPage = () => {
     const [activeTab, setActiveTab] = useState('pos-accounts');
@@ -27,6 +27,15 @@ const SettingsPage = () => {
                         POS Accounts
                     </button>
                     <button
+                        onClick={() => setActiveTab('team')}
+                        className={`pb-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'team'
+                            ? 'border-primary text-foreground'
+                            : 'border-transparent text-muted-foreground hover:text-foreground'
+                            }`}
+                    >
+                        Team
+                    </button>
+                    <button
                         onClick={() => setActiveTab('general')}
                         className={`pb-3 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'general'
                             ? 'border-primary text-foreground'
@@ -40,6 +49,7 @@ const SettingsPage = () => {
 
             {/* Tab Content */}
             {activeTab === 'pos-accounts' && <POSAccountsTab />}
+            {activeTab === 'team' && <TeamTab />}
             {activeTab === 'general' && <GeneralTab />}
         </div>
     );
@@ -224,6 +234,117 @@ const POSAccountsTab = () => {
                         setSelectedAccount(null);
                     }}
                 />
+            )}
+        </div>
+    );
+};
+
+const TeamTab = () => {
+    const { data: invitations, isLoading } = useQuery(getInvitations);
+    const [email, setEmail] = useState('');
+    const [sending, setSending] = useState(false);
+
+    const handleInvite = async (e) => {
+        e.preventDefault();
+        if (!email.trim()) return;
+        setSending(true);
+        try {
+            await sendInvitation({ email: email.trim() });
+            setEmail('');
+            alert('Invitation sent!');
+        } catch (err) {
+            alert('Failed to send invitation: ' + err.message);
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const handleRevoke = async (id) => {
+        if (!confirm('Revoke this invitation?')) return;
+        try {
+            await revokeInvitation({ id });
+        } catch (err) {
+            alert('Failed to revoke: ' + err.message);
+        }
+    };
+
+    const getStatusBadge = (invitation) => {
+        if (invitation.status === 'ACCEPTED') {
+            return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Accepted</span>;
+        }
+        if (new Date() > new Date(invitation.expiresAt)) {
+            return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Expired</span>;
+        }
+        return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Pending</span>;
+    };
+
+    return (
+        <div>
+            <h2 className="text-xl font-semibold mb-4">Team Members</h2>
+            <p className="text-muted-foreground mb-6">Invite people to access RetailAnalytics. They'll receive an email with a signup link.</p>
+
+            <form onSubmit={handleInvite} className="flex gap-3 mb-8">
+                <div className="flex-1 relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="colleague@example.com"
+                        className="w-full border rounded-lg pl-10 pr-3 py-2 text-sm"
+                        required
+                    />
+                </div>
+                <Button type="submit" disabled={sending} className="gap-2">
+                    <UserPlus className="h-4 w-4" />
+                    {sending ? 'Sending...' : 'Send Invite'}
+                </Button>
+            </form>
+
+            {isLoading ? (
+                <p className="text-muted-foreground">Loading...</p>
+            ) : invitations?.length > 0 ? (
+                <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full">
+                        <thead>
+                            <tr className="bg-muted/50 text-left text-sm">
+                                <th className="px-4 py-3 font-medium">Email</th>
+                                <th className="px-4 py-3 font-medium">Status</th>
+                                <th className="px-4 py-3 font-medium">Invited</th>
+                                <th className="px-4 py-3 font-medium">Expires</th>
+                                <th className="px-4 py-3 font-medium w-20"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {invitations.map(inv => (
+                                <tr key={inv.id} className="border-t text-sm">
+                                    <td className="px-4 py-3 font-medium">{inv.email}</td>
+                                    <td className="px-4 py-3">{getStatusBadge(inv)}</td>
+                                    <td className="px-4 py-3 text-muted-foreground">
+                                        {new Date(inv.createdAt).toLocaleDateString()}
+                                    </td>
+                                    <td className="px-4 py-3 text-muted-foreground">
+                                        {new Date(inv.expiresAt).toLocaleDateString()}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        {inv.status !== 'ACCEPTED' && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleRevoke(inv.id)}
+                                                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <p className="text-muted-foreground text-sm">No invitations sent yet.</p>
             )}
         </div>
     );

@@ -28,8 +28,8 @@ export const generatePrintableMenu = async ({ storeId, options: _options = {} },
     where: { id: parseInt(storeId) }
   });
 
-  if (!store || store.userId !== context.user.id) {
-    throw new HttpError(403);
+  if (!store) {
+    throw new HttpError(404);
   }
 
   // Get products with stock levels

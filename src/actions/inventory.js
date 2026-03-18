@@ -22,7 +22,7 @@ export const uploadInventory = async ({ storeId, csvData, autoCreateStores: _aut
   const store = await context.entities.Store.findUnique({
     where: { id: parseInt(storeId) }
   });
-  if (!store || store.userId !== context.user.id) { throw new HttpError(403) };
+  if (!store) { throw new HttpError(404) };
 
   const products = [];
   const readable = Readable.from(csvData.split('\n'));
@@ -149,7 +149,7 @@ export const analyzeInventoryExport = async ({ csvData, autoCreateStores = true 
   if (autoCreateStores) {
     for (const location of locationColumns) {
       let store = await context.entities.Store.findFirst({
-        where: { name: location, userId: context.user.id }
+        where: { name: location }
       });
 
       if (!store) {
@@ -567,9 +567,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
 
   // Create/update stores - always build storeMap, even if autoCreateStores is false
   // First, fetch all existing stores to match by name or reportName
-  const userStores = await context.entities.Store.findMany({
-    where: { userId: context.user.id }
-  });
+  const userStores = await context.entities.Store.findMany();
 
   // Build storeMap by matching CSV location columns to existing stores
   // Check both name and reportName (like inventory logs upload does)
@@ -1072,7 +1070,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
 
   // Warm cache after upload (fire-and-forget)
   const stores = await context.entities.Store.findMany({
-    where: { userId: context.user.id, isActive: true },
+    where: { isActive: true },
     select: { id: true }
   });
   if (stores.length > 0) {

@@ -239,7 +239,7 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
 
   // Warm cache after upload (fire-and-forget)
   const stores = await context.entities.Store.findMany({
-    where: { userId: context.user.id, isActive: true },
+    where: { isActive: true },
     select: { id: true }
   });
   if (stores.length > 0) {
