@@ -27,16 +27,61 @@ const DraggableHeader = ({ column, children, onSort, sortConfig }) => {
   };
 
   const handleHeaderClick = (e) => {
-    if (!column.isLocation && column.sortKey && !e.target.closest('.drag-handle')) {
+    if (!column.isLocation && column.sortKey && !e.target.closest('.drag-handle') && !e.target.closest('.compound-sort')) {
       onSort(column.sortKey);
     }
   };
+
+  // Compound column (e.g., Cost / Retail / Margin) with multiple sort targets
+  if (column.isCompound) {
+    return (
+      <th
+        ref={setNodeRef}
+        style={style}
+        className={`group px-3 py-3 font-semibold text-sm border-r border-b border-slate-300/50 bg-gradient-to-b from-[#e6f7f5] via-[#eef6fc] to-[#eef2fb] text-slate-800 relative ${isDragging ? 'z-50' : ''}`}
+      >
+        <button
+          className="drag-handle absolute left-2 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing hover:text-teal-600 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          title="Drag to reorder column"
+        >
+          <GripVertical className="h-3 w-3" />
+        </button>
+        <div className="compound-sort flex flex-col items-end gap-0.5">
+          {column.sortKeys.map((key, i) => {
+            const isActive = sortConfig.key === key;
+            return (
+              <button
+                key={key}
+                onClick={() => onSort(key)}
+                className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded transition-colors ${
+                  isActive
+                    ? 'text-teal-700 font-bold bg-teal-100/60'
+                    : 'text-slate-600 hover:text-teal-700 hover:bg-teal-50/50 font-medium'
+                }`}
+                title={`Sort by ${column.sortLabels[i]}`}
+              >
+                <span>{column.sortLabels[i]}</span>
+                {isActive && (
+                  sortConfig.direction === 'asc'
+                    ? <ArrowUp className="h-3 w-3 flex-shrink-0" />
+                    : <ArrowDown className="h-3 w-3 flex-shrink-0" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </th>
+    );
+  }
 
   return (
     <th
       ref={setNodeRef}
       style={style}
-      className={`group px-4 py-4 font-semibold text-sm border-r border-b border-slate-300/50 bg-gradient-to-b from-[#e6f7f5] via-[#eef6fc] to-[#eef2fb] text-slate-800 relative ${
+      className={`group px-3 py-3 font-semibold text-sm border-r border-b border-slate-300/50 bg-gradient-to-b from-[#e6f7f5] via-[#eef6fc] to-[#eef2fb] text-slate-800 relative ${
         column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
       } ${!column.isLocation && column.sortKey ? 'cursor-pointer hover:from-[#d9f2ef] hover:via-[#e3f1fa] hover:to-[#e4ebf8] transition-all duration-200' : ''} ${isDragging ? 'z-50' : ''}`}
       onClick={handleHeaderClick}
@@ -105,6 +150,10 @@ const OrderingTableHeader = ({
           <div className="text-xs font-normal text-muted-foreground">12 Wks</div>
         </div>
       );
+    }
+
+    if (column.isCompound) {
+      return null; // Handled by DraggableHeader directly
     }
 
     return column.label;

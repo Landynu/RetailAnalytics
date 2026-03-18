@@ -2,6 +2,7 @@ import csvParser from 'csv-parser';
 import { Readable } from 'stream';
 import { HttpError } from 'wasp/server';
 import { invalidateCachePattern, warmOrderingAnalyticsCache } from '../cache.js';
+import { syncBrands } from './brandDistributor.js';
 
 export const uploadInventoryLogs = async ({ csvData }, context) => {
   if (!context.user) { throw new HttpError(401) }
@@ -318,6 +319,11 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       console.warn('Cache warming failed after upload:', err.message)
     );
   }
+
+  // Post-upload: sync brands (fire-and-forget)
+  syncBrands(null, context).catch(err =>
+    console.warn('Post-upload brand sync failed:', err.message)
+  );
 
   if (skippedRows.length > 0) {
     console.log(`[${ts()}] Top reasons for skipped rows:`);

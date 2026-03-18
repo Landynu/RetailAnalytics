@@ -11,17 +11,14 @@ const DEFAULT_WIDTHS = {
   'strainType': 96,
   'format': 96,
   'parentCategory': 128,
-  'wholesaleCost': 96,
-  'retailPrice': 96,
-  'margin': 80,
+  'pricing': 130,
+  'recency': 130,
   'categoryRank': 90,
   'totalInventory': 96,
   'totalSales': 96,
   'popularity': 112,
   'weeksLeft': 96,
-  'daysSinceLastSale': 112,
   'trend': 80,
-  'daysSinceLastPO': 112,
   'suggestedQty': 112,
   'actions': 112,
 };
@@ -37,17 +34,14 @@ const DEFAULT_COLUMNS = [
   { id: 'strainType', label: 'Type', align: 'left', sortKey: 'strainType', minWidth: 80 },
   { id: 'format', label: 'Format', align: 'left', sortKey: 'format', minWidth: 80 },
   { id: 'parentCategory', label: 'Category', align: 'left', sortKey: 'parentCategory', minWidth: 100 },
-  { id: 'wholesaleCost', label: 'Cost', align: 'right', sortKey: 'wholesaleCost', minWidth: 80 },
-  { id: 'retailPrice', label: 'Retail', align: 'right', sortKey: 'retailPrice', minWidth: 80 },
-  { id: 'margin', label: 'Margin', align: 'right', sortKey: 'margin', minWidth: 70 },
+  { id: 'pricing', label: 'Cost / Retail / Margin', align: 'right', sortKey: null, isCompound: true, sortKeys: ['wholesaleCost', 'retailPrice', 'margin'], sortLabels: ['Cost', 'Retail', 'Margin'], minWidth: 110 },
   { id: 'locations', label: 'Locations', align: 'center', sortKey: null, isLocationGroup: true, minWidth: 112 },
   { id: 'totalInventory', label: 'Total Inv', align: 'right', sortKey: 'totalInventory', minWidth: 80 },
   { id: 'totalSales', label: 'Total Sales', align: 'right', sortKey: 'totalSales', minWidth: 80 },
   { id: 'popularity', label: 'Popularity', align: 'center', sortKey: null, minWidth: 90 },
   { id: 'weeksLeft', label: 'Wks Left', align: 'center', sortKey: 'weeksLeft', minWidth: 80 },
-  { id: 'daysSinceLastSale', label: 'Days Since Sale', align: 'right', sortKey: 'daysSinceLastSale', minWidth: 90 },
+  { id: 'recency', label: 'Last Sale / Last PO', align: 'right', sortKey: null, isCompound: true, sortKeys: ['daysSinceLastSale', 'daysSinceLastPO'], sortLabels: ['Last Sale', 'Last PO'], minWidth: 110 },
   { id: 'trend', label: 'Trend', align: 'center', sortKey: null, minWidth: 70 },
-  { id: 'daysSinceLastPO', label: 'Days Since PO', align: 'right', sortKey: 'daysSinceLastPO', minWidth: 90 },
   { id: 'suggestedQty', label: 'Suggested', align: 'right', sortKey: 'suggestedQty', minWidth: 90 },
   { id: 'actions', label: 'Actions', align: 'center', sortKey: null, minWidth: 90 },
 ];
@@ -63,17 +57,42 @@ export const useColumnOrdering = (stores = []) => {
       try {
         const savedOrder = JSON.parse(saved);
         
-        // Check if categoryRank is missing and add it after brand
-        if (!savedOrder.includes('categoryRank')) {
-          const brandIndex = savedOrder.indexOf('brand');
+        let order = savedOrder;
+
+        // Migrate: add categoryRank after brand if missing
+        if (!order.includes('categoryRank')) {
+          const brandIndex = order.indexOf('brand');
           if (brandIndex !== -1) {
-            const newOrder = [...savedOrder];
-            newOrder.splice(brandIndex + 1, 0, 'categoryRank');
-            return newOrder;
+            order = [...order];
+            order.splice(brandIndex + 1, 0, 'categoryRank');
           }
         }
-        
-        return savedOrder;
+
+        // Migrate: merge wholesaleCost/retailPrice/margin into pricing
+        if (order.includes('wholesaleCost') || order.includes('retailPrice') || order.includes('margin')) {
+          const insertIndex = order.indexOf('wholesaleCost') !== -1
+            ? order.indexOf('wholesaleCost')
+            : order.indexOf('retailPrice') !== -1
+              ? order.indexOf('retailPrice')
+              : order.indexOf('margin');
+          order = order.filter(id => id !== 'wholesaleCost' && id !== 'retailPrice' && id !== 'margin');
+          if (!order.includes('pricing')) {
+            order.splice(insertIndex, 0, 'pricing');
+          }
+        }
+
+        // Migrate: merge daysSinceLastSale/daysSinceLastPO into recency
+        if (order.includes('daysSinceLastSale') || order.includes('daysSinceLastPO')) {
+          const insertIndex = order.indexOf('daysSinceLastSale') !== -1
+            ? order.indexOf('daysSinceLastSale')
+            : order.indexOf('daysSinceLastPO');
+          order = order.filter(id => id !== 'daysSinceLastSale' && id !== 'daysSinceLastPO');
+          if (!order.includes('recency')) {
+            order.splice(insertIndex, 0, 'recency');
+          }
+        }
+
+        return order;
       } catch (e) {
         console.error('Failed to parse saved column order:', e);
       }
@@ -97,7 +116,13 @@ export const useColumnOrdering = (stores = []) => {
     const saved = localStorage.getItem(VISIBILITY_STORAGE_KEY);
     if (saved) {
       try {
-        return new Set(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        // Migrate: remove old merged column IDs
+        const filtered = parsed.filter(id =>
+          id !== 'wholesaleCost' && id !== 'retailPrice' && id !== 'margin' &&
+          id !== 'daysSinceLastSale' && id !== 'daysSinceLastPO'
+        );
+        return new Set(filtered);
       } catch (e) {
         console.error('Failed to parse saved column visibility:', e);
       }
@@ -158,9 +183,9 @@ export const useColumnOrdering = (stores = []) => {
           if (lastLocationIndex >= 0) {
             insertIndex = lastLocationIndex + 1;
           } else {
-            const marginIndex = prevOrder.indexOf('margin');
-            if (marginIndex !== -1) {
-              insertIndex = marginIndex + 1;
+            const pricingIndex = prevOrder.indexOf('pricing');
+            if (pricingIndex !== -1) {
+              insertIndex = pricingIndex + 1;
             }
           }
 

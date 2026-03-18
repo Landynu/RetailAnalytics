@@ -1,18 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { ChevronDown, Check, X } from 'lucide-react';
 
-const FilterDropdown = ({ 
-  label, 
-  options = [], 
-  selectedValues = [], 
+const FilterDropdown = ({
+  label,
+  options = [],
+  selectedValues = [],
   onChange,
-  icon: Icon 
+  icon: Icon
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState(selectedValues);
   const dropdownRef = useRef(null);
+  const handleApplyRef = useRef(null);
 
   // Sync pending values when selectedValues changes externally
   useEffect(() => {
@@ -23,13 +24,13 @@ const FilterDropdown = ({
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        handleApply();
+        handleApplyRef.current?.();
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [pendingValues]);
+  }, []);
 
   const handleToggleOption = (option) => {
     const newValues = pendingValues.includes(option)
@@ -46,12 +47,15 @@ const FilterDropdown = ({
     setPendingValues(options);
   };
 
-  const handleApply = () => {
+  const handleApply = useCallback(() => {
     if (JSON.stringify([...pendingValues].sort()) !== JSON.stringify([...selectedValues].sort())) {
       onChange(pendingValues);
     }
     setIsOpen(false);
-  };
+  }, [pendingValues, selectedValues, onChange]);
+
+  // Keep ref in sync so click-outside always uses latest version
+  handleApplyRef.current = handleApply;
 
   const handleCancel = () => {
     setPendingValues(selectedValues);

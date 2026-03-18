@@ -1,6 +1,6 @@
 import { Link } from "wasp/client/router";
 import { useAuth, logout } from "wasp/client/auth";
-import { Outlet } from "react-router-dom";
+import { Outlet } from "react-router";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { Separator } from "./components/ui/separator";

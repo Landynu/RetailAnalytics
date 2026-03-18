@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getStoreAnalytics } from 'wasp/client/operations';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router';
 import { StoreNav } from '../components/StoreNav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useAction, useQuery } from 'wasp/client/operations';
 import { uploadInventory, uploadInventoryExport, uploadInventoryLogs, uploadProductCatalog, analyzeInventoryExport, deleteInventoryMovementsByDateRange, getUserStores } from 'wasp/client/operations';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { StoreNav } from '../components/StoreNav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';

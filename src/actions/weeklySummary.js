@@ -15,11 +15,11 @@ function getTimeBucket(hour) {
   return 'night';
 }
 
-export const backfillWeeklySummaries = async ({ startDate, endDate }, context) => {
-  if (!context.user) { throw new HttpError(401) }
+export const backfillWeeklySummaries = async (args, context) => {
+  const { startDate, endDate } = args || {};
 
-  console.log('🔄 Starting weekly summary backfill...');
-  console.log(`📅 Date range: ${startDate || 'earliest'} to ${endDate || 'now'}`);
+  console.log('Starting weekly summary backfill...');
+  console.log(`Date range: ${startDate || 'earliest'} to ${endDate || 'now'}`);
 
   // Get earliest movement date if startDate not provided
   const earliest = await context.entities.InventoryMovement.findFirst({
@@ -30,9 +30,12 @@ export const backfillWeeklySummaries = async ({ startDate, endDate }, context) =
   const start = startDate ? new Date(startDate) : (earliest?.date || new Date());
   const end = endDate ? new Date(endDate) : new Date();
 
-  // Get all user's stores
+  // When called as a job (no user), process all active stores
+  // When called as an action (has user), process only that user's stores
   const stores = await context.entities.Store.findMany({
-    where: { userId: context.user.id, isActive: true }
+    where: context.user
+      ? { userId: context.user.id, isActive: true }
+      : { isActive: true }
   });
 
   console.log(`🏪 Processing ${stores.length} store(s)`);

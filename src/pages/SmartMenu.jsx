@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router';
 import { useQuery } from 'wasp/client/operations';
 import { generateSmartMenu } from 'wasp/client/operations';
 import { StoreNav } from '../components/StoreNav';

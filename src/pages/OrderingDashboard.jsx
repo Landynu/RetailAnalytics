@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getOrderingAnalytics, getOutOfStockProducts, getOrCreateOrderWorksheet, getUserStores, getDistributors, getClassifications, getCategoryDefinitions, getProductActions } from 'wasp/client/operations';
-import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, enrichProductFormats, seedDistributors, syncBrands, clearAnalyticsCache } from 'wasp/client/operations';
+import { addToOrderWorksheet, exportOrderWorksheet, clearOrderWorksheet, clearAnalyticsCache } from 'wasp/client/operations';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Card } from '../components/ui/card';
 import LocationSelector from '../components/LocationSelector';
 import DateRangeFilter from '../components/DateRangeFilter';
 import FilterDropdown from '../components/FilterDropdown';
@@ -402,42 +401,6 @@ const OrderingDashboard = () => {
     }
   };
 
-  const handleEnrichFormats = async () => {
-    if (confirm('This will update format data for all products. This may take a minute. Continue?')) {
-      try {
-        const result = await enrichProductFormats();
-        alert(`Format enrichment complete!\n${result.updated} products updated\n${result.skipped} products skipped`);
-        refetchAnalytics();
-      } catch (error) {
-        alert('Error enriching formats: ' + error.message);
-      }
-    }
-  };
-
-  const handleSeedDistributors = async () => {
-    if (confirm('This will create the 7 default distributors (Direct, Open Fields, Legacy Supply, etc). Continue?')) {
-      try {
-        const result = await seedDistributors();
-        alert(`Seed complete!\n${result.created} distributors created\n${result.total - result.created} already existed`);
-        refetchAnalytics();
-      } catch (error) {
-        alert('Error seeding distributors: ' + error.message);
-      }
-    }
-  };
-
-  const handleSyncBrands = async () => {
-    if (confirm('This will create Brand records from all products in your catalog. Continue?')) {
-      try {
-        const result = await syncBrands();
-        alert(`Brand sync complete!\n${result.created} new brands created\n${result.totalBrands} total brands`);
-        refetchAnalytics();
-      } catch (error) {
-        alert('Error syncing brands: ' + error.message);
-      }
-    }
-  };
-
   const handleRefreshData = async () => {
     setIsRefreshing(true);
     try {
@@ -807,9 +770,6 @@ const OrderingDashboard = () => {
         worksheet={worksheet}
         onExportOrder={handleExportOrder}
         onClearOrder={handleClearOrder}
-        onEnrichFormats={handleEnrichFormats}
-        onSeedDistributors={handleSeedDistributors}
-        onSyncBrands={handleSyncBrands}
       />
 
       <div className="flex-1 overflow-y-auto min-w-0 relative" ref={scrollContainerRef}>
@@ -858,105 +818,89 @@ const OrderingDashboard = () => {
             </div>
           </div>
 
-          {/* Strain Classification Cards */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            {/* Sativa */}
-            <Card className="p-5 bg-gradient-to-br from-teal-50 via-teal-100/50 to-teal-100 border border-teal-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] hover:shadow-md transition-all duration-200 rounded-xl">
-              <div className="text-center">
-                <div className="text-teal-700 font-semibold text-sm mb-2 uppercase tracking-wide">Sativa</div>
-                <div className="text-4xl font-bold text-teal-800">
-                  {primaryStoreStrainCounts.Sativa}
-                  {totalStrainCounts.Sativa > primaryStoreStrainCounts.Sativa && (
-                    <span className="text-lg font-normal text-teal-700 ml-2">
-                      ({totalStrainCounts.Sativa})
-                    </span>
-                  )}
-                </div>
-                <div className="text-teal-600 text-xs mt-2 font-medium">products</div>
-              </div>
-            </Card>
-            {/* Hybrid */}
-            <Card className="p-5 bg-gradient-to-br from-blue-50 via-blue-100/50 to-blue-100 border border-blue-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] hover:shadow-md transition-all duration-200 rounded-xl">
-              <div className="text-center">
-                <div className="text-blue-700 font-semibold text-sm mb-2 uppercase tracking-wide">Hybrid</div>
-                <div className="text-4xl font-bold text-blue-800">
-                  {primaryStoreStrainCounts.Hybrid}
-                  {totalStrainCounts.Hybrid > primaryStoreStrainCounts.Hybrid && (
-                    <span className="text-lg font-normal text-blue-700 ml-2">
-                      ({totalStrainCounts.Hybrid})
-                    </span>
-                  )}
-                </div>
-                <div className="text-blue-600 text-xs mt-2 font-medium">products</div>
-              </div>
-            </Card>
-            {/* Indica */}
-            <Card className="p-5 bg-gradient-to-br from-amber-50 via-amber-100/50 to-amber-100 border border-amber-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] hover:shadow-md transition-all duration-200 rounded-xl">
-              <div className="text-center">
-                <div className="text-amber-700 font-semibold text-sm mb-2 uppercase tracking-wide">Indica</div>
-                <div className="text-4xl font-bold text-amber-800">
-                  {primaryStoreStrainCounts.Indica}
-                  {totalStrainCounts.Indica > primaryStoreStrainCounts.Indica && (
-                    <span className="text-lg font-normal text-amber-700 ml-2">
-                      ({totalStrainCounts.Indica})
-                    </span>
-                  )}
-                </div>
-                <div className="text-amber-600 text-xs mt-2 font-medium">products</div>
-              </div>
-            </Card>
+          {/* Strain Classification Summary */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-teal-50 border-teal-200/60">
+              <div className="h-2.5 w-2.5 rounded-full bg-teal-500" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-teal-700">Sativa</span>
+              <span className="text-sm font-bold text-teal-800">
+                {primaryStoreStrainCounts.Sativa}
+                {totalStrainCounts.Sativa > primaryStoreStrainCounts.Sativa && (
+                  <span className="font-normal text-teal-600 ml-0.5">({totalStrainCounts.Sativa})</span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-blue-50 border-blue-200/60">
+              <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-blue-700">Hybrid</span>
+              <span className="text-sm font-bold text-blue-800">
+                {primaryStoreStrainCounts.Hybrid}
+                {totalStrainCounts.Hybrid > primaryStoreStrainCounts.Hybrid && (
+                  <span className="font-normal text-blue-600 ml-0.5">({totalStrainCounts.Hybrid})</span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-amber-50 border-amber-200/60">
+              <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-amber-700">Indica</span>
+              <span className="text-sm font-bold text-amber-800">
+                {primaryStoreStrainCounts.Indica}
+                {totalStrainCounts.Indica > primaryStoreStrainCounts.Indica && (
+                  <span className="font-normal text-amber-600 ml-0.5">({totalStrainCounts.Indica})</span>
+                )}
+              </span>
+            </div>
           </div>
 
           {/* Filters - Sticky */}
-          <div className="sticky top-0 z-50 bg-white border-b border-slate-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] pb-4 pt-3 -mt-6 rounded-lg">
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <LocationSelector
-                  stores={stores || []}
-                  selectedIds={selectedStoreIds}
-                  onChange={setSelectedStoreIds}
-                />
-                {/* Stock Status Tabs */}
-                <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                  <button
-                    onClick={() => setStockTab('inStock')}
-                    className={`px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-2 ${
-                      stockTab === 'inStock'
-                        ? 'bg-gradient-to-r from-teal-500 to-blue-500 text-white'
-                        : 'bg-white text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    In Stock
-                    <span className={`px-1.5 py-0.5 text-xs rounded-md font-semibold ${
-                      stockTab === 'inStock'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      {inStockCount}
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => setStockTab('outOfStock')}
-                    className={`px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-2 ${
-                      stockTab === 'outOfStock'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-white text-slate-600 hover:bg-red-50'
-                    }`}
-                  >
-                    Out of Stock
-                    <span className={`px-1.5 py-0.5 text-xs rounded-md font-semibold ${
-                      stockTab === 'outOfStock'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      {stockTab === 'outOfStock' && isLoadingOutOfStock ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        outOfStockCount
-                      )}
-                    </span>
-                  </button>
-                </div>
+          <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-slate-200/50 shadow-[0_1px_3px_rgba(0,0,0,0.05)] pb-3 pt-3 -mt-6 rounded-lg space-y-2">
+            {/* Row 1: Data Filters */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <LocationSelector
+                stores={stores || []}
+                selectedIds={selectedStoreIds}
+                onChange={setSelectedStoreIds}
+              />
+              {/* Stock Status Tabs */}
+              <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                <button
+                  onClick={() => setStockTab('inStock')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-2 ${
+                    stockTab === 'inStock'
+                      ? 'bg-gradient-to-r from-teal-500 to-blue-500 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  In Stock
+                  <span className={`px-1.5 py-0.5 text-xs rounded-md font-semibold ${
+                    stockTab === 'inStock'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {inStockCount}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setStockTab('outOfStock')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-2 ${
+                    stockTab === 'outOfStock'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-red-50'
+                  }`}
+                >
+                  Out of Stock
+                  <span className={`px-1.5 py-0.5 text-xs rounded-md font-semibold ${
+                    stockTab === 'outOfStock'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {stockTab === 'outOfStock' && isLoadingOutOfStock ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      outOfStockCount
+                    )}
+                  </span>
+                </button>
               </div>
               <DateRangeFilter dateRange={dateRange} onChange={setDateRange} />
               <FilterDropdown
@@ -987,6 +931,9 @@ const OrderingDashboard = () => {
                 onChange={(values) => setFilters(prev => ({ ...prev, distributors: values }))}
                 icon={Package}
               />
+            </div>
+            {/* Row 2: Table Controls */}
+            <div className="flex items-center gap-2 flex-wrap">
               <ColumnVisibilityMenu
                 allColumns={allColumnDefinitions}
                 hiddenColumns={hiddenColumns}
@@ -998,9 +945,9 @@ const OrderingDashboard = () => {
                 size="sm"
                 onClick={resetColumnOrder}
                 title="Reset column order to default"
-                className="border-slate-300 hover:bg-slate-50 rounded-lg transition-colors"
+                className="border-slate-300 hover:bg-slate-50 rounded-lg transition-colors text-xs h-7"
               >
-                <RotateCcw className="h-4 w-4 mr-2" />
+                <RotateCcw className="h-3 w-3 mr-1.5" />
                 Reset Order
               </Button>
               <Button
@@ -1008,11 +955,12 @@ const OrderingDashboard = () => {
                 size="sm"
                 onClick={resetColumnWidths}
                 title="Reset all column widths to default"
-                className="border-slate-300 hover:bg-slate-50 rounded-lg transition-colors"
+                className="border-slate-300 hover:bg-slate-50 rounded-lg transition-colors text-xs h-7"
               >
-                <RotateCcw className="h-4 w-4 mr-2" />
+                <RotateCcw className="h-3 w-3 mr-1.5" />
                 Reset Widths
               </Button>
+              <div className="flex-1" />
               <Button
                 variant="outline"
                 size="sm"

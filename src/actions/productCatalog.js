@@ -2,6 +2,8 @@ import csvParser from 'csv-parser';
 import { Readable } from 'stream';
 import { HttpError } from 'wasp/server';
 import { invalidateCachePattern, warmOrderingAnalyticsCache } from '../cache.js';
+import { syncBrands } from './brandDistributor.js';
+import { enrichProductFormats } from './product.js';
 
 export const uploadProductCatalog = async ({ csvData }, context) => {
   if (!context.user) { throw new HttpError(401) }
@@ -248,6 +250,14 @@ export const uploadProductCatalog = async ({ csvData }, context) => {
       console.warn('Cache warming failed after product catalog upload:', err.message)
     );
   }
+
+  // Post-upload: sync brands and enrich formats (fire-and-forget)
+  syncBrands(null, context).catch(err =>
+    console.warn('Post-upload brand sync failed:', err.message)
+  );
+  enrichProductFormats(null, context).catch(err =>
+    console.warn('Post-upload format enrichment failed:', err.message)
+  );
 
   return {
     newProducts: newProducts.length,

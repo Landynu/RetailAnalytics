@@ -1,19 +1,16 @@
 import React, { useRef, useEffect } from 'react';
 import { Button } from './ui/button';
-import { Download, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Download, Trash2, Eye, EyeOff, ChevronUp, ChevronDown, X } from 'lucide-react';
 
-const OrderingFilters = ({ 
+const OrderingFilters = ({
   analytics,
-  filters, 
+  filters,
   setFilters,
   hiddenCategories,
   onCategoryVisibilityToggle,
   worksheet,
   onExportOrder,
-  onClearOrder,
-  onEnrichFormats,
-  onSeedDistributors,
-  onSyncBrands
+  onClearOrder
 }) => {
   const brandScrollRef = useRef(null);
   const brandRefsMap = useRef({});
@@ -23,7 +20,7 @@ const OrderingFilters = ({
   const scrollTimeoutRef = useRef(null);
 
   const brands = analytics?.filterOptions?.brands || [];
-  
+
   // Check if brands actually changed (deep comparison)
   const brandsChanged = JSON.stringify(brands) !== JSON.stringify(prevBrandsRef.current);
 
@@ -33,13 +30,11 @@ const OrderingFilters = ({
       if (brandScrollRef.current) {
         isUserScrollingRef.current = true;
         savedScrollPositionRef.current = brandScrollRef.current.scrollTop;
-        
-        // Clear existing timeout
+
         if (scrollTimeoutRef.current) {
           clearTimeout(scrollTimeoutRef.current);
         }
-        
-        // Mark as not scrolling after 150ms of no scroll events
+
         scrollTimeoutRef.current = setTimeout(() => {
           isUserScrollingRef.current = false;
         }, 150);
@@ -61,7 +56,6 @@ const OrderingFilters = ({
   // Restore scroll position only when brands list actually changes (not during user scrolling)
   useEffect(() => {
     if (brandsChanged && !isUserScrollingRef.current && brandScrollRef.current) {
-      // Only restore if we have a saved position and brands list changed
       if (savedScrollPositionRef.current > 0) {
         brandScrollRef.current.scrollTop = savedScrollPositionRef.current;
       }
@@ -71,8 +65,7 @@ const OrderingFilters = ({
 
   const handleBrandClick = (brand, e) => {
     const isSelected = filters.brands.includes(brand);
-    
-    // Apply the filter
+
     if (e.ctrlKey || e.metaKey) {
       if (isSelected) {
         setFilters({ ...filters, brands: filters.brands.filter(b => b !== brand) });
@@ -80,17 +73,21 @@ const OrderingFilters = ({
         setFilters({ ...filters, brands: [...filters.brands, brand] });
       }
     } else {
-      setFilters({ ...filters, brands: [brand] });
+      if (isSelected) {
+        setFilters({ ...filters, brands: filters.brands.filter(b => b !== brand) });
+      } else {
+        setFilters({ ...filters, brands: [brand] });
+      }
     }
   };
 
   const handleNavigateBrand = (direction) => {
     if (brands.length === 0) return;
 
-    const currentIndex = filters.brands.length > 0 
-      ? brands.indexOf(filters.brands[0]) 
+    const currentIndex = filters.brands.length > 0
+      ? brands.indexOf(filters.brands[0])
       : -1;
-    
+
     let newIndex;
     if (direction === 'up') {
       newIndex = currentIndex <= 0 ? brands.length - 1 : currentIndex - 1;
@@ -101,18 +98,15 @@ const OrderingFilters = ({
     const newBrand = brands[newIndex];
     setFilters({ ...filters, brands: [newBrand] });
 
-    // Scroll to center the new selection (only when using navigation buttons)
     requestAnimationFrame(() => {
       const brandElement = brandRefsMap.current[newBrand];
       if (brandElement && brandScrollRef.current) {
-        // Temporarily disable user scrolling flag to allow programmatic scroll
         isUserScrollingRef.current = false;
         brandElement.scrollIntoView({
           behavior: 'smooth',
           block: 'center',
           inline: 'nearest'
         });
-        // Update saved position after scroll completes
         setTimeout(() => {
           if (brandScrollRef.current) {
             savedScrollPositionRef.current = brandScrollRef.current.scrollTop;
@@ -122,17 +116,49 @@ const OrderingFilters = ({
     });
   };
 
+  const hasActiveFilters = filters.brands.length > 0 || filters.categories.length > 0 ||
+    filters.subcategories.length > 0 || filters.units.length > 0 || filters.sizes.length > 0 || filters.distributors?.length > 0;
+
+  const activeFilterCount = filters.brands.length + filters.categories.length +
+    (filters.subcategories?.length || 0) + (filters.units?.length || 0) + (filters.sizes?.length || 0) + (filters.distributors?.length || 0);
+
   return (
-    <div className="w-72 border-r bg-card p-4 overflow-y-auto flex-shrink-0">
-      <div className="space-y-6">
-        <h2 className="text-lg font-semibold text-emerald-800">Filters</h2>
-        
-        <div className="mb-4">
+    <div className="w-72 border-r bg-card overflow-y-auto flex-shrink-0">
+      <div className="p-4 border-b bg-gradient-to-r from-emerald-50 to-teal-50 sticky top-0 z-10">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-emerald-800">Filters</h2>
+          {hasActiveFilters && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200">
+              {activeFilterCount} active
+            </span>
+          )}
+        </div>
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setFilters({ brands: [], categories: [], subcategories: [], units: [], sizes: [], distributors: [] })}
+            className="w-full mt-2 h-7 text-xs text-muted-foreground hover:text-destructive"
+          >
+            <X className="h-3 w-3 mr-1" />
+            Clear All Filters
+          </Button>
+        )}
+      </div>
+
+      <div className="p-4 space-y-5">
+        {/* Brands Section */}
+        <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-emerald-800">
               Brands
+              {filters.brands.length > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full text-[10px] font-semibold bg-blue-600 text-white">
+                  {filters.brands.length}
+                </span>
+              )}
             </label>
-            <div className="flex gap-1">
+            <div className="flex gap-0.5">
               <Button
                 variant="ghost"
                 size="sm"
@@ -140,7 +166,7 @@ const OrderingFilters = ({
                 className="h-6 w-6 p-0"
                 title="Previous brand"
               >
-                ▲
+                <ChevronUp className="h-3.5 w-3.5" />
               </Button>
               <Button
                 variant="ghost"
@@ -149,13 +175,13 @@ const OrderingFilters = ({
                 className="h-6 w-6 p-0"
                 title="Next brand"
               >
-                ▼
+                <ChevronDown className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
-          <div 
+          <div
             ref={brandScrollRef}
-            className="border rounded-lg p-2 bg-background max-h-64 overflow-y-auto space-y-1"
+            className="border rounded-lg bg-background max-h-64 overflow-y-auto"
           >
             {brands.map((brand) => {
               const isSelected = filters.brands.includes(brand);
@@ -166,61 +192,72 @@ const OrderingFilters = ({
                     if (el) brandRefsMap.current[brand] = el;
                   }}
                   onClick={(e) => handleBrandClick(brand, e)}
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm transition-colors ${
-                    isSelected 
-                      ? 'bg-primary text-primary-foreground font-medium shadow-sm' 
-                      : 'hover:bg-secondary'
+                  className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-sm transition-all border-l-[3px] ${
+                    isSelected
+                      ? 'bg-blue-50 border-l-blue-600 text-blue-900 font-medium'
+                      : 'border-l-transparent hover:bg-slate-50'
                   }`}
                 >
-                  <span className="flex-1">{brand}</span>
-                  {isSelected && (
-                    <span className="text-xs">✓</span>
-                  )}
+                  <div className={`flex-shrink-0 h-3.5 w-3.5 rounded border-2 flex items-center justify-center transition-colors ${
+                    isSelected
+                      ? 'bg-blue-600 border-blue-600'
+                      : 'border-slate-300'
+                  }`}>
+                    {isSelected && (
+                      <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </div>
+                  <span className="flex-1 truncate">{brand}</span>
                 </div>
               );
             })}
           </div>
-          {filters.brands.length > 0 && (
-            <div className="mt-2 text-xs text-muted-foreground">
-              {filters.brands.length} selected
-            </div>
-          )}
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            Click to select. Ctrl+click to multi-select.
+          </p>
         </div>
 
-        <div className="mb-4">
+        {/* Categories Section */}
+        <div>
           <label className="text-sm font-medium mb-2 block text-emerald-800">
             Categories
-            <span className="block text-xs font-normal text-muted-foreground mt-0.5">
-              👁️ = show/hide • Click name = filter
+            {filters.categories.length > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full text-[10px] font-semibold bg-blue-600 text-white">
+                {filters.categories.length}
+              </span>
+            )}
+            <span className="block text-[11px] font-normal text-muted-foreground mt-0.5">
+              Click name to filter. Eye icon to show/hide in table.
               {analytics?.primaryStore && (
-                <span className="block mt-1">
-                  📍 Format: Primary ({analytics.primaryStore.name}) (Total)
+                <span className="block mt-0.5">
+                  Format: Primary ({analytics.primaryStore.name}) (Total)
                 </span>
               )}
             </span>
           </label>
-          <div className="border rounded-lg p-2 bg-background max-h-64 overflow-y-auto space-y-1">
+          <div className="border rounded-lg bg-background max-h-64 overflow-y-auto">
             {(analytics?.filterOptions?.categories || []).map(cat => {
               const isSelected = filters.categories.includes(cat);
               const isHidden = hiddenCategories.has(cat);
               const primaryCount = analytics?.primaryStoreCategoryTotals?.[cat] || 0;
               const totalCount = analytics?.totalCategoryTotals?.[cat] || 0;
-              
-              // Build display label
+
               let categoryLabel = cat;
               if (analytics?.primaryStore && primaryCount > 0) {
-                // Show "Category: primary (total)" format
                 categoryLabel = `${cat}: ${primaryCount} (${totalCount})`;
               } else if (totalCount > 0) {
-                // No primary store set, just show total
                 categoryLabel = `${cat}: ${totalCount}`;
               }
-              
+
               return (
                 <div
                   key={cat}
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-                    isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
+                  className={`flex items-center gap-2 px-3 py-1.5 text-sm transition-all border-l-[3px] ${
+                    isSelected
+                      ? 'bg-blue-50 border-l-blue-600 text-blue-900 font-medium'
+                      : 'border-l-transparent hover:bg-slate-50'
                   }`}
                 >
                   <button
@@ -228,43 +265,44 @@ const OrderingFilters = ({
                       e.stopPropagation();
                       onCategoryVisibilityToggle(cat);
                     }}
-                    className={`flex-shrink-0 hover:scale-110 transition-transform ${
-                      isHidden ? 'text-muted-foreground' : 'text-foreground'
+                    className={`flex-shrink-0 p-0.5 rounded hover:bg-slate-200 transition-colors ${
+                      isHidden ? 'text-slate-400' : 'text-slate-500'
                     }`}
                     title={isHidden ? 'Hidden - Click to show in table' : 'Visible - Click to hide from table'}
                   >
                     {isHidden ? (
-                      <EyeOff className="h-4 w-4" />
+                      <EyeOff className="h-3.5 w-3.5" />
                     ) : (
-                      <Eye className="h-4 w-4" />
+                      <Eye className="h-3.5 w-3.5" />
                     )}
                   </button>
                   <span
                     onClick={(e) => {
                       if (e.ctrlKey || e.metaKey) {
-                        // Multi-select: add/remove category without clearing other filters
                         if (isSelected) {
                           setFilters({ ...filters, categories: filters.categories.filter(c => c !== cat) });
                         } else {
                           setFilters({ ...filters, categories: [...filters.categories, cat] });
                         }
                       } else {
-                        // Single select: clear category-dependent filters (subcategories, units, sizes)
-                        // but preserve cross-category filters (brands, distributors)
-                        setFilters({
-                          ...filters,
-                          categories: [cat],
-                          subcategories: [],
-                          units: [],
-                          sizes: []
-                        });
+                        if (isSelected) {
+                          setFilters({ ...filters, categories: filters.categories.filter(c => c !== cat) });
+                        } else {
+                          setFilters({
+                            ...filters,
+                            categories: [cat],
+                            subcategories: [],
+                            units: [],
+                            sizes: []
+                          });
+                        }
                       }
                     }}
                     className={`flex-1 cursor-pointer hover:underline ${
-                      isHidden ? 'opacity-50 line-through' : ''
+                      isHidden ? 'opacity-40 line-through' : ''
                     }`}
-                    title={analytics?.primaryStore && primaryCount > 0 
-                      ? `${primaryCount} in ${analytics.primaryStore.name}, total count varies by filter` 
+                    title={analytics?.primaryStore && primaryCount > 0
+                      ? `${primaryCount} in ${analytics.primaryStore.name}, total count varies by filter`
                       : 'Click to filter by this category'}
                   >
                     {categoryLabel}
@@ -273,30 +311,14 @@ const OrderingFilters = ({
               );
             })}
           </div>
-          {filters.categories.length > 0 && (
-            <div className="mt-2 text-xs text-muted-foreground">
-              {filters.categories.length} selected for filtering
-            </div>
-          )}
           {hiddenCategories.size > 0 && (
-            <div className="mt-1 text-xs text-muted-foreground">
+            <div className="mt-1.5 text-[11px] text-muted-foreground">
               {hiddenCategories.size} hidden from view
             </div>
           )}
         </div>
 
-        {(filters.brands.length > 0 || filters.categories.length > 0 || 
-          filters.subcategories.length > 0 || filters.units.length > 0 || filters.sizes.length > 0) && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setFilters({ brands: [], categories: [], subcategories: [], units: [], sizes: [] })}
-            className="w-full"
-          >
-            Clear All Filters
-          </Button>
-        )}
-
+        {/* Order Summary */}
         <div className="border-t pt-4">
           <h3 className="text-sm font-semibold mb-2 text-emerald-800">Order Summary</h3>
           <div className="text-sm text-muted-foreground mb-4">
@@ -313,38 +335,6 @@ const OrderingFilters = ({
             </Button>
           </div>
         </div>
-
-        <div className="border-t pt-4">
-          <h3 className="text-sm font-semibold mb-2 text-emerald-800">Admin Tools</h3>
-          <div className="space-y-2">
-            {onSeedDistributors && (
-              <>
-                <Button variant="secondary" onClick={onSeedDistributors} className="w-full" size="sm">
-                  🏢 Seed Distributors
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  One-time: Creates 7 default distributors
-                </p>
-              </>
-            )}
-            {onSyncBrands && (
-              <>
-                <Button variant="secondary" onClick={onSyncBrands} className="w-full" size="sm">
-                  🏷️ Sync Brands
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Creates Brand records from product catalog
-                </p>
-              </>
-            )}
-            <Button variant="secondary" onClick={onEnrichFormats} className="w-full" size="sm">
-              🔄 Enrich Formats
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Updates format data for all products (multipacks, etc.)
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -352,7 +342,6 @@ const OrderingFilters = ({
 
 // Memoize component to prevent re-renders when only data changes
 export default React.memo(OrderingFilters, (prevProps, nextProps) => {
-  // Return true if props are equal (skip re-render), false if different (should re-render)
   const filtersEqual = prevProps.filters === nextProps.filters;
   const hiddenCategoriesEqual = prevProps.hiddenCategories === nextProps.hiddenCategories;
   const worksheetEqual = prevProps.worksheet?.items?.length === nextProps.worksheet?.items?.length;
@@ -361,11 +350,8 @@ export default React.memo(OrderingFilters, (prevProps, nextProps) => {
     prevProps.setFilters === nextProps.setFilters &&
     prevProps.onCategoryVisibilityToggle === nextProps.onCategoryVisibilityToggle &&
     prevProps.onExportOrder === nextProps.onExportOrder &&
-    prevProps.onClearOrder === nextProps.onClearOrder &&
-    prevProps.onEnrichFormats === nextProps.onEnrichFormats &&
-    prevProps.onSeedDistributors === nextProps.onSeedDistributors &&
-    prevProps.onSyncBrands === nextProps.onSyncBrands
+    prevProps.onClearOrder === nextProps.onClearOrder
   );
-  
+
   return filtersEqual && hiddenCategoriesEqual && worksheetEqual && filterOptionsEqual && callbacksEqual;
 });

@@ -80,7 +80,7 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
     switch (column.id) {
       case 'name':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 border-r border-b border-slate-200/50">
             <div className="flex items-center gap-2">
               <Link
                 to={`/product/${product.id}`}
@@ -105,11 +105,11 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
 
       case 'categoryRank':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-center border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 text-center border-r border-b border-slate-200/50">
             {product.categoryRank && product.categoryTotal ? (
               <div className="flex items-center justify-center gap-1">
-                {product.isTop10 && <span className="text-base">🏆</span>}
-                <span className="font-semibold text-base text-slate-800">
+                {product.isTop10 && <span className="text-sm">🏆</span>}
+                <span className="font-semibold text-sm text-slate-800">
                   {product.categoryRank}/{product.categoryTotal}
                 </span>
               </div>
@@ -121,14 +121,14 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
 
       case 'brand':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50 text-teal-700 font-semibold">
-            <div className="break-words text-base">{product.brand}</div>
+          <td key={column.id} style={cellStyle} className="px-3 py-2 border-r border-b border-slate-200/50 text-teal-700 font-semibold">
+            <div className="break-words text-sm">{product.brand}</div>
           </td>
         );
 
       case 'strainType':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 border-r border-b border-slate-200/50">
             {product.strainType && product.strainType !== 'N/A' ? (
               <Badge className={`${getStrainColor(product.strainType)} text-white text-xs font-semibold shadow-sm rounded-lg`}>
                 {product.strainType}
@@ -141,98 +141,105 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
 
       case 'format':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-center border-r border-b border-slate-200/50">
-            <span className="text-base font-medium break-words text-slate-700">{cleanText(product.format) || '-'}</span>
+          <td key={column.id} style={cellStyle} className="px-3 py-2 text-center border-r border-b border-slate-200/50">
+            <span className="text-sm font-medium break-words text-slate-700">{cleanText(product.format) || '-'}</span>
           </td>
         );
 
       case 'parentCategory':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-slate-600 border-r border-b border-slate-200/50">
-            <div className="break-words text-sm">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 text-slate-600 border-r border-b border-slate-200/50">
+            <div className="break-words text-xs">
               {product.parentCategory}
-              {product.subcategory && <><br/><span className="text-xs text-slate-500">› {cleanText(product.subcategory)}</span></>}
+              {product.subcategory && <><br/><span className="text-slate-500">› {cleanText(product.subcategory)}</span></>}
             </div>
           </td>
         );
 
-      case 'wholesaleCost':
+      case 'pricing':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-right font-mono border-r border-b border-slate-200/50 text-base text-slate-700">
-            ${(product.wholesaleCost || 0).toFixed(2)}
-          </td>
-        );
-
-      case 'retailPrice':
-        return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-right font-mono border-r border-b border-slate-200/50 text-base text-slate-700">
-            ${(product.retailPrice || 0).toFixed(2)}
-          </td>
-        );
-
-      case 'margin':
-        return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-right border-r border-b border-slate-200/50 text-base font-semibold text-slate-700">
-            {((product.margin || 0) * 100).toFixed(0)}%
+          <td key={column.id} style={cellStyle} className="px-3 py-2 text-right border-r border-b border-slate-200/50">
+            <div className="flex flex-col items-end gap-0.5 text-xs">
+              <span className="font-mono text-slate-600">${(product.wholesaleCost || 0).toFixed(2)}</span>
+              <span className="font-mono font-semibold text-slate-800">${(product.retailPrice || 0).toFixed(2)}</span>
+              <span className="font-semibold text-slate-700">{((product.margin || 0) * 100).toFixed(0)}%</span>
+            </div>
           </td>
         );
 
       case 'totalInventory':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-right font-bold border-r border-b border-slate-200/50 text-lg text-slate-800">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 text-right font-bold border-r border-b border-slate-200/50 text-sm text-slate-800">
             {product.totalInventory}
           </td>
         );
 
       case 'totalSales':
         return (
-          <td key={column.id} style={cellStyle} className={`px-4 py-3 text-right border-r border-b border-slate-200/50 font-bold text-lg ${getHeatMapColor(product.totalSales, maxTotalSales)}`}>
+          <td key={column.id} style={cellStyle} className={`px-3 py-2 text-right border-r border-b border-slate-200/50 font-bold text-sm ${getHeatMapColor(product.totalSales, maxTotalSales)}`}>
             {product.totalSales}
           </td>
         );
 
-      case 'popularity':
+      case 'popularity': {
+        const popularityPct = maxTotalSales > 0 ? Math.round((product.totalSales / maxTotalSales) * 100) : 0;
         return (
-          <td key={column.id} style={cellStyle} className={`px-4 py-3 text-center border-r border-b border-slate-200/50 ${getHeatMapColor(product.totalSales, maxTotalSales)}`}>
-            <div className="flex items-center justify-center gap-1">
-              <div className="text-base font-bold">
-                {maxTotalSales > 0 ? Math.round((product.totalSales / maxTotalSales) * 100) : 0}%
+          <td key={column.id} style={cellStyle} className={`px-3 py-2 border-r border-b border-slate-200/50 ${getHeatMapColor(product.totalSales, maxTotalSales)}`}>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1.5 rounded-full bg-black/10 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    popularityPct >= 75 ? 'bg-emerald-600' :
+                    popularityPct >= 50 ? 'bg-lime-600' :
+                    popularityPct >= 25 ? 'bg-amber-500' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${popularityPct}%` }}
+                />
               </div>
-              {product.totalSales > maxTotalSales * 0.75 ? '🔥' : 
-               product.totalSales > maxTotalSales * 0.5 ? '🌡️' : 
-               product.totalSales > maxTotalSales * 0.25 ? '❄️' : '🧊'}
+              <span className="text-xs font-bold tabular-nums w-8 text-right">{popularityPct}%</span>
             </div>
           </td>
         );
+      }
 
       case 'weeksLeft':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-center border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 text-center border-r border-b border-slate-200/50">
             <Badge className={
-              product.weeksLeft < 2 ? 'bg-[#10b981] text-white' :
-              product.weeksLeft < 3 ? 'bg-[#f59e0b] text-white' : 'bg-[#ef4444] text-white'
+              product.weeksLeft < 2 ? 'bg-[#ef4444] text-white' :
+              product.weeksLeft < 3 ? 'bg-[#f59e0b] text-white' : 'bg-[#10b981] text-white'
             }>
               {product.weeksLeft < 999 ? product.weeksLeft.toFixed(1) : '∞'}w
             </Badge>
           </td>
         );
 
-      case 'daysSinceLastSale':
+      case 'recency':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-right border-r border-b border-slate-200/50 text-base">
-            {product.daysSinceLastSale !== null ? (
-              <span className={product.daysSinceLastSale > 30 ? 'text-[#ef4444] font-bold' : 'text-slate-700'}>
-                {product.daysSinceLastSale} {product.daysSinceLastSale === 1 ? 'day' : 'days'}
-              </span>
-            ) : (
-              <span className="text-slate-400">Never</span>
-            )}
+          <td key={column.id} style={cellStyle} className="px-3 py-2 text-right border-r border-b border-slate-200/50">
+            <div className="flex flex-col items-end gap-0.5 text-xs">
+              {product.daysSinceLastSale !== null ? (
+                <span className={product.daysSinceLastSale > 30 ? 'text-red-500 font-bold' : 'text-slate-700 font-medium'}>
+                  {product.daysSinceLastSale}d
+                </span>
+              ) : (
+                <span className="text-slate-400">-</span>
+              )}
+              {product.daysSinceLastPO !== null && product.daysSinceLastPO !== undefined ? (
+                <span className={product.daysSinceLastPO > 90 ? 'text-amber-500 font-bold' : 'text-slate-500'}>
+                  {product.daysSinceLastPO}d
+                  {product.lastPOQty && <span className="text-slate-400 ml-0.5">({product.lastPOQty})</span>}
+                </span>
+              ) : (
+                <span className="text-slate-400">-</span>
+              )}
+            </div>
           </td>
         );
 
       case 'trend':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-center border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 text-center border-r border-b border-slate-200/50">
             {product.sparklineData && product.sparklineData.length > 0 ? (
               <Sparkline data={product.sparklineData} width={60} height={20} />
             ) : isLoadingTrends ? (
@@ -243,27 +250,13 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
           </td>
         );
 
-      case 'daysSinceLastPO':
-        return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-right border-r border-b border-slate-200/50 text-base">
-            {product.daysSinceLastPO !== null && product.daysSinceLastPO !== undefined ? (
-              <div className={product.daysSinceLastPO > 90 ? 'text-[#f59e0b] font-bold' : 'text-slate-700'}>
-                <span>{product.daysSinceLastPO}d</span>
-                {product.lastPOQty && <span className="text-xs text-slate-500 ml-1">({product.lastPOQty})</span>}
-              </div>
-            ) : (
-              <span className="text-slate-400">-</span>
-            )}
-          </td>
-        );
-
       case 'suggestedQty':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-right border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 text-right border-r border-b border-slate-200/50">
             {product.suggestedQty > 0 ? (
               <div>
-                <div className="font-bold text-lg text-teal-700">{product.suggestedQty}</div>
-                <div className="text-sm text-slate-500">
+                <div className="font-bold text-sm text-teal-700">{product.suggestedQty}</div>
+                <div className="text-xs text-slate-500">
                   ({product.suggestedCases} cases)
                 </div>
               </div>
@@ -275,7 +268,7 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
 
       case 'distributor':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 border-r border-b border-slate-200/50">
             <DistributorCell 
               brand={product.brand}
               distributors={product.distributors || []}
@@ -286,7 +279,7 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
 
       case 'classification':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 border-r border-b border-slate-200/50">
             <StrainTypeCell
               product={effectiveProduct}
               classifications={column.classifications || []}
@@ -297,7 +290,7 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
 
       case 'category':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 border-r border-b border-slate-200/50">
             <CategoryCell
               product={effectiveProduct}
               categoryDefinitions={column.categoryDefinitions || []}
@@ -308,7 +301,7 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
 
       case 'subcategory':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 border-r border-b border-slate-200/50">
             <SubcategoryCell
               product={effectiveProduct}
               categoryDefinitions={column.categoryDefinitions || []}
@@ -319,7 +312,7 @@ const ProductTableRow = ({ product, orderedColumns, periodDays, maxTotalSales, o
 
       case 'actions':
         return (
-          <td key={column.id} style={cellStyle} className="px-4 py-3 text-center border-r border-b border-slate-200/50">
+          <td key={column.id} style={cellStyle} className="px-3 py-2 text-center border-r border-b border-slate-200/50">
             {product.suggestedQty > 0 && (
               <Button
                 size="sm"

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router';
 import { Link } from 'wasp/client/router';
 import { useQuery } from 'wasp/client/operations';
 import { getProductById, getClassifications, getCategoryDefinitions } from 'wasp/client/operations';
