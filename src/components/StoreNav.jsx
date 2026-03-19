@@ -19,7 +19,7 @@ export const StoreNav = ({ currentPage }) => {
       id: 'upload',
       label: 'Upload Inventory',
       icon: Upload,
-      href: `/store/${storeId}/upload`,
+      href: `/upload`,
       active: currentPage === 'upload'
     },
     {

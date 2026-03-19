@@ -144,7 +144,7 @@ const CompactStoreCard = ({ store, metrics, onViewDetails }) => {
             <TrendingUp className="h-3 w-3 mr-1" />
             View Details
           </Button>
-          <Link to={`/store/${store.id}/upload`}>
+          <Link to="/upload">
             <Button
               variant="outline"
               size="sm"

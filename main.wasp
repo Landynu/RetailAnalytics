@@ -87,11 +87,6 @@ query validateInvitationToken {
   entities: [Invitation]
 }
 
-action uploadInventory {
-  fn: import { uploadInventory } from "@src/actions/inventory.js",
-  entities: [Store, Inventory, Product]
-}
-
 action analyzeInventoryExport {
   fn: import { analyzeInventoryExport } from "@src/actions/inventory.js",
   entities: [Store, ProductCatalog, Category, InventorySnapshot, StockLevel]
@@ -105,11 +100,6 @@ action uploadInventoryExport {
 action uploadInventoryLogs {
   fn: import { uploadInventoryLogs } from "@src/actions/inventoryLogs.js",
   entities: [Store, ProductCatalog, InventoryMovement, StockLevel, InventorySnapshot, UnmatchedRecord, WeeklySalesSummary]
-}
-
-action uploadProductCatalog {
-  fn: import { uploadProductCatalog } from "@src/actions/productCatalog.js",
-  entities: [ProductCatalog, WeeklySalesSummary, InventoryMovement]
 }
 
 action createStore {
@@ -265,11 +255,6 @@ action clearOrderWorksheet {
 action exportOrderWorksheet {
   fn: import { exportOrderWorksheet } from "@src/actions/orderWorksheet.js",
   entities: [OrderWorksheet, OrderWorksheetItem, ProductCatalog]
-}
-
-action deleteInventoryMovementsByDateRange {
-  fn: import { deleteInventoryMovementsByDateRange } from "@src/actions/cleanup.js",
-  entities: [InventoryMovement, Store]
 }
 
 action markProductStatus {
@@ -451,11 +436,6 @@ action checkImageMigrationStatus {
   entities: [ProductCatalog]
 }
 
-action cleanupOctoberNovember2025 {
-  fn: import { cleanupOctoberNovember2025 } from "@src/actions/cleanup.js",
-  entities: [Store, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary, InventorySnapshot]
-}
-
 action createProductAction {
   fn: import { createProductAction } from "@src/actions/productAction.js",
   entities: [ProductAction, ProductCatalog]
@@ -559,12 +539,6 @@ page DashboardPage {
   authRequired: true
 }
 
-route InventoryUploadRoute { path: "/store/:storeId/upload", to: InventoryUploadPage }
-page InventoryUploadPage {
-  component: import InventoryUploadPage from "@src/pages/InventoryUpload.jsx",
-  authRequired: true
-}
-
 route SalesTrendsRoute { path: "/store/:storeId/trends", to: SalesTrendsPage }
 page SalesTrendsPage {
   component: import SalesTrendsPage from "@src/pages/SalesTrends.jsx",
@@ -625,11 +599,6 @@ page ProductCatalogPage {
   authRequired: true
 }
 
-route DataCleanupRoute { path: "/data-cleanup", to: DataCleanupPage }
-page DataCleanupPage {
-  component: import DataCleanup from "@src/pages/DataCleanup.jsx",
-  authRequired: true
-}
 
 route ErrorTestRoute { path: "/error-test", to: ErrorTestPage }
 page ErrorTestPage {

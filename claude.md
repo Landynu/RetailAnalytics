@@ -2,9 +2,14 @@
 
 A full-stack retail inventory and analytics platform for multi-store dispensary chains built with the Wasp framework. Enables inventory management, sales tracking, purchase ordering, and advanced analytics.
 
+## Code Exploration
+
+Use CartoGopher MCP tools as the primary code exploration method. See `.claude/rules/conventions.md` for the mandatory workflow.
+Run `/rebake` after significant code changes to keep the CartoGopher index current.
+
 ## Tech Stack
 
-- **Framework**: Wasp 0.20.1 (full-stack DSL for React/Node.js/Prisma)
+- **Framework**: Wasp 0.21 (full-stack DSL for React/Node.js/Prisma)
 - **Frontend**: React 19, Vite, TanStack React Table, Recharts, Radix UI, Tailwind CSS
 - **Backend**: Node.js/Express
 - **Database**: PostgreSQL with Prisma ORM
@@ -20,20 +25,44 @@ A full-stack retail inventory and analytics platform for multi-store dispensary 
 ├── pages/              # React page components (auth-protected routes)
 ├── components/         # Reusable React components
 │   └── ui/             # Base UI components (button, input, dialog, etc.)
+├── queries/            # Server-side read operations (14 domain modules)
+│   ├── analytics.js        # getStoreAnalytics, getGlobalAnalytics, getGlobalAnalyticsFiltered
+│   ├── ordering.js         # getOrderingAnalytics (complex, heavily cached)
+│   ├── orderingHelpers.js  # category rankings, sparklines, filter options
+│   ├── dailySalesAnalytics.js
+│   ├── globalSalesAnalytics.js
+│   ├── outOfStock.js
+│   ├── inventory.js
+│   ├── brandDistributor.js
+│   ├── pos.js
+│   ├── productCatalog.js
+│   ├── productAction.js
+│   ├── store.js
+│   ├── invitation.js
+│   └── helpers.js          # shared: filterProductsInMemory, calculateWeekBoundaries
+├── actions/            # Server-side write operations (16 domain modules)
+│   ├── inventory.js, product.js, productAction.js, productSync.js
+│   ├── analytics.js, category.js, classification.js
+│   ├── brandDistributor.js, orderWorksheet.js
+│   ├── pos.js, store.js, invitation.js
+│   ├── menu.js, weeklySummary.js, inventoryLogs.js
+│   └── s3.js
+├── cache/              # Redis caching layer
+│   ├── redis.js            # connection management
+│   ├── utils.js            # getCached, setCached helpers
+│   ├── warmCache.js        # cache pre-warming logic
+│   └── index.js            # re-exports
 ├── server/             # Server-only code (scraper, encryption)
 ├── services/           # Business logic services
 ├── lib/                # Utility functions and hooks
 ├── apis/               # Custom HTTP API endpoints
-├── middleware/         # Express middleware
-├── actions.js          # Server-side write operations
-├── queries.js          # Server-side read operations
-├── cache.js            # Redis caching layer
+├── middleware/          # Express middleware
 ├── queryClient.js      # TanStack Query config
 ├── serverSetup.js      # Express middleware setup
 └── Layout.jsx          # Root layout component
 
 /main.wasp              # Wasp app configuration (routes, queries, actions, jobs)
-/schema.prisma          # Database schema (25 models)
+/schema.prisma          # Database schema (~25 models)
 ```
 
 ## Key Features
@@ -44,13 +73,14 @@ A full-stack retail inventory and analytics platform for multi-store dispensary 
 - **Smart ordering** with advanced filtering and order worksheets
 - **Product enrichment** (categories, cannabinoid profiles, strain types)
 - **Brand-distributor mapping** for purchasing workflows
+- **Email auth with invitation system** for multi-tenant access
 
 ## Architecture Patterns
 
 ### Data Flow
 - **CQRS-style**: Queries for reads, Actions for writes (defined in main.wasp)
 - **Automatic cache invalidation**: Wasp invalidates queries when actions modify entities
-- **Redis caching**: Custom cache layer in `cache.js` for expensive queries
+- **Redis caching**: Custom cache layer in `src/cache/` for expensive analytics queries
 
 ### Database
 - PostgreSQL with Prisma relation mode
@@ -76,8 +106,8 @@ wasp db migrate-dev
 # Open Prisma Studio
 wasp db studio
 
-# Local PostgreSQL (optional)
-docker-compose up -d
+# Re-index codebase for CartoGopher
+/rebake
 ```
 
 ## Environment Variables
@@ -97,6 +127,7 @@ The app is deployed on Railway with:
 - Node.js server (Wasp build output)
 
 Build command: `wasp build` generates full-stack app in `.wasp/build/`
+Run `/deploy-check` before deploying.
 
 ## Scheduled Jobs
 
@@ -106,17 +137,18 @@ Defined in main.wasp using PgBoss:
 
 ## Key Files
 
-- [main.wasp](main.wasp) - App configuration, routes, queries, actions, jobs
-- [schema.prisma](schema.prisma) - Database models (25 models)
-- [src/actions.js](src/actions.js) - Server-side write operations (~4,100 lines)
-- [src/queries.js](src/queries.js) - Server-side read operations (~3,400 lines)
-- [src/cache.js](src/cache.js) - Redis caching layer with performance logging
+- [main.wasp](main.wasp) - App configuration, routes, queries, actions, jobs (~607 lines)
+- [schema.prisma](schema.prisma) - Database models (~25 models, ~480 lines)
+- [src/queries/](src/queries/) - Server-side read operations (14 domain modules)
+- [src/actions/](src/actions/) - Server-side write operations (16 domain modules)
+- [src/cache/](src/cache/) - Redis caching layer with performance logging
 - [src/server/scraper.js](src/server/scraper.js) - Playwright-based POS scraping
 - [src/server/encryption.js](src/server/encryption.js) - AES-256-GCM encryption
 
 ## Conventions
 
 - **Naming**: camelCase for JS, PascalCase for components/models, UPPERCASE for constants
-- **Imports**: Wasp auto-generates imports from `wasp/client/operations` and `wasp/server`
+- **Imports**: Wasp imports from `wasp/client/operations` and `wasp/server`; main.wasp uses `@src/` prefix
 - **Error handling**: Use `HttpError` from `wasp/server` with proper status codes
-- **File organization**: Pages in `/pages`, reusable components in `/components/ui`
+- **Auth guard**: Every query/action starts with `if (!context.user) { throw new HttpError(401) }`
+- **File organization**: Queries in `src/queries/`, actions in `src/actions/`, pages in `src/pages/`, components in `src/components/ui/`

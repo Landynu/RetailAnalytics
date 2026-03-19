@@ -98,7 +98,7 @@ const SmartMenuPage = () => {
               <p className="text-muted-foreground mb-4">
                 Upload inventory data to generate your smart menu.
               </p>
-              <Link to={`/store/${storeId}/upload`}>
+              <Link to="/upload">
                 <Button>
                   <Upload className="h-4 w-4 mr-2" />
                   Upload Inventory
@@ -150,7 +150,7 @@ const SmartMenuPage = () => {
 
       {smartMenu.length > 0 && (
         <div className="flex justify-center space-x-4">
-          <Link to={`/store/${storeId}/upload`}>
+          <Link to="/upload">
             <Button variant="outline">
               <Upload className="h-4 w-4 mr-2" />
               Upload More Inventory
