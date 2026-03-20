@@ -2,13 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Package, TrendingUp } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-
-const STRAIN_COLORS = {
-  Sativa: '#10b981',
-  Hybrid: '#f59e0b',
-  Indica: '#8b5cf6',
-  'N/A': '#6b7280'
-};
+import { STRAIN_COLORS } from '../lib/constants.js';
 
 const GlobalAnalyticsDashboard = ({ analytics, loading = false }) => {
   if (loading) {
@@ -76,10 +70,7 @@ const GlobalAnalyticsDashboard = ({ analytics, loading = false }) => {
     units: p.unitsSold
   }));
   
-  // Debug: Log chart data to console
-  if (topProductsChartData.length > 0) {
-    console.log('Top Products Chart Data:', topProductsChartData);
-  }
+
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
@@ -234,4 +225,4 @@ const GlobalAnalyticsDashboard = ({ analytics, loading = false }) => {
   );
 };
 
-export default GlobalAnalyticsDashboard;
+export default React.memo(GlobalAnalyticsDashboard);

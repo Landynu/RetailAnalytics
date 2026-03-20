@@ -10,12 +10,6 @@ export const getDailySalesAnalytics = async ({
   const endDate = filters.dateRange?.end ? new Date(filters.dateRange.end) : new Date();
   const startDate = filters.dateRange?.start ? new Date(filters.dateRange.start) : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  console.log('📅 Daily sales query:', {
-    start: startDate.toISOString(),
-    end: endDate.toISOString(),
-    storeFilter: storeIds ? `${storeIds.length} stores` : 'all stores'
-  });
-
   // Build where clause for movements
   const movementWhere = {
     type: 'sale', // Only actual sales
@@ -83,8 +77,6 @@ export const getDailySalesAnalytics = async ({
     }
     // Removed orderBy - sort in memory if needed for better query performance
   });
-
-  console.log('📊 Daily movements fetched:', movements.length);
 
   // Sort movements by date for consistent processing (in-memory sort is fast)
   movements.sort((a, b) => a.date - b.date);
@@ -344,14 +336,6 @@ export const getDailySalesAnalytics = async ({
     totalTransactions: movements.length,
     hasData: movements.length > 0
   };
-
-  console.log('💰 Daily sales analytics summary:', {
-    totalRevenue: result.totalRevenue,
-    unitsSold: result.totalUnitsSold,
-    avgTransaction: result.avgTransactionValue,
-    dataPoints: salesTrends.length,
-    hasData: result.hasData
-  });
 
   return result;
 };

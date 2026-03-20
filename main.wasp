@@ -114,7 +114,7 @@ action updateStoreBranding {
 
 action generateSmartMenu {
   fn: import { generateSmartMenu } from "@src/actions/menu.js",
-  entities: [Store, Inventory, Product]
+  entities: [Store, ProductCatalog, StockLevel]
 }
 
 action generatePrintableMenu {
@@ -224,7 +224,7 @@ query getOrderingAnalytics {
 
 query getOutOfStockProducts {
   fn: import { getOutOfStockProducts } from "@src/queries/outOfStock.js",
-  entities: [Store, ProductCatalog, StockLevel, WeeklySalesSummary, InventoryMovement, Distributor]
+  entities: [Store, ProductCatalog, WeeklySalesSummary, InventoryMovement]
 }
 
 query getOrCreateOrderWorksheet {
@@ -269,7 +269,7 @@ action enrichProductFormats {
 
 action backfillWeeklySummaries {
   fn: import { backfillWeeklySummaries } from "@src/actions/weeklySummary.js",
-  entities: [Store, ProductCatalog, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary]
+  entities: [Store, ProductCatalog, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary, ProductSeasonality]
 }
 
 query getBrandDistributors {
@@ -476,6 +476,21 @@ query getActiveActionsByProduct {
   entities: [ProductAction]
 }
 
+action calculateProductSeasonality {
+  fn: import { calculateProductSeasonality } from "@src/actions/seasonality.js",
+  entities: [ProductCatalog, WeeklySalesSummary, ProductSeasonality]
+}
+
+query getProductSeasonality {
+  fn: import { getProductSeasonality } from "@src/queries/seasonality.js",
+  entities: [ProductSeasonality, ProductCatalog]
+}
+
+query getSeasonalityOverview {
+  fn: import { getSeasonalityOverview } from "@src/queries/seasonality.js",
+  entities: [ProductSeasonality, ProductCatalog, StockLevel]
+}
+
 api proxyImage {
   fn: import { proxyImage } from "@src/apis/imageProxy.js",
   httpRoute: (GET, "/api/images/proxy")
@@ -530,7 +545,7 @@ job backfillWeeklySummariesJob {
   schedule: {
     cron: "0 3 * * *" // Run at 3 AM daily
   },
-  entities: [Store, ProductCatalog, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary]
+  entities: [Store, ProductCatalog, InventoryMovement, WeeklySalesSummary, WeeklyCategorySummary, WeeklyBrandSummary, ProductSeasonality]
 }
 
 route DashboardRoute { path: "/", to: DashboardPage }

@@ -1,6 +1,7 @@
 import { HttpError } from 'wasp/server'
+import { EXCLUDED_CATEGORIES } from '../lib/constants.js'
 
-export const getStoreAnalytics = async ({ storeId, excludeCategories = ['Accessories', 'Accessory'] }, context) => {
+export const getStoreAnalytics = async ({ storeId, excludeCategories = EXCLUDED_CATEGORIES }, context) => {
   if (!context.user) { throw new HttpError(401) }
 
   const store = await context.entities.Store.findUnique({

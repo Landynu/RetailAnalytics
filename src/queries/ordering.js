@@ -1,6 +1,7 @@
 import { HttpError } from 'wasp/server'
 import { getCached, getCachedBatch, setCached, generateCacheKey, timedQuery } from '../cache.js'
 import { calculateWeekBoundaries } from './helpers.js'
+import { EXCLUDED_CATEGORIES } from '../lib/constants.js'
 import {
   calculateCategoryRankings,
   processSparklineData,
@@ -21,8 +22,6 @@ export const getOrderingAnalytics = async ({
   if (!context.user) { throw new HttpError(401) }
 
   const queryStartTime = Date.now();
-  console.log(`[QUERY] getOrderingAnalytics | START | stores:${storeIds?.length || 'all'} filters:${Object.keys(filters).length} offset:${offset} limit:${limit}`);
-
   // Default to 14 days if no date range provided
   const endDate = dateRange?.end ? new Date(dateRange.end) : new Date();
   const startDate = dateRange?.start ? new Date(dateRange.start) : new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -88,9 +87,7 @@ export const getOrderingAnalytics = async ({
       }), { stores: storeIdList.length }
     );
     // Cache for 10 minutes (this data changes daily) - non-blocking
-    setCached(recentSalesCacheKey, productsWithRecentSales, 600, 'recent_sales').catch(err =>
-      console.warn(`Cache write failed for recent_sales:`, err.message)
-    );
+    setCached(recentSalesCacheKey, productsWithRecentSales, 600, 'recent_sales').catch(() => {});
   }
 
   const productIdsWithRecentSales = productsWithRecentSales.map(r => r.productId);
@@ -116,7 +113,7 @@ export const getOrderingAnalytics = async ({
       },
       // Exclude Accessories/VPT unless explicitly requested
       ...(includeHiddenCategories ? [] : [
-        { parentCategory: { notIn: ['Accessories', 'Accessory', 'VPT'] } }
+        { parentCategory: { notIn: EXCLUDED_CATEGORIES } }
       ])
     ]
   };
@@ -200,16 +197,12 @@ export const getOrderingAnalytics = async ({
     }));
 
     // Cache rankings products (non-blocking)
-    setCached(baseRankingsProductsKey, allProductIdsForRankings, 3600, 'base:rankings_products').catch(err =>
-      console.warn(`Cache write failed for base:rankings_products:`, err.message)
-    );
+    setCached(baseRankingsProductsKey, allProductIdsForRankings, 3600, 'base:rankings_products').catch(() => {});
 
     baseProducts = allProducts;
 
     // Cache base products (non-blocking)
-    setCached(baseProductsKey, baseProducts, 3600, 'base:products').catch(err =>
-      console.warn(`Cache write failed for base:products:`, err.message)
-    );
+    setCached(baseProductsKey, baseProducts, 3600, 'base:products').catch(() => {});
   }
 
   // Fetch filtered + paginated products (with filters applied at DB level)
@@ -313,7 +306,6 @@ export const getOrderingAnalytics = async ({
 
   // Always fetch purchase orders if cache is invalid or missing
   if (!hasValidPOCache && allBaseProductIds.length > 0) {
-    console.log(`[QUERY] Purchase orders | Cache invalid or empty, fetching fresh data for ${allBaseProductIds.length} products`);
     allPOs = await timedQuery('purchase_orders', () =>
       context.entities.InventoryMovement.findMany({
         where: {
@@ -325,7 +317,6 @@ export const getOrderingAnalytics = async ({
         orderBy: { date: 'desc' }
       }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
     );
-    console.log(`[QUERY] Purchase orders | Fetched ${allPOs?.length || 0} PO records from DB`);
   }
 
   if (!cachedBaseSales) {
@@ -432,9 +423,7 @@ export const getOrderingAnalytics = async ({
       salesMap: Object.fromEntries(salesMap),
       completeWeeks: Array.from(completeWeeksSet)
     };
-    setCached(baseSalesTotalsKey, baseSalesMapToCache, 3600, 'base:sales_totals').catch(err =>
-      console.warn(`Cache write failed for base:sales_totals:`, err.message)
-    );
+    setCached(baseSalesTotalsKey, baseSalesMapToCache, 3600, 'base:sales_totals').catch(() => {});
 
     // Filter salesMap to only include filtered products
     const filteredSalesMap = new Map();
@@ -466,9 +455,6 @@ export const getOrderingAnalytics = async ({
       });
     }
 
-    console.log(`[QUERY] Purchase orders | Cached base POs: ${baseLastPOMap.size} | Sample product IDs in cache: ${Array.from(baseLastPOMap.keys()).slice(0, 5).join(', ')}`);
-    console.log(`[QUERY] Purchase orders | Sample filtered product IDs: ${allFilteredProductIds.slice(0, 5).join(', ')}`);
-
     allFilteredProductIds.forEach(productId => {
       const pid = parseInt(productId);
       if (baseLastPOMap.has(pid)) {
@@ -488,9 +474,6 @@ export const getOrderingAnalytics = async ({
       });
     }
 
-    console.log(`[QUERY] Purchase orders | Fresh POs from DB: ${baseLastPOMap.size} | Sample product IDs: ${Array.from(baseLastPOMap.keys()).slice(0, 5).join(', ')}`);
-    console.log(`[QUERY] Purchase orders | Sample filtered product IDs: ${allFilteredProductIds.slice(0, 5).join(', ')}`);
-
     // Cache the base lastPOMap (non-blocking)
     const basePOsToCache = {
       lastPOMap: Object.fromEntries(
@@ -500,9 +483,7 @@ export const getOrderingAnalytics = async ({
         ])
       )
     };
-    setCached(basePOsKey, basePOsToCache, 3600, 'base:purchase_orders').catch(err =>
-      console.warn(`Cache write failed for base:purchase_orders:`, err.message)
-    );
+    setCached(basePOsKey, basePOsToCache, 3600, 'base:purchase_orders').catch(() => {});
 
     allFilteredProductIds.forEach(productId => {
       const pid = parseInt(productId);
@@ -511,8 +492,6 @@ export const getOrderingAnalytics = async ({
       }
     });
   }
-
-  console.log(`[QUERY] Purchase orders | Final lastPOMap size: ${lastPOMap.size} | filtered products: ${allFilteredProductIds.length} | Base PO map size: ${baseLastPOMap.size}`);
 
   // ============================================================================
   // Recent Sales (Last Sale Date) and Location Counts
@@ -563,9 +542,7 @@ export const getOrderingAnalytics = async ({
       }), { productIds: productIds.length, stores: storeIdList.length }
     );
     if (recentSales && recentSales.length > 0 && recentSalesMovementsCacheKey) {
-      setCached(recentSalesMovementsCacheKey, recentSales, 600, 'recent_sales_movements').catch(err =>
-        console.warn(`Cache write failed for recent_sales_movements:`, err.message)
-      );
+      setCached(recentSalesMovementsCacheKey, recentSales, 600, 'recent_sales_movements').catch(() => {});
     }
   }
   recentSales = recentSales || [];
@@ -603,9 +580,7 @@ export const getOrderingAnalytics = async ({
       }), { productIds: remainingProductIds.length, stores: storeIdList.length }
     );
     if (olderSaleData && olderSaleData.length > 0 && olderSalesCacheKey) {
-      setCached(olderSalesCacheKey, olderSaleData, 1800, 'older_sales').catch(err =>
-        console.warn(`Cache write failed for older_sales:`, err.message)
-      );
+      setCached(olderSalesCacheKey, olderSaleData, 1800, 'older_sales').catch(() => {});
     }
   }
   olderSaleData = olderSaleData || [];
@@ -737,9 +712,7 @@ export const getOrderingAnalytics = async ({
           orderBy: { weekStart: 'asc' }
         }), { productIds: paginatedProductIds.length, stores: storeIdList.length }
       );
-      setCached(sparklineCacheKey, data, 1800, 'sparklines').catch(err =>
-        console.warn(`Cache write failed for sparklines:`, err.message)
-      );
+      setCached(sparklineCacheKey, data, 1800, 'sparklines').catch(() => {});
     }
     return data;
   })() : [];
@@ -787,9 +760,7 @@ export const getOrderingAnalytics = async ({
             }
           }), {}
         );
-        setCached(brandsCacheKey, brands, 3600, 'brands_distributors').catch(err =>
-          console.warn(`Cache write failed for brands_distributors:`, err.message)
-        );
+        setCached(brandsCacheKey, brands, 3600, 'brands_distributors').catch(() => {});
       }
       return brands;
     })(),
@@ -856,22 +827,6 @@ export const getOrderingAnalytics = async ({
   const brandDistributorMap = buildBrandDistributorMap(brandsWithDistributors);
   filteredProductMetrics.forEach(product => {
     product.distributors = brandDistributorMap.get(product.brand) || [];
-  });
-
-  const queryDuration = Date.now() - queryStartTime;
-  console.log(`[QUERY] getOrderingAnalytics | COMPLETE | ${queryDuration}ms | products:${filteredProductMetrics.length}/${totalCount} hasMore:${hasMore}`);
-
-  console.log('📦 Ordering analytics result:', {
-    totalProducts: totalCount,
-    filteredProducts: filteredProductMetrics.length,
-    paginatedProducts: filteredProductMetrics.length,
-    offset,
-    limit,
-    totalCount,
-    hasMore,
-    periodDays,
-    dateRange: `${startDate.toISOString()} to ${endDate.toISOString()}`,
-    lastUpdate: lastUpdate.toISOString()
   });
 
   // Build filter options

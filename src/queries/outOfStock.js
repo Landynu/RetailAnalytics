@@ -1,5 +1,6 @@
 import { HttpError } from 'wasp/server'
 import { calculateWeekBoundaries } from './helpers.js'
+import { EXCLUDED_CATEGORIES } from '../lib/constants.js'
 
 // Lightweight query for out-of-stock products (products with sales but zero inventory)
 export const getOutOfStockProducts = async ({
@@ -121,8 +122,6 @@ export const getOutOfStockProducts = async ({
 
   const productIdsWithSales = Array.from(productSalesMap.keys());
 
-  console.log(`[OUT_OF_STOCK] Found ${weeklySalesData.length} WeeklySalesSummary records, ${movementSalesData.length} InventoryMovement records`);
-  console.log(`[OUT_OF_STOCK] ${productIdsWithSales.length} unique products with sales in period`);
 
   if (productIdsWithSales.length === 0) {
     return { products: [], count: 0 };
@@ -133,7 +132,7 @@ export const getOutOfStockProducts = async ({
     where: {
       id: { in: productIdsWithSales },
       ...(includeHiddenCategories ? {} : {
-        parentCategory: { notIn: ['Accessories', 'Accessory', 'VPT'] }
+        parentCategory: { notIn: EXCLUDED_CATEGORIES }
       })
     },
     include: {
@@ -147,15 +146,11 @@ export const getOutOfStockProducts = async ({
     }
   });
 
-  console.log(`[OUT_OF_STOCK] Fetched ${products.length} products from catalog`);
-
   // Filter to only products with zero inventory at ALL selected stores
   const outOfStockProducts = products.filter(product => {
     const totalInventory = product.stockLevels.reduce((sum, sl) => sum + sl.quantity, 0);
     return totalInventory === 0;
   });
-
-  console.log(`[OUT_OF_STOCK] ${outOfStockProducts.length} products have zero inventory`);
 
   // Calculate period days for velocity
   const periodDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));

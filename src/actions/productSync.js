@@ -3,8 +3,6 @@ import { HttpError } from 'wasp/server';
 export const syncProductCategoriesToDefinitions = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  console.log('🔄 Starting category sync...');
-
   // Get all category definitions for lookup (case-insensitive matching)
   const allCategoryDefs = await context.entities.CategoryDefinition.findMany({
     where: { isActive: true },
@@ -130,11 +128,6 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
     return null;
   };
 
-  console.log(`📊 Found ${allCategoryDefs.length} category definitions with ${subcategoryMap.size} subcategories`);
-  console.log(`📋 Category definitions:`, allCategoryDefs.map(c => c.name).join(', '));
-  console.log(`🗺️  Category map size: ${categoryMap.size}`);
-  console.log(`🔍 Sample category map keys:`, Array.from(categoryMap.keys()).slice(0, 10).join(', '));
-
   const products = await context.entities.ProductCatalog.findMany({
     where: {
       OR: [
@@ -151,29 +144,16 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
     }
   });
 
-  console.log(`📦 Found ${products.length} products to sync`);
-
   let synced = 0;
   let categoryMatched = 0;
   let categoryNotFound = 0;
   let subcategoryMatched = 0;
   let subcategoryNotFound = 0;
 
-  // Collect unique category names for debugging
-  const uniqueCategories = new Set();
-
   for (const product of products) {
     if (product.parentCategory) {
-      uniqueCategories.add(product.parentCategory);
       // Use fuzzy matching
       const categoryDef = findBestCategoryMatch(product.parentCategory);
-
-      // Debug first few matches
-      if (categoryNotFound < 5) {
-        const normalized = normalizeCategoryName(product.parentCategory);
-        console.log(`🔍 Trying to match: "${product.parentCategory}" -> normalized: "${normalized}"`);
-        console.log(`   Found match: ${categoryDef ? categoryDef.name : 'NO MATCH'}`);
-      }
 
       if (categoryDef) {
         const updateData = { categoryDefinitionId: categoryDef.id };
@@ -190,7 +170,6 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
             subcategoryMatched++;
           } else {
             subcategoryNotFound++;
-            console.log(`  ⚠️ Subcategory not found: "${product.subcategory}" for category "${categoryDef.name}" (product: ${product.name})`);
           }
         }
 
@@ -201,18 +180,9 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
         synced++;
       } else {
         categoryNotFound++;
-        console.log(`  ⚠️ Category not found: "${product.parentCategory}" (product: ${product.name})`);
       }
     }
   }
-
-  console.log(`✅ Category sync complete:`);
-  console.log(`   - Categories matched: ${categoryMatched}`);
-  console.log(`   - Categories not found: ${categoryNotFound}`);
-  console.log(`   - Subcategories matched: ${subcategoryMatched}`);
-  console.log(`   - Subcategories not found: ${subcategoryNotFound}`);
-  console.log(`   - Total synced: ${synced}/${products.length}`);
-  console.log(`📊 Unique categories in products:`, Array.from(uniqueCategories).slice(0, 20).join(', '));
 
   return {
     synced,
@@ -226,8 +196,6 @@ export const syncProductCategoriesToDefinitions = async (_args, context) => {
 
 export const syncProductClassifications = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
-
-  console.log('🔄 Starting classification sync for all products...')
 
   // Get all classifications for lookup
   const classifications = await context.entities.Classification.findMany({
@@ -251,8 +219,6 @@ export const syncProductClassifications = async (_args, context) => {
       strainType: true
     }
   })
-
-  console.log(`📦 Found ${products.length} products to sync`)
 
   let synced = 0
   let skipped = 0
@@ -280,10 +246,7 @@ export const syncProductClassifications = async (_args, context) => {
       }
     }))
 
-    console.log(`Progress: ${Math.min(i + chunkSize, products.length)}/${products.length}`)
   }
-
-  console.log(`✅ Classification sync complete: ${synced} synced, ${skipped} skipped`)
 
   return {
     totalProducts: products.length,
@@ -295,19 +258,11 @@ export const syncProductClassifications = async (_args, context) => {
 export const syncAllProductEnrichments = async (args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  console.log('🔄 Starting comprehensive product enrichment sync...')
-
   // Sync classifications
   const classificationResult = await syncProductClassifications(args, context)
 
   // Sync categories
   const categoryResult = await syncProductCategoriesToDefinitions(args, context)
-
-  console.log('\n📊 Enrichment Sync Summary:');
-  console.log(`   Classifications: ${classificationResult.synced} synced`);
-  console.log(`   Categories: ${categoryResult.synced} synced (${categoryResult.categoryMatched} matched, ${categoryResult.categoryNotFound} not found)`);
-  console.log(`   Subcategories: ${categoryResult.subcategoryMatched} matched, ${categoryResult.subcategoryNotFound} not found`);
-  console.log(`   Total: ${classificationResult.synced + categoryResult.synced} products updated\n`);
 
   return {
     classifications: classificationResult,

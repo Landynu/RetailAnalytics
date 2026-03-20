@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAction } from 'wasp/client/operations';
 import { exportAnalyticsData } from 'wasp/client/operations';
+import { toast } from 'sonner';
 import { Button } from './ui/button';
 import { Download, Loader2, FileDown } from 'lucide-react';
 
@@ -30,7 +31,7 @@ const ExportButton = ({ storeIds, filters, variant = 'outline', size = 'default'
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export failed: ' + error.message);
+      toast.error('Export failed: ' + error.message);
     } finally {
       setIsExporting(false);
     }

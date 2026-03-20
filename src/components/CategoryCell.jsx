@@ -3,6 +3,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { toast } from 'sonner';
 import { updateProductEnrichment } from 'wasp/client/operations';
 
 const CategoryCell = ({ product, categoryDefinitions, onCategoryChange }) => {
@@ -36,7 +37,7 @@ const CategoryCell = ({ product, categoryDefinitions, onCategoryChange }) => {
       setSelectedId(product.categoryDefinitionId);
       // Revert parent's optimistic state on error
       if (onCategoryChange) onCategoryChange(product.categoryDefinitionId);
-      alert('Error updating category: ' + error.message);
+      toast.error('Error updating category: ' + error.message);
       setIsOpen(true);
     } finally {
       setIsLoading(false);

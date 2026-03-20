@@ -20,7 +20,12 @@ export function filterProductsInMemory(products, filters) {
   });
 }
 
-// Helper function to calculate week boundaries (Monday-Sunday) for a date range
+/**
+ * Calculate inclusive week boundaries (Monday 00:00 to Sunday 23:59:59.999).
+ * Used for filtering movement/snapshot data within complete weeks.
+ * Note: src/cache/warmCache.js has calculateWeekBucketBoundaries which
+ * returns Monday-to-Monday boundaries for weekly bucket alignment.
+ */
 export function calculateWeekBoundaries(startDate, endDate) {
   const start = new Date(startDate);
   const end = new Date(endDate);

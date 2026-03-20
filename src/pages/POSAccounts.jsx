@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getPOSAccounts, getUserStores, createPOSAccount, updatePOSAccount, deletePOSAccount, linkStoreToPOSAccount, scrapePOS } from 'wasp/client/operations';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Button } from '../components/ui/button';
 import { Plus, RefreshCw, Trash2, Edit2, Link as LinkIcon, Store as StoreIcon } from 'lucide-react';
 
@@ -12,27 +14,32 @@ const POSAccountsPage = () => {
     const [showLinkModal, setShowLinkModal] = useState(false);
     const [selectedAccount, setSelectedAccount] = useState(null);
     const [syncing, setSyncing] = useState(null);
+    const [confirmState, setConfirmState] = useState({ open: false, action: null });
 
     const handleSync = async (accountId) => {
         try {
             setSyncing(accountId);
             await scrapePOS({ posAccountId: accountId, storeIds: [] });
-            alert('Sync completed! Check your inventory.');
+            toast.success('Sync completed! Check your inventory.');
         } catch (err) {
-            alert('Sync failed: ' + err.message);
+            toast.error('Sync failed: ' + err.message);
         } finally {
             setSyncing(null);
         }
     };
 
-    const handleDelete = async (accountId) => {
-        if (!confirm('Are you sure you want to delete this POS account?')) return;
-        try {
-            await deletePOSAccount({ id: accountId });
-            refetchAccounts();
-        } catch (err) {
-            alert('Delete failed: ' + err.message);
-        }
+    const handleDelete = (accountId) => {
+        setConfirmState({
+            open: true,
+            action: async () => {
+                try {
+                    await deletePOSAccount({ id: accountId });
+                    refetchAccounts();
+                } catch (err) {
+                    toast.error('Delete failed: ' + err.message);
+                }
+            }
+        });
     };
 
     if (accountsLoading || storesLoading) {
@@ -154,6 +161,19 @@ const POSAccountsPage = () => {
                     }}
                 />
             )}
+
+            <ConfirmDialog
+                open={confirmState.open}
+                onOpenChange={(open) => setConfirmState({ ...confirmState, open })}
+                title="Delete POS Account"
+                description="Are you sure you want to delete this POS account?"
+                variant="destructive"
+                confirmLabel="Delete"
+                onConfirm={() => {
+                    confirmState.action?.();
+                    setConfirmState({ open: false, action: null });
+                }}
+            />
         </div>
     );
 };
@@ -175,7 +195,7 @@ const CreateAccountModal = ({ onClose, onSuccess }) => {
             await createPOSAccount(formData);
             onSuccess();
         } catch (err) {
-            alert('Failed to create account: ' + err.message);
+            toast.error('Failed to create account: ' + err.message);
         } finally {
             setSubmitting(false);
         }
@@ -275,7 +295,7 @@ const LinkStoreModal = ({ account, stores, onClose, onSuccess }) => {
             });
             onSuccess();
         } catch (err) {
-            alert('Failed to link store: ' + err.message);
+            toast.error('Failed to link store: ' + err.message);
         } finally {
             setSubmitting(false);
         }

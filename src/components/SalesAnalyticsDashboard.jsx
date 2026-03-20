@@ -3,12 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { TrendingUp, DollarSign } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-
-const STRAIN_COLORS = {
-  Sativa: '#10b981',
-  Hybrid: '#f59e0b',
-  Indica: '#8b5cf6'
-};
+import { STRAIN_COLORS } from '../lib/constants.js';
 
 const SalesAnalyticsDashboard = ({ salesData, loading = false, showDaily = false, onToggleDaily, isAutomatic = false }) => {
   const [showTopProductsBy, setShowTopProductsBy] = useState('revenue');
@@ -513,4 +508,4 @@ const SalesAnalyticsDashboard = ({ salesData, loading = false, showDaily = false
   );
 };
 
-export default SalesAnalyticsDashboard;
+export default React.memo(SalesAnalyticsDashboard);

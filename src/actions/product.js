@@ -123,8 +123,6 @@ export const markProductStatus = async ({ productId, status, salePrice }, contex
 export const enrichProductFormats = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  console.log('🔄 Starting format enrichment for all products...');
-
   // Helper to parse format details
   const parseFormatDetails = (productName) => {
     if (!productName) return { unitCount: 1, unitSize: null, format: null };
@@ -162,7 +160,6 @@ export const enrichProductFormats = async (_args, context) => {
 
   // Get all products
   const products = await context.entities.ProductCatalog.findMany();
-  console.log(`📦 Found ${products.length} products to process`);
 
   let updated = 0;
   let skipped = 0;
@@ -196,10 +193,7 @@ export const enrichProductFormats = async (_args, context) => {
       }
     }));
 
-    console.log(`Progress: ${Math.min(i + chunkSize, products.length)}/${products.length}`);
   }
-
-  console.log(`✅ Format enrichment complete: ${updated} updated, ${skipped} skipped`);
 
   return {
     totalProducts: products.length,

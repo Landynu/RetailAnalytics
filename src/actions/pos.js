@@ -22,7 +22,6 @@ export const createPOSAccount = async ({ name, posType, username, password, logi
       }
     });
 
-    console.log(`✅ Created POS account: ${name} (${posType})`);
     return { id: account.id, name: account.name, posType: account.posType };
   } catch (error) {
     console.error('Failed to create POS account:', error);
@@ -63,7 +62,6 @@ export const updatePOSAccount = async ({ id, name, posType, username, password, 
     data: updateData
   });
 
-  console.log(`✅ Updated POS account: ${name}`);
   return { success: true };
 };
 
@@ -85,7 +83,6 @@ export const deletePOSAccount = async ({ id }, context) => {
     where: { id }
   });
 
-  console.log(`✅ Deleted POS account: ${account.name}`);
   return { success: true };
 };
 
@@ -119,6 +116,5 @@ export const linkStoreToPOSAccount = async ({ storeId, posAccountId, externalSto
     }
   });
 
-  console.log(`✅ Linked store ${store.name} to POS account ${account.name}`);
   return { success: true };
 };

@@ -3,6 +3,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { toast } from 'sonner';
 import { updateProductEnrichment } from 'wasp/client/operations';
 
 const StrainTypeCell = ({ product, classifications, onClassificationChange }) => {
@@ -33,7 +34,7 @@ const StrainTypeCell = ({ product, classifications, onClassificationChange }) =>
       setSelectedId(product.classificationId);
       // Revert parent's optimistic state on error
       if (onClassificationChange) onClassificationChange(product.classificationId);
-      alert('Error updating classification: ' + error.message);
+      toast.error('Error updating classification: ' + error.message);
       setIsOpen(true);
     } finally {
       setIsLoading(false);

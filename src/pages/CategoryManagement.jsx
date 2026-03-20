@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getClassifications, getCategoryDefinitions } from 'wasp/client/operations';
-import { 
-  createClassification, 
-  updateClassification, 
+import {
+  createClassification,
+  updateClassification,
   deleteClassification,
   createCategoryDefinition,
   updateCategoryDefinition,
@@ -14,6 +14,8 @@ import {
   seedDefaultClassifications,
   seedDefaultCategories
 } from 'wasp/client/operations';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
@@ -43,155 +45,188 @@ const CategoryManagement = () => {
   const [subcategoryName, setSubcategoryName] = useState('');
   const [subcategoryDisplayOrder, setSubcategoryDisplayOrder] = useState(0);
 
-  const handleSeedClassifications = async () => {
-    if (confirm('Seed default classifications (Sativa, Hybrid, Indica, Blend, CBD)?')) {
-      try {
-        const result = await seedDefaultClassifications();
-        alert(`${result.created} classifications created!`);
-        refetchClassifications();
-      } catch (error) {
-        alert('Error: ' + error.message);
+  // Confirm dialog state
+  const [confirmState, setConfirmState] = useState({ open: false, title: '', description: '', action: null, variant: 'default' });
+
+  const handleSeedClassifications = () => {
+    setConfirmState({
+      open: true,
+      title: 'Seed Classifications',
+      description: 'Seed default classifications (Sativa, Hybrid, Indica, Blend, CBD)?',
+      variant: 'default',
+      action: async () => {
+        try {
+          const result = await seedDefaultClassifications();
+          toast.success(`${result.created} classifications created!`);
+          refetchClassifications();
+        } catch (error) {
+          toast.error('Error: ' + error.message);
+        }
       }
-    }
+    });
   };
 
-  const handleSeedCategories = async () => {
-    if (confirm('Seed default categories and subcategories?')) {
-      try {
-        const result = await seedDefaultCategories();
-        alert(`${result.categoriesCreated} categories and ${result.subcategoriesCreated} subcategories created!`);
-        refetchCategories();
-      } catch (error) {
-        alert('Error: ' + error.message);
+  const handleSeedCategories = () => {
+    setConfirmState({
+      open: true,
+      title: 'Seed Categories',
+      description: 'Seed default categories and subcategories?',
+      variant: 'default',
+      action: async () => {
+        try {
+          const result = await seedDefaultCategories();
+          toast.success(`${result.categoriesCreated} categories and ${result.subcategoriesCreated} subcategories created!`);
+          refetchCategories();
+        } catch (error) {
+          toast.error('Error: ' + error.message);
+        }
       }
-    }
+    });
   };
 
   const handleCreateClassification = async () => {
     if (!classificationName.trim()) return;
     try {
-      await createClassification({ 
-        name: classificationName.trim(), 
-        displayOrder: classificationDisplayOrder 
+      await createClassification({
+        name: classificationName.trim(),
+        displayOrder: classificationDisplayOrder
       });
       setClassificationName('');
       setClassificationDisplayOrder(0);
       refetchClassifications();
     } catch (error) {
-      alert('Error: ' + error.message);
+      toast.error('Error: ' + error.message);
     }
   };
 
   const handleUpdateClassification = async (id) => {
     try {
-      await updateClassification({ 
-        id, 
-        name: classificationName.trim(), 
-        displayOrder: classificationDisplayOrder 
+      await updateClassification({
+        id,
+        name: classificationName.trim(),
+        displayOrder: classificationDisplayOrder
       });
       setEditingClassification(null);
       setClassificationName('');
       setClassificationDisplayOrder(0);
       refetchClassifications();
     } catch (error) {
-      alert('Error: ' + error.message);
+      toast.error('Error: ' + error.message);
     }
   };
 
-  const handleDeleteClassification = async (id) => {
-    if (confirm('Delete this classification?')) {
-      try {
-        await deleteClassification({ id });
-        refetchClassifications();
-      } catch (error) {
-        alert('Error: ' + error.message);
+  const handleDeleteClassification = (id) => {
+    setConfirmState({
+      open: true,
+      title: 'Delete Classification',
+      description: 'Delete this classification?',
+      variant: 'destructive',
+      action: async () => {
+        try {
+          await deleteClassification({ id });
+          refetchClassifications();
+        } catch (error) {
+          toast.error('Error: ' + error.message);
+        }
       }
-    }
+    });
   };
 
   const handleCreateCategory = async () => {
     if (!categoryName.trim()) return;
     try {
-      await createCategoryDefinition({ 
-        name: categoryName.trim(), 
-        displayOrder: categoryDisplayOrder 
+      await createCategoryDefinition({
+        name: categoryName.trim(),
+        displayOrder: categoryDisplayOrder
       });
       setCategoryName('');
       setCategoryDisplayOrder(0);
       refetchCategories();
     } catch (error) {
-      alert('Error: ' + error.message);
+      toast.error('Error: ' + error.message);
     }
   };
 
   const handleUpdateCategory = async (id) => {
     try {
-      await updateCategoryDefinition({ 
-        id, 
-        name: categoryName.trim(), 
-        displayOrder: categoryDisplayOrder 
+      await updateCategoryDefinition({
+        id,
+        name: categoryName.trim(),
+        displayOrder: categoryDisplayOrder
       });
       setEditingCategory(null);
       setCategoryName('');
       setCategoryDisplayOrder(0);
       refetchCategories();
     } catch (error) {
-      alert('Error: ' + error.message);
+      toast.error('Error: ' + error.message);
     }
   };
 
-  const handleDeleteCategory = async (id) => {
-    if (confirm('Delete this category and all its subcategories?')) {
-      try {
-        await deleteCategoryDefinition({ id });
-        refetchCategories();
-      } catch (error) {
-        alert('Error: ' + error.message);
+  const handleDeleteCategory = (id) => {
+    setConfirmState({
+      open: true,
+      title: 'Delete Category',
+      description: 'Delete this category and all its subcategories?',
+      variant: 'destructive',
+      action: async () => {
+        try {
+          await deleteCategoryDefinition({ id });
+          refetchCategories();
+        } catch (error) {
+          toast.error('Error: ' + error.message);
+        }
       }
-    }
+    });
   };
 
   const handleCreateSubcategory = async (categoryId) => {
     if (!newSubcategoryName.trim()) return;
     try {
-      await createSubcategory({ 
-        categoryId, 
-        name: newSubcategoryName.trim(), 
-        displayOrder: categoryDefinitions.find(c => c.id === categoryId)?.subcategories.length || 0 
+      await createSubcategory({
+        categoryId,
+        name: newSubcategoryName.trim(),
+        displayOrder: categoryDefinitions.find(c => c.id === categoryId)?.subcategories.length || 0
       });
       setNewSubcategoryName('');
       setAddingSubcategoryTo(null);
       refetchCategories();
     } catch (error) {
-      alert('Error: ' + error.message);
+      toast.error('Error: ' + error.message);
     }
   };
 
   const handleUpdateSubcategory = async (id) => {
     try {
-      await updateSubcategory({ 
-        id, 
-        name: subcategoryName.trim(), 
-        displayOrder: subcategoryDisplayOrder 
+      await updateSubcategory({
+        id,
+        name: subcategoryName.trim(),
+        displayOrder: subcategoryDisplayOrder
       });
       setEditingSubcategory(null);
       setSubcategoryName('');
       setSubcategoryDisplayOrder(0);
       refetchCategories();
     } catch (error) {
-      alert('Error: ' + error.message);
+      toast.error('Error: ' + error.message);
     }
   };
 
-  const handleDeleteSubcategory = async (id) => {
-    if (confirm('Delete this subcategory?')) {
-      try {
-        await deleteSubcategory({ id });
-        refetchCategories();
-      } catch (error) {
-        alert('Error: ' + error.message);
+  const handleDeleteSubcategory = (id) => {
+    setConfirmState({
+      open: true,
+      title: 'Delete Subcategory',
+      description: 'Delete this subcategory?',
+      variant: 'destructive',
+      action: async () => {
+        try {
+          await deleteSubcategory({ id });
+          refetchCategories();
+        } catch (error) {
+          toast.error('Error: ' + error.message);
+        }
       }
-    }
+    });
   };
 
   const allSubcategories = categoryDefinitions?.flatMap(cat => 
@@ -467,6 +502,19 @@ const CategoryManagement = () => {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmState.open}
+        onOpenChange={(open) => setConfirmState({ ...confirmState, open })}
+        title={confirmState.title}
+        description={confirmState.description}
+        variant={confirmState.variant}
+        confirmLabel={confirmState.variant === 'destructive' ? 'Delete' : 'Continue'}
+        onConfirm={() => {
+          confirmState.action?.();
+          setConfirmState({ open: false, title: '', description: '', action: null, variant: 'default' });
+        }}
+      />
     </div>
   );
 };

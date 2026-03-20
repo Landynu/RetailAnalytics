@@ -7,14 +7,6 @@ import { syncBrands } from './brandDistributor.js';
 export const uploadInventoryLogs = async ({ csvData }, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  const startTime = Date.now();
-  const csvSize = new Blob([csvData]).size;
-  const ts = () => new Date().toISOString().split('T')[1].split('.')[0];
-
-  console.log(`\n[${ts()}] STARTING INVENTORY LOGS UPLOAD`);
-  console.log(`[${ts()}] File size: ${(csvSize / 1024 / 1024).toFixed(2)}MB`);
-  console.log(`[${ts()}] Stage 1/5: Parsing CSV...`);
-
   // Helper function to extract brand from product name
   const extractBrand = (productName) => {
     if (!productName) return null;
@@ -68,8 +60,6 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       .on('error', reject);
   });
 
-  console.log(`[${ts()}] Stage 1 complete: Parsed ${movements.length} movement records`);
-  console.log(`[${ts()}] Stage 2/5: Bulk lookup stores and products...`);
 
   // STAGE 2: Bulk lookup stores and products (1-2 seconds)
   const userStores = await context.entities.Store.findMany();
@@ -94,8 +84,6 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
   const productMap = new Map();
   products.forEach(p => productMap.set(p.gtin, p));
 
-  console.log(`[${ts()}] Stage 2 complete: Found ${userStores.length} stores, ${products.length} products`);
-  console.log(`[${ts()}] Stage 3/5: Creating snapshot and preparing data...`);
 
   // Create inventory snapshot
   const snapshot = await context.entities.InventorySnapshot.create({
@@ -177,11 +165,8 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
     });
   }
 
-  console.log(`[${ts()}] Stage 3 complete: ${movementsToCreate.length} movements ready, ${skippedRows.length} skipped`);
   if (newProductsNeeded > 0) {
-    console.log(`[${ts()}] ${newProductsNeeded} movements skipped - products not in catalog (upload inventory export first)`);
   }
-  console.log(`[${ts()}] Stage 4/5: Deduplicating and bulk creating movement records...`);
 
   // STAGE 4: Deduplicate and bulk create movements
   let totalCreated = 0;
@@ -199,7 +184,6 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
     const productIds = [...new Set(movementsToCreate.map(m => m.productId))];
 
     // Fetch existing movements in this date range to check for duplicates
-    console.log(`[${ts()}] Checking for existing movements in date range ${minDate.toISOString().split('T')[0]} to ${maxDate.toISOString().split('T')[0]}...`);
     const existingMovements = await context.entities.InventoryMovement.findMany({
       where: {
         storeId: { in: storeIds },
@@ -227,7 +211,6 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       existingKeys.add(key);
     });
 
-    console.log(`[${ts()}] Found ${existingMovements.length} existing movements, checking for duplicates...`);
 
     // Filter out duplicates
     movementsToCreate.forEach(m => {
@@ -244,7 +227,6 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
     });
 
     if (totalDuplicates > 0) {
-      console.log(`[${ts()}] Skipped ${totalDuplicates} duplicate movements (already exist in database)`);
     }
 
     // Bulk create only unique movements
@@ -260,16 +242,10 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
 
         totalCreated += chunk.length;
 
-        if (totalCreated % 5000 === 0 || totalCreated === uniqueMovements.length) {
-          const percentage = ((totalCreated / uniqueMovements.length) * 100).toFixed(1);
-          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-          console.log(`[${ts()}] Created: ${totalCreated}/${uniqueMovements.length} (${percentage}%) - ${elapsed}s`);
-        }
       }
     }
   }
 
-  console.log(`[${ts()}] Stage 4 complete: ${totalCreated} new movements created, ${totalDuplicates} duplicates skipped`);
 
   // NOTE: Stock levels are NOT updated from logs. The inventory export is the
   // authoritative source for current stock. Logs only provide transaction history
@@ -281,16 +257,6 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
       data: unmatchedRecords
     });
   }
-
-  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-  console.log(`\n[${ts()}] INVENTORY LOGS UPLOAD COMPLETE!`);
-  console.log(`[${ts()}] Total time: ${duration}s`);
-  console.log(`[${ts()}] Movements created: ${totalCreated}`);
-  if (totalDuplicates > 0) {
-    console.log(`[${ts()}] Duplicates skipped: ${totalDuplicates}`);
-  }
-  console.log(`[${ts()}] Skipped: ${skippedRows.length}`);
-  console.log(`[${ts()}] Average: ${(totalCreated / parseFloat(duration)).toFixed(0)} records/second\n`);
 
   // Invalidate cache after inventory update
   await invalidateCachePattern('cache:base:*');
@@ -313,27 +279,11 @@ export const uploadInventoryLogs = async ({ csvData }, context) => {
     const storeIds = stores.map(s => s.id);
     const endDate = new Date();
     const startDate = new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
-    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(err =>
-      console.warn('Cache warming failed after upload:', err.message)
-    );
+    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(() => {});
   }
 
   // Post-upload: sync brands (fire-and-forget)
-  syncBrands(null, context).catch(err =>
-    console.warn('Post-upload brand sync failed:', err.message)
-  );
-
-  if (skippedRows.length > 0) {
-    console.log(`[${ts()}] Top reasons for skipped rows:`);
-    const reasons = {};
-    skippedRows.forEach(skip => {
-      reasons[skip.reason] = (reasons[skip.reason] || 0) + 1;
-    });
-    Object.entries(reasons).forEach(([reason, count]) => {
-      console.log(`[${ts()}]    - ${reason}: ${count} rows`);
-    });
-    console.log('');
-  }
+  syncBrands(null, context).catch(() => {});
 
   return {
     snapshot,

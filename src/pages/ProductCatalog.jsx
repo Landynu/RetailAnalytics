@@ -3,9 +3,12 @@ import { Link } from 'wasp/client/router';
 import { useQuery } from 'wasp/client/operations';
 import { getProductCatalog, getClassifications, getCategoryDefinitions } from 'wasp/client/operations';
 import { updateProductEnrichment, syncAllProductEnrichments } from 'wasp/client/operations';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
+import { ErrorState } from '../components/ErrorState';
 import { Badge } from '../components/ui/badge';
 import { Search, RefreshCw, Sparkles, Package, Tag, Leaf } from 'lucide-react';
 import StrainTypeCell from '../components/StrainTypeCell';
@@ -27,7 +30,7 @@ const ProductCatalog = () => {
   const [limit] = useState(100);
   const [offset, setOffset] = useState(0);
   
-  const { data: catalogData, isLoading, refetch } = useQuery(getProductCatalog, {
+  const { data: catalogData, isLoading, error: catalogError, refetch } = useQuery(getProductCatalog, {
     filters,
     limit,
     offset
@@ -35,6 +38,8 @@ const ProductCatalog = () => {
   
   const { data: classifications } = useQuery(getClassifications);
   const { data: categoryDefinitions } = useQuery(getCategoryDefinitions);
+
+  const [confirmState, setConfirmState] = useState({ open: false, title: '', description: '', action: null });
 
   const handleUpdateField = async (productId, field, value) => {
     try {
@@ -45,7 +50,7 @@ const ProductCatalog = () => {
       // Refetch to get updated data
       setTimeout(() => refetch(), 300);
     } catch (error) {
-      alert('Error updating: ' + error.message);
+      toast.error('Error updating: ' + error.message);
     }
   };
 
@@ -77,6 +82,14 @@ const ProductCatalog = () => {
     return { brands, categories, subcategories, classifications };
   }, [products]);
 
+  if (catalogError) {
+    return (
+      <div className="p-6">
+        <ErrorState error={catalogError} onRetry={refetch} title="Failed to load product catalog" />
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -86,97 +99,102 @@ const ProductCatalog = () => {
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline">{total} products</Badge>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={async () => {
-              if (confirm('This will sync existing product data (strainType → classification, categories → category definitions). Continue?')) {
-                try {
-                  const result = await syncAllProductEnrichments();
-                  alert(`Sync complete!\nClassifications: ${result.classifications.synced} synced\nCategories: ${result.categories.synced} synced`);
-                  refetch();
-                } catch (error) {
-                  alert('Error: ' + error.message);
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setConfirmState({
+                open: true,
+                title: 'Sync Enrichments',
+                description: 'This will sync existing product data (strainType to classification, categories to category definitions). Continue?',
+                action: async () => {
+                  try {
+                    const result = await syncAllProductEnrichments();
+                    toast.success(`Sync complete! Classifications: ${result.classifications.synced} synced, Categories: ${result.categories.synced} synced`);
+                    refetch();
+                  } catch (error) {
+                    toast.error('Error: ' + error.message);
+                  }
                 }
-              }
+              });
             }}
           >
             <Sparkles className="h-4 w-4 mr-2" />
             Sync Enrichments
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={async () => {
-              if (confirm('Configure CORS on S3 bucket to allow images to load in the browser? This will allow all origins to access images.')) {
-                try {
-                  const result = await configureS3CORS();
-                  alert('✅ CORS configured successfully! Images should now load properly.');
-                } catch (error) {
-                  alert('❌ Error configuring CORS: ' + error.message + '\n\nYou may need to configure CORS manually in Railway object storage settings.');
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setConfirmState({
+                open: true,
+                title: 'Configure CORS',
+                description: 'Configure CORS on S3 bucket to allow images to load in the browser? This will allow all origins to access images.',
+                action: async () => {
+                  try {
+                    const result = await configureS3CORS();
+                    toast.success('CORS configured successfully! Images should now load properly.');
+                  } catch (error) {
+                    toast.error('Error configuring CORS: ' + error.message + '. You may need to configure CORS manually in Railway object storage settings.');
+                  }
                 }
-              }
+              });
             }}
           >
             <Sparkles className="h-4 w-4 mr-2" />
             Configure CORS
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={async () => {
               try {
                 const result = await checkS3Storage();
-                const sample = result.sampleObjects.slice(0, 5).map(obj => `  • ${obj.key} (${(obj.size / 1024).toFixed(1)} KB)`).join('\n');
-                alert(`S3 Storage Check:\n\n${result.message}\n\nSample objects:\n${sample}${result.isTruncated ? '\n\n(More objects exist, showing first 1000)' : ''}`);
+                toast.success(`S3 Storage: ${result.message}. ${result.sampleObjects.length} sample objects found.`);
               } catch (error) {
-                alert('Error checking S3 storage: ' + error.message);
+                toast.error('Error checking S3 storage: ' + error.message);
               }
             }}
           >
             <Sparkles className="h-4 w-4 mr-2" />
             Check S3 Storage
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={async () => {
               try {
                 const result = await checkImageMigrationStatus();
-                const breakdown = Object.entries(result.statusBreakdown).map(([status, count]) => `  ${status || 'NULL'}: ${count}`).join('\n');
-                alert(`Migration Status:\n\nTotal with images: ${result.totalWithImages}\nMigrated: ${result.migrated}\nWith S3 paths: ${result.withS3Paths}\n\nStatus breakdown:\n${breakdown}`);
+                toast.success(`Migration Status: ${result.totalWithImages} with images, ${result.migrated} migrated, ${result.withS3Paths} with S3 paths`);
               } catch (error) {
-                alert('Error checking migration status: ' + error.message);
+                toast.error('Error checking migration status: ' + error.message);
               }
             }}
           >
             <Sparkles className="h-4 w-4 mr-2" />
             Check Migration Status
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={async () => {
-              if (confirm('This will download and optimize all product images from CDN to S3 storage. This may take several minutes. Continue?')) {
-                try {
-                  console.log('Starting image migration...');
-                  const result = await migrateProductImages({ batchSize: 10 });
-                  console.log('Migration result:', result);
-                  
-                  const message = `Migration Complete!\n\n` +
-                    `Total: ${result.total}\n` +
-                    `✅ Migrated: ${result.migrated}\n` +
-                    `❌ Failed: ${result.failed}\n` +
-                    `⏭️ Skipped: ${result.skipped}\n\n` +
-                    `Check the server console for detailed logs.`;
-                  
-                  alert(message);
-                  refetch();
-                } catch (error) {
-                  console.error('Migration error:', error);
-                  alert('Error: ' + error.message + '\n\nCheck the server console for details.');
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setConfirmState({
+                open: true,
+                title: 'Migrate Images',
+                description: 'This will download and optimize all product images from CDN to S3 storage. This may take several minutes. Continue?',
+                action: async () => {
+                  try {
+                    console.log('Starting image migration...');
+                    const result = await migrateProductImages({ batchSize: 10 });
+                    console.log('Migration result:', result);
+                    toast.success(`Migration complete! Total: ${result.total}, Migrated: ${result.migrated}, Failed: ${result.failed}, Skipped: ${result.skipped}`);
+                    refetch();
+                  } catch (error) {
+                    console.error('Migration error:', error);
+                    toast.error('Error: ' + error.message + '. Check the server console for details.');
+                  }
                 }
-              }
+              });
             }}
           >
             <Sparkles className="h-4 w-4 mr-2" />
@@ -369,6 +387,17 @@ const ProductCatalog = () => {
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={confirmState.open}
+        onOpenChange={(open) => setConfirmState({ ...confirmState, open })}
+        title={confirmState.title}
+        description={confirmState.description}
+        onConfirm={() => {
+          confirmState.action?.();
+          setConfirmState({ open: false, title: '', description: '', action: null });
+        }}
+      />
     </div>
   );
 };

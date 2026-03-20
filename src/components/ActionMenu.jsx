@@ -6,6 +6,7 @@ import {
   Check, TrendingDown, Edit2, Package, Calendar, Eye, ChevronDown, X, ArrowRightLeft
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { toast } from 'sonner';
 import { createProductAction, getActiveActionsByProduct } from 'wasp/client/operations';
 
 const ACTION_TYPES = [
@@ -149,7 +150,7 @@ const ActionMenu = ({ productId, onActionCreated, activeActions: initialActiveAc
       }
       setIsOpen(false);
     } catch (error) {
-      alert('Error creating action: ' + error.message);
+      toast.error('Error creating action: ' + error.message);
     } finally {
       setIsLoading(false);
     }

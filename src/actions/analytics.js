@@ -85,8 +85,6 @@ export const exportAnalyticsData = async ({ storeIds, filters }, context) => {
 export const clearAnalyticsCache = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  console.log(`[CACHE] Clearing analytics caches for user ${context.user.id}`);
-
   // Clear all analytics-related caches
   const patterns = [
     'cache:base:rankings*',      // 14-day rankings data
@@ -101,10 +99,7 @@ export const clearAnalyticsCache = async (_args, context) => {
   for (const pattern of patterns) {
     const deleted = await invalidateCachePattern(pattern);
     totalDeleted += deleted;
-    console.log(`[CACHE] Cleared ${deleted} keys matching: ${pattern}`);
   }
-
-  console.log(`[CACHE] Total analytics cache keys cleared: ${totalDeleted}`);
 
   return { success: true, keysCleared: totalDeleted };
 };

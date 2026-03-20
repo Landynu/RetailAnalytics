@@ -3,6 +3,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { toast } from 'sonner';
 import { updateBrandDistributors } from 'wasp/client/operations';
 
 const DistributorCell = ({ brand, distributors, allDistributors }) => {
@@ -51,7 +52,7 @@ const DistributorCell = ({ brand, distributors, allDistributors }) => {
     } catch (error) {
       // Revert optimistic update on error
       setOptimisticDistributors(null);
-      alert('Error updating distributors: ' + error.message);
+      toast.error('Error updating distributors: ' + error.message);
       setIsOpen(true);
     } finally {
       setIsLoading(false);

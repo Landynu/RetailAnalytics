@@ -4,8 +4,6 @@ import { migrateAllProductImages, configureBucketCORS } from '../services/imageM
 export const configureS3CORS = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  console.log('🔧 Configuring CORS on S3 bucket...')
-
   try {
     await configureBucketCORS()
     return { success: true, message: 'CORS configured successfully' }
@@ -18,14 +16,10 @@ export const configureS3CORS = async (_args, context) => {
 export const migrateProductImages = async (args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  console.log('🖼️ Starting product image migration...')
-
   const batchSize = args?.batchSize || 10
 
   try {
     const results = await migrateAllProductImages(context, batchSize)
-
-    console.log(`✅ Image migration complete: ${results.migrated.length} migrated, ${results.failed.length} failed, ${results.skipped.length} skipped`)
 
     return {
       migrated: results.migrated.length,

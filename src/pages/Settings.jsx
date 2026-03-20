@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useQuery } from 'wasp/client/operations';
-import { getPOSAccounts, getUserStores, createPOSAccount, updatePOSAccount, deletePOSAccount, linkStoreToPOSAccount, scrapePOS, sendInvitation, revokeInvitation, getInvitations } from 'wasp/client/operations';
+import { getPOSAccounts, getUserStores, createPOSAccount, updatePOSAccount, deletePOSAccount, linkStoreToPOSAccount, scrapePOS, sendInvitation, revokeInvitation, getInvitations, backfillWeeklySummaries } from 'wasp/client/operations';
 import { Button } from '../components/ui/button';
-import { Plus, RefreshCw, Trash2, Link as LinkIcon, Settings as SettingsIcon, Mail, UserPlus, X } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Link as LinkIcon, Settings as SettingsIcon, Mail, UserPlus, X, Database, TrendingUp } from 'lucide-react';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 const SettingsPage = () => {
     const [activeTab, setActiveTab] = useState('pos-accounts');
@@ -65,27 +67,34 @@ const POSAccountsTab = () => {
     const [showLinkModal, setShowLinkModal] = useState(false);
     const [selectedAccount, setSelectedAccount] = useState(null);
     const [syncing, setSyncing] = useState(null);
+    const [confirmState, setConfirmState] = useState({ open: false, action: null, title: '', description: '' });
 
     const handleSync = async (accountId) => {
         try {
             setSyncing(accountId);
             await scrapePOS({ posAccountId: accountId, storeIds: [] });
-            alert('Sync completed! Check your inventory.');
+            toast.success('Sync completed! Check your inventory.');
         } catch (err) {
-            alert('Sync failed: ' + err.message);
+            toast.error('Sync failed: ' + err.message);
         } finally {
             setSyncing(null);
         }
     };
 
-    const handleDelete = async (accountId) => {
-        if (!confirm('Are you sure you want to delete this POS account?')) return;
-        try {
-            await deletePOSAccount({ id: accountId });
-            refetchAccounts();
-        } catch (err) {
-            alert('Delete failed: ' + err.message);
-        }
+    const handleDelete = (accountId) => {
+        setConfirmState({
+            open: true,
+            action: async () => {
+                try {
+                    await deletePOSAccount({ id: accountId });
+                    refetchAccounts();
+                } catch (err) {
+                    toast.error('Delete failed: ' + err.message);
+                }
+            },
+            title: 'Confirm',
+            description: 'Are you sure you want to delete this POS account?'
+        });
     };
 
     if (accountsLoading || storesLoading) {
@@ -235,6 +244,13 @@ const POSAccountsTab = () => {
                     }}
                 />
             )}
+            <ConfirmDialog
+                open={confirmState.open}
+                onOpenChange={(open) => !open && setConfirmState({ ...confirmState, open: false })}
+                title={confirmState.title}
+                description={confirmState.description}
+                onConfirm={() => { confirmState.action?.(); setConfirmState({ ...confirmState, open: false }); }}
+            />
         </div>
     );
 };
@@ -243,6 +259,7 @@ const TeamTab = () => {
     const { data: invitations, isLoading } = useQuery(getInvitations);
     const [email, setEmail] = useState('');
     const [sending, setSending] = useState(false);
+    const [confirmState, setConfirmState] = useState({ open: false, action: null, title: '', description: '' });
 
     const handleInvite = async (e) => {
         e.preventDefault();
@@ -251,21 +268,27 @@ const TeamTab = () => {
         try {
             await sendInvitation({ email: email.trim() });
             setEmail('');
-            alert('Invitation sent!');
+            toast.success('Invitation sent!');
         } catch (err) {
-            alert('Failed to send invitation: ' + err.message);
+            toast.error('Failed to send invitation: ' + err.message);
         } finally {
             setSending(false);
         }
     };
 
-    const handleRevoke = async (id) => {
-        if (!confirm('Revoke this invitation?')) return;
-        try {
-            await revokeInvitation({ id });
-        } catch (err) {
-            alert('Failed to revoke: ' + err.message);
-        }
+    const handleRevoke = (id) => {
+        setConfirmState({
+            open: true,
+            action: async () => {
+                try {
+                    await revokeInvitation({ id });
+                } catch (err) {
+                    toast.error('Failed to revoke: ' + err.message);
+                }
+            },
+            title: 'Confirm',
+            description: 'Revoke this invitation?'
+        });
     };
 
     const getStatusBadge = (invitation) => {
@@ -346,15 +369,76 @@ const TeamTab = () => {
             ) : (
                 <p className="text-muted-foreground text-sm">No invitations sent yet.</p>
             )}
+            <ConfirmDialog
+                open={confirmState.open}
+                onOpenChange={(open) => !open && setConfirmState({ ...confirmState, open: false })}
+                title={confirmState.title}
+                description={confirmState.description}
+                onConfirm={() => { confirmState.action?.(); setConfirmState({ ...confirmState, open: false }); }}
+            />
         </div>
     );
 };
 
 const GeneralTab = () => {
+    const [backfilling, setBackfilling] = useState(false);
+    const [backfillResult, setBackfillResult] = useState(null);
+
+    const handleBackfill = async () => {
+        try {
+            setBackfilling(true);
+            setBackfillResult(null);
+            const result = await backfillWeeklySummaries({});
+            setBackfillResult(result);
+            toast.success(`Backfill complete: ${result.weeksProcessed} weeks, ${result.seasonalityCalculated} products scored`);
+        } catch (err) {
+            toast.error('Backfill failed: ' + err.message);
+        } finally {
+            setBackfilling(false);
+        }
+    };
+
     return (
-        <div>
-            <h2 className="text-xl font-semibold mb-4">General Settings</h2>
-            <p className="text-muted-foreground">General settings will be added here.</p>
+        <div className="space-y-6">
+            <div>
+                <h2 className="text-xl font-semibold mb-4">Data Management</h2>
+                <div className="space-y-4">
+                    <div className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="font-medium flex items-center gap-2">
+                                    <Database className="h-4 w-4" />
+                                    Backfill Weekly Summaries & Seasonality
+                                </h3>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    Recompute weekly sales summaries from movement data and recalculate product seasonality scores.
+                                    This runs automatically at 3 AM daily.
+                                </p>
+                            </div>
+                            <Button
+                                onClick={handleBackfill}
+                                disabled={backfilling}
+                                variant="outline"
+                            >
+                                {backfilling ? (
+                                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                    <TrendingUp className="h-4 w-4 mr-2" />
+                                )}
+                                {backfilling ? 'Running...' : 'Run Now'}
+                            </Button>
+                        </div>
+                        {backfillResult && (
+                            <div className="mt-3 text-sm bg-muted/50 rounded p-3 space-y-1">
+                                <div><span className="font-medium">Weeks processed:</span> {backfillResult.weeksProcessed}</div>
+                                <div><span className="font-medium">Stores processed:</span> {backfillResult.storesProcessed}</div>
+                                <div><span className="font-medium">Seasonality calculated:</span> {backfillResult.seasonalityCalculated} products</div>
+                                <div><span className="font-medium">Date range:</span> {new Date(backfillResult.startDate).toLocaleDateString()} — {new Date(backfillResult.endDate).toLocaleDateString()}</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };
@@ -376,7 +460,7 @@ const CreateAccountModal = ({ onClose, onSuccess }) => {
             await createPOSAccount(formData);
             onSuccess();
         } catch (err) {
-            alert('Failed to create account: ' + err.message);
+            toast.error('Failed to create account: ' + err.message);
         } finally {
             setSubmitting(false);
         }
@@ -486,7 +570,7 @@ const EditAccountModal = ({ account, onClose, onSuccess }) => {
             await updatePOSAccount(updates);
             onSuccess();
         } catch (err) {
-            alert('Failed to update account: ' + err.message);
+            toast.error('Failed to update account: ' + err.message);
         } finally {
             setSubmitting(false);
         }
@@ -585,7 +669,7 @@ const LinkStoreModal = ({ account, stores, onClose, onSuccess }) => {
             });
             onSuccess();
         } catch (err) {
-            alert('Failed to link store: ' + err.message);
+            toast.error('Failed to link store: ' + err.message);
         } finally {
             setSubmitting(false);
         }

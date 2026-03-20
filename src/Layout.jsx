@@ -6,6 +6,7 @@ import { Badge } from "./components/ui/badge";
 import { Separator } from "./components/ui/separator";
 import { LogOut, User, Store, Settings } from "lucide-react";
 import { ErrorBoundary } from "./components/errors/ErrorBoundary";
+import { Toaster } from "sonner";
 import "./Main.css";
 
 export const Layout = () => {
@@ -113,6 +114,7 @@ export const Layout = () => {
           </div>
         </footer>
       </div>
+      <Toaster position="top-right" richColors closeButton />
     </ErrorBoundary>
   );
 };

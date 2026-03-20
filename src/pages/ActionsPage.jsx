@@ -15,6 +15,9 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import KPICard from '../components/KPICard';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { getStorageItem, setStorageItem } from '../lib/safeStorage';
 
 const ACTION_TYPE_CONFIG = {
   DO_NOT_REORDER: {
@@ -116,7 +119,7 @@ const ActionsPage = () => {
 
     // Check if we've already run today
     const STORAGE_KEY = 'actionsAutoCompleteLastRun';
-    const lastRun = localStorage.getItem(STORAGE_KEY);
+    const lastRun = getStorageItem(STORAGE_KEY, null);
     const today = new Date().toDateString();
 
     if (lastRun === today) {
@@ -146,7 +149,7 @@ const ActionsPage = () => {
       }
 
       // Mark as run for today
-      localStorage.setItem(STORAGE_KEY, today);
+      setStorageItem(STORAGE_KEY, today);
 
       // Refetch if any actions were completed
       if (completedCount > 0) {
@@ -157,6 +160,8 @@ const ActionsPage = () => {
     autoCompleteZeroInventory();
   }, [actionsData, status, refetch]);
 
+  const [confirmState, setConfirmState] = useState({ open: false, action: null, title: '', description: '' });
+
   const handleUpdateNotes = async (actionId) => {
     try {
       await updateProductAction({ actionId, notes: editNotes });
@@ -164,7 +169,7 @@ const ActionsPage = () => {
       setEditNotes('');
       refetch();
     } catch (error) {
-      alert('Error updating notes: ' + error.message);
+      toast.error('Error updating notes: ' + error.message);
     }
   };
 
@@ -173,7 +178,7 @@ const ActionsPage = () => {
       await completeProductAction({ actionId });
       refetch();
     } catch (error) {
-      alert('Error completing action: ' + error.message);
+      toast.error('Error completing action: ' + error.message);
     }
   };
 
@@ -182,18 +187,24 @@ const ActionsPage = () => {
       await reactivateProductAction({ actionId });
       refetch();
     } catch (error) {
-      alert('Error reactivating action: ' + error.message);
+      toast.error('Error reactivating action: ' + error.message);
     }
   };
 
-  const handleDelete = async (actionId) => {
-    if (!confirm('Are you sure you want to delete this action?')) return;
-    try {
-      await deleteProductAction({ actionId });
-      refetch();
-    } catch (error) {
-      alert('Error deleting action: ' + error.message);
-    }
+  const handleDelete = (actionId) => {
+    setConfirmState({
+      open: true,
+      action: async () => {
+        try {
+          await deleteProductAction({ actionId });
+          refetch();
+        } catch (error) {
+          toast.error('Error deleting action: ' + error.message);
+        }
+      },
+      title: 'Confirm',
+      description: 'Are you sure you want to delete this action?'
+    });
   };
 
   const handleExport = async () => {
@@ -209,7 +220,7 @@ const ActionsPage = () => {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert('Error exporting actions: ' + error.message);
+      toast.error('Error exporting actions: ' + error.message);
     }
   };
 
@@ -552,6 +563,13 @@ const ActionsPage = () => {
             })}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmState.open}
+        onOpenChange={(open) => !open && setConfirmState({ ...confirmState, open: false })}
+        title={confirmState.title}
+        description={confirmState.description}
+        onConfirm={() => { confirmState.action?.(); setConfirmState({ ...confirmState, open: false }); }}
+      />
     </div>
   );
 };

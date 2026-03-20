@@ -5,6 +5,7 @@ import { Badge } from './ui/badge';
 import { MapPin, Package, DollarSign, TrendingUp, Upload, Star, Power } from 'lucide-react';
 import { Link } from 'wasp/client/router';
 import { toggleStoreActive, toggleStoreFavourite } from 'wasp/client/operations';
+import { toast } from 'sonner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +36,7 @@ const CompactStoreCard = ({ store, metrics, onViewDetails }) => {
       // Changes will appear on next page refresh
     } catch (error) {
       console.error('Error toggling favourite:', error);
-      alert(error.message || 'Failed to update favourite status');
+      toast.error(error.message || 'Failed to update favourite status');
     } finally {
       setIsUpdating(false);
     }
@@ -56,7 +57,7 @@ const CompactStoreCard = ({ store, metrics, onViewDetails }) => {
         // Changes will appear on next page refresh
       } catch (error) {
         console.error('Error enabling store:', error);
-        alert('Failed to enable store');
+        toast.error('Failed to enable store');
       } finally {
         setIsUpdating(false);
       }
@@ -71,7 +72,7 @@ const CompactStoreCard = ({ store, metrics, onViewDetails }) => {
       // Changes will appear on next page refresh
     } catch (error) {
       console.error('Error disabling store:', error);
-      alert('Failed to disable store');
+      toast.error('Failed to disable store');
     } finally {
       setIsUpdating(false);
     }

@@ -3,7 +3,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, PutBucketCorsCommand, Li
 
 // Initialize S3 client (exported for use in other modules)
 export const getS3Client = () => {
-  let endpoint = process.env.S3_ENDPOINT;
+  let endpoint = process.env.S3_ENDPOINT || process.env.RAILWAY_S3_ENDPOINT;
   const region = process.env.S3_REGION || 'us-east-1'; // Default to us-east-1 (change to us-west-1 for Railway if needed)
   const accessKeyId = process.env.S3_ACCESS_KEY_ID;
   const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;

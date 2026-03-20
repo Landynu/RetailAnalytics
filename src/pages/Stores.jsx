@@ -2,6 +2,7 @@ import React from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getUserStores } from 'wasp/client/operations';
 import { toggleStoreActive, toggleStoreFavourite, toggleStorePrimary } from 'wasp/client/operations';
+import { toast } from 'sonner';
 import { CreateStoreModal } from '../components/CreateStoreModal';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -16,7 +17,7 @@ const Stores = () => {
       await toggleStoreActive({ storeId });
       refetch();
     } catch (error) {
-      alert('Error toggling store status: ' + error.message);
+      toast.error('Error toggling store status: ' + error.message);
     }
   };
 
@@ -25,7 +26,7 @@ const Stores = () => {
       await toggleStoreFavourite({ storeId });
       refetch();
     } catch (error) {
-      alert('Error toggling favourite: ' + error.message);
+      toast.error('Error toggling favourite: ' + error.message);
     }
   };
 
@@ -34,7 +35,7 @@ const Stores = () => {
       await toggleStorePrimary({ storeId });
       refetch();
     } catch (error) {
-      alert('Error setting primary store: ' + error.message);
+      toast.error('Error setting primary store: ' + error.message);
     }
   };
 

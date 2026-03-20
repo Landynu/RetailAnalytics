@@ -6,11 +6,12 @@ import { StoreNav } from '../components/StoreNav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Menu, Package, Upload, Star, DollarSign } from 'lucide-react';
+import { ErrorState } from '../components/ErrorState';
+import { Menu, Package, Upload, DollarSign, Layers } from 'lucide-react';
 
 const SmartMenuPage = () => {
   const { storeId } = useParams();
-  const { data: smartMenu, isLoading, error } = useQuery(generateSmartMenu, { storeId });
+  const { data: menuData, isLoading, error, refetch } = useQuery(generateSmartMenu, { storeId });
 
   if (isLoading) return (
     <div className="space-y-6">
@@ -23,30 +24,25 @@ const SmartMenuPage = () => {
       </div>
     </div>
   );
-  
+
   if (error) return (
     <div className="space-y-6">
       <StoreNav currentPage="menu" />
-      <Card>
-        <CardContent className="text-center py-8">
-          <div className="text-destructive mb-4">Error: {error}</div>
-          <Button onClick={() => window.location.reload()}>Try Again</Button>
-        </CardContent>
-      </Card>
+      <ErrorState error={error} onRetry={refetch} title="Failed to load menu" />
     </div>
   );
 
-  const totalProducts = smartMenu.reduce((acc, menu) => acc + menu.products.length, 0);
-  const averagePrice = smartMenu.length > 0 
-    ? smartMenu.reduce((acc, menu) => 
-        acc + menu.products.reduce((sum, product) => sum + product.price, 0), 0
-      ) / totalProducts 
+  const { store, categories, totalProducts } = menuData;
+  const averagePrice = totalProducts > 0
+    ? categories.reduce((acc, cat) =>
+        acc + cat.products.reduce((sum, p) => sum + p.price, 0), 0
+      ) / totalProducts
     : 0;
 
   return (
     <div className="space-y-6">
       <StoreNav currentPage="menu" />
-      
+
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -55,12 +51,10 @@ const SmartMenuPage = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalProducts}</div>
-            <p className="text-xs text-muted-foreground">
-              Available in smart menu
-            </p>
+            <p className="text-xs text-muted-foreground">In stock across all categories</p>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Average Price</CardTitle>
@@ -68,29 +62,29 @@ const SmartMenuPage = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">${averagePrice.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">
-              Per product
-            </p>
+            <p className="text-xs text-muted-foreground">Per product</p>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Menu Sections</CardTitle>
-            <Menu className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Categories</CardTitle>
+            <Layers className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{smartMenu.length}</div>
-            <p className="text-xs text-muted-foreground">
-              Inventory uploads
-            </p>
+            <div className="text-2xl font-bold">{categories.length}</div>
+            <p className="text-xs text-muted-foreground">Menu sections</p>
           </CardContent>
         </Card>
       </div>
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold">Smart Menu</h2>
-        {smartMenu.length === 0 ? (
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">{store.name} Menu</h2>
+          <p className="text-sm text-muted-foreground">{store.location}</p>
+        </div>
+
+        {categories.length === 0 ? (
           <Card>
             <CardContent className="text-center py-8">
               <Menu className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -107,37 +101,43 @@ const SmartMenuPage = () => {
             </CardContent>
           </Card>
         ) : (
-          smartMenu.map(menu => (
-            <Card key={menu.inventoryId}>
+          categories.map(({ category, products }) => (
+            <Card key={category}>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Menu Section #{menu.inventoryId}</CardTitle>
-                  <Badge variant="outline">{menu.products.length} items</Badge>
+                  <CardTitle className="text-lg">{category}</CardTitle>
+                  <Badge variant="outline">{products.length} items</Badge>
                 </div>
                 <CardDescription>
-                  Curated product selection for optimal sales
+                  Sorted by price, highest first
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-3">
-                  {menu.products.map((product, index) => (
-                    <div key={product.gtin} className="flex items-center justify-between p-4 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
+                <div className="grid gap-2">
+                  {products.map((product, index) => (
+                    <div key={product.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
                       <div className="flex items-center space-x-3">
-                        <div className="flex items-center justify-center w-8 h-8 bg-primary/10 rounded-full">
-                          <span className="text-sm font-semibold text-primary">{index + 1}</span>
+                        <div className="flex items-center justify-center w-7 h-7 bg-primary/10 rounded-full">
+                          <span className="text-xs font-semibold text-primary">{index + 1}</span>
                         </div>
                         <div>
-                          <div className="font-medium">{product.name}</div>
-                          <div className="text-sm text-muted-foreground">GTIN: {product.gtin}</div>
+                          <div className="font-medium text-sm">{product.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {product.brand}
+                            {product.strainType && product.strainType !== 'N/A' && (
+                              <span> &middot; {product.strainType}</span>
+                            )}
+                            {product.thc && (
+                              <span> &middot; THC {product.thc}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <div className="text-right">
-                          <div className="font-semibold text-lg">${product.price.toFixed(2)}</div>
+                      <div className="flex items-center space-x-4 text-right">
+                        <div className="text-xs text-muted-foreground">
+                          Qty: {product.quantity}
                         </div>
-                        <div className="flex items-center text-yellow-500">
-                          <Star className="h-4 w-4 fill-current" />
-                        </div>
+                        <div className="font-semibold">${product.price.toFixed(2)}</div>
                       </div>
                     </div>
                   ))}
@@ -148,7 +148,7 @@ const SmartMenuPage = () => {
         )}
       </div>
 
-      {smartMenu.length > 0 && (
+      {categories.length > 0 && (
         <div className="flex justify-center space-x-4">
           <Link to="/upload">
             <Button variant="outline">

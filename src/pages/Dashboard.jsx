@@ -12,9 +12,13 @@ import CompactStoreCard from '../components/CompactStoreCard';
 import InPageStoreDetail from '../components/InPageStoreDetail';
 import ExportButton from '../components/ExportButton';
 import DataLoadingOverlay from '../components/DataLoadingOverlay';
+import { ErrorState } from '../components/ErrorState';
 import { Button } from '../components/ui/button';
 import { Plus, Package, DollarSign, Store as StoreIcon, Leaf, TrendingUp, Star, RefreshCw } from 'lucide-react';
 import { useDebounce } from '../lib/useDebounce';
+import { EXCLUDED_CATEGORIES, LS_KEYS, CURRENT_FILTERS_VERSION } from '../lib/constants.js';
+import { getStorageItem, setStorageItem } from '../lib/safeStorage';
+import { toast } from 'sonner';
 
 // Helper to calculate relative date ranges
 const getRelativeDateRange = (preset) => {
@@ -95,42 +99,38 @@ const DEFAULT_FILTERS = {
   dateRange: getRelativeDateRange('last14') // Default to last 14 days
 };
 
-// Version for localStorage - increment when DEFAULT_FILTERS structure changes
-const FILTERS_VERSION = '2.0';
+// Version for localStorage - uses CURRENT_FILTERS_VERSION from constants
 
 const DashboardPage = () => {
-  const { data: stores, isLoading: storesLoading, refetch: refetchStores } = useQuery(getUserStores);
+  const { data: stores, isLoading: storesLoading, error: storesError, refetch: refetchStores } = useQuery(getUserStores);
   const { data: posAccounts } = useQuery(getPOSAccounts);
 
   // State management
   const [selectedStoreIds, setSelectedStoreIds] = useState(null); // null = all stores
   const [isSyncing, setIsSyncing] = useState(false); // Loading state for Greenline sync
   const [hideAccessories, setHideAccessories] = useState(() => {
-    const saved = localStorage.getItem('hideAccessories');
-    return saved ? JSON.parse(saved) : true; // Default to hiding accessories
+    return getStorageItem(LS_KEYS.HIDE_ACCESSORIES, true);
   });
   const [hideZeroInventory, setHideZeroInventory] = useState(() => {
-    const saved = localStorage.getItem('hideZeroInventory');
-    return saved ? JSON.parse(saved) : true; // Default to hiding zero inventory
+    return getStorageItem(LS_KEYS.HIDE_ZERO_INVENTORY, true);
   });
   const [filters, setFilters] = useState(() => {
     // Check version and clear if outdated
-    const savedVersion = localStorage.getItem('retailAnalyticsFiltersVersion');
-    if (savedVersion !== FILTERS_VERSION) {
+    const savedVersion = getStorageItem(LS_KEYS.FILTERS_VERSION, null);
+    if (savedVersion !== CURRENT_FILTERS_VERSION) {
       // Clear old filters and set new version
-      localStorage.removeItem('retailAnalyticsFilters');
-      localStorage.setItem('retailAnalyticsFiltersVersion', FILTERS_VERSION);
-      console.log('🔄 Filters reset due to version update');
+      localStorage.removeItem(LS_KEYS.FILTERS);
+      setStorageItem(LS_KEYS.FILTERS_VERSION, CURRENT_FILTERS_VERSION);
+      console.log('Filters reset due to version update');
       return DEFAULT_FILTERS;
     }
 
     // Load from localStorage only if version matches
-    const saved = localStorage.getItem('retailAnalyticsFilters');
-    const loadedFilters = saved ? JSON.parse(saved) : DEFAULT_FILTERS;
+    const loadedFilters = getStorageItem(LS_KEYS.FILTERS, DEFAULT_FILTERS);
 
     // Recalculate relative date ranges on mount
     if (loadedFilters.dateRange?.preset) {
-      console.log('🔄 Recalculating relative date range for preset:', loadedFilters.dateRange.preset);
+      console.log('Recalculating relative date range for preset:', loadedFilters.dateRange.preset);
       loadedFilters.dateRange = getRelativeDateRange(loadedFilters.dateRange.preset);
     } else if (!loadedFilters.dateRange) {
       // Ensure dateRange exists (backward compatibility)
@@ -141,12 +141,10 @@ const DashboardPage = () => {
   });
   const [focusedStoreId, setFocusedStoreId] = useState(null);
   const [activeView, setActiveView] = useState(() => {
-    const saved = localStorage.getItem('dashboardView');
-    return saved || 'inventory'; // 'inventory' or 'sales'
+    return getStorageItem(LS_KEYS.DASHBOARD_VIEW, 'inventory');
   });
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(() => {
-    const saved = localStorage.getItem('showOnlyFavorites');
-    return saved ? JSON.parse(saved) : false;
+    return getStorageItem(LS_KEYS.SHOW_ONLY_FAVORITES, false);
   });
   // Automatically determine if we should use daily (recent) or weekly (historical) data
   const useDailyData = React.useMemo(() => {
@@ -160,12 +158,12 @@ const DashboardPage = () => {
 
   // Persist hideAccessories setting
   useEffect(() => {
-    localStorage.setItem('hideAccessories', JSON.stringify(hideAccessories));
+    setStorageItem(LS_KEYS.HIDE_ACCESSORIES, hideAccessories);
   }, [hideAccessories]);
 
   // Persist hideZeroInventory setting
   useEffect(() => {
-    localStorage.setItem('hideZeroInventory', JSON.stringify(hideZeroInventory));
+    setStorageItem(LS_KEYS.HIDE_ZERO_INVENTORY, hideZeroInventory);
   }, [hideZeroInventory]);
 
   // Debounce filters for better performance
@@ -173,24 +171,24 @@ const DashboardPage = () => {
 
   // Persist filters to localStorage with version
   useEffect(() => {
-    localStorage.setItem('retailAnalyticsFilters', JSON.stringify(filters));
-    localStorage.setItem('retailAnalyticsFiltersVersion', FILTERS_VERSION);
+    setStorageItem(LS_KEYS.FILTERS, filters);
+    setStorageItem(LS_KEYS.FILTERS_VERSION, CURRENT_FILTERS_VERSION);
   }, [filters]);
 
   // Persist active view
   useEffect(() => {
-    localStorage.setItem('dashboardView', activeView);
+    setStorageItem(LS_KEYS.DASHBOARD_VIEW, activeView);
   }, [activeView]);
 
   // Persist favorite filter setting
   useEffect(() => {
-    localStorage.setItem('showOnlyFavorites', JSON.stringify(showOnlyFavorites));
+    setStorageItem(LS_KEYS.SHOW_ONLY_FAVORITES, showOnlyFavorites);
   }, [showOnlyFavorites]);
 
   // Apply hideAccessories and hideZeroInventory to filters
   const effectiveFilters = {
     ...debouncedFilters,
-    excludeCategories: hideAccessories ? ['Accessories', 'Accessory'] : [],
+    excludeCategories: hideAccessories ? EXCLUDED_CATEGORIES : [],
     stockStatus: hideZeroInventory ? 'inStock' : debouncedFilters.stockStatus
   };
 
@@ -286,6 +284,14 @@ const DashboardPage = () => {
   }
 
   // Show skeleton only on very first load (no stores data)
+  if (storesError) {
+    return (
+      <div className="container mx-auto px-4 py-6 max-w-7xl">
+        <ErrorState error={storesError} onRetry={refetchStores} title="Failed to load stores" />
+      </div>
+    );
+  }
+
   if (storesLoading && !stores) {
     return (
       <div className="container mx-auto px-4 py-6 max-w-7xl space-y-6">
@@ -355,7 +361,7 @@ const DashboardPage = () => {
               disabled={isSyncing}
               onClick={async () => {
                 if (!posAccounts || posAccounts.length === 0) {
-                  alert("Please configure a POS account in Settings first.");
+                  toast.info("Please configure a POS account in Settings first.");
                   return;
                 }
 
@@ -363,10 +369,10 @@ const DashboardPage = () => {
                   setIsSyncing(true);
                   // Use the first account found
                   await scrapePOS({ posAccountId: posAccounts[0].id, storeIds: [] });
-                  alert('Inventory sync started! It may take a few minutes to complete.');
+                  toast.success('Inventory sync started! It may take a few minutes to complete.');
                   refetchAnalytics();
                 } catch (err) {
-                  alert("Sync failed: " + err.message);
+                  toast.error("Sync failed: " + err.message);
                 } finally {
                   setIsSyncing(false);
                 }

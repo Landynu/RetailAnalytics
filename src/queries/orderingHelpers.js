@@ -172,18 +172,6 @@ export function buildBrandDistributorMap(brandsWithDistributors) {
 }
 
 /**
- * Build sales matrix for top 20 products by sales.
- */
-export function buildSalesMatrix(allFilteredSalesMap, stores, context) {
-  const topProductIds = Array.from(allFilteredSalesMap.entries())
-    .sort((a, b) => b[1].totalSales - a[1].totalSales)
-    .slice(0, 20)
-    .map(([productId]) => productId);
-
-  return { topProductIds, stores };
-}
-
-/**
  * Calculate strain counts from filtered products.
  */
 export function calculateStrainCounts(filteredProducts, primaryStore) {

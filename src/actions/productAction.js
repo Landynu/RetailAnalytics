@@ -20,7 +20,6 @@ export const createProductAction = async ({ productId, actionType, notes, metada
       }
     });
 
-    console.log(`✅ Created ${actionType} action for product ${productId}`);
     return action;
   } catch (error) {
     throw new HttpError(500, `Failed to create product action: ${error.message}`);
@@ -62,7 +61,6 @@ export const completeProductAction = async ({ actionId }, context) => {
       }
     });
 
-    console.log(`✅ Completed action ${actionId}`);
     return action;
   } catch (error) {
     throw new HttpError(500, `Failed to complete product action: ${error.message}`);
@@ -81,7 +79,6 @@ export const reactivateProductAction = async ({ actionId }, context) => {
       }
     });
 
-    console.log(`🔄 Reactivated action ${actionId}`);
     return action;
   } catch (error) {
     throw new HttpError(500, `Failed to reactivate product action: ${error.message}`);

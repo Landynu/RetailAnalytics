@@ -1,13 +1,14 @@
 import { generateCacheKey } from './utils.js';
 import { setCached } from './redis.js';
+import { EXCLUDED_CATEGORIES } from '../lib/constants.js';
 
 /**
- * Calculate week boundaries for a date range
- * @param {Date} startDate - Start date
- * @param {Date} endDate - End date
- * @returns {object} Object with start and end week boundaries (Monday dates)
+ * Calculate week bucket boundaries (both Mondays at 00:00:00.000).
+ * Returns the Monday of the start week and the Monday of the end week.
+ * Used for aligning weekly summary cache buckets.
+ * See also: src/queries/helpers.js calculateWeekBoundaries for inclusive Mon-Sun ranges.
  */
-export function calculateWeekBoundaries(startDate, endDate) {
+export function calculateWeekBucketBoundaries(startDate, endDate) {
   const start = new Date(startDate);
   const end = new Date(endDate);
 
@@ -61,7 +62,7 @@ export async function warmOrderingAnalyticsCache(context, storeIds, startDate, e
     // Calculate date ranges
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const weekBoundaries = calculateWeekBoundaries(startDate, endDate);
+    const weekBoundaries = calculateWeekBucketBoundaries(startDate, endDate);
     const today = new Date();
     const currentDay = today.getDay();
     const currentWeekStart = new Date(today);
@@ -88,7 +89,7 @@ export async function warmOrderingAnalyticsCache(context, storeIds, startDate, e
           ]
         },
         ...(includeHiddenCategories ? [] : [
-          { parentCategory: { notIn: ['Accessories', 'Accessory', 'VPT'] } }
+          { parentCategory: { notIn: EXCLUDED_CATEGORIES } }
         ])
       ]
     };

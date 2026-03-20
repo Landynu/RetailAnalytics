@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 
 // Default widths in pixels
 const DEFAULT_WIDTHS = {
@@ -242,31 +243,28 @@ export const useColumnOrdering = (stores = []) => {
   };
 
   const resetColumnOrder = () => {
-    if (confirm('Reset column order to default?')) {
-      // Build default order with actual location columns instead of placeholder
-      let defaultOrder = DEFAULT_COLUMNS.map(col => col.id);
-      
-      // Replace 'locations' placeholder with actual store columns
-      const locationsIndex = defaultOrder.indexOf('locations');
-      if (locationsIndex !== -1 && stores.length > 0) {
-        const locationColumnIds = stores.map(s => `location-${s.id}`);
-        defaultOrder.splice(locationsIndex, 1, ...locationColumnIds);
-      }
-      
-      setColumnOrder(defaultOrder);
+    // Build default order with actual location columns instead of placeholder
+    let defaultOrder = DEFAULT_COLUMNS.map(col => col.id);
+
+    // Replace 'locations' placeholder with actual store columns
+    const locationsIndex = defaultOrder.indexOf('locations');
+    if (locationsIndex !== -1 && stores.length > 0) {
+      const locationColumnIds = stores.map(s => `location-${s.id}`);
+      defaultOrder.splice(locationsIndex, 1, ...locationColumnIds);
     }
+
+    setColumnOrder(defaultOrder);
+    toast.success('Column order reset to default');
   };
 
   const resetColumnWidths = () => {
-    if (confirm('Reset all column widths to default?')) {
-      setColumnWidths({ ...DEFAULT_WIDTHS });
-    }
+    setColumnWidths({ ...DEFAULT_WIDTHS });
+    toast.success('Column widths reset to default');
   };
 
   const resetColumnVisibility = () => {
-    if (confirm('Show all columns?')) {
-      setHiddenColumns(new Set());
-    }
+    setHiddenColumns(new Set());
+    toast.success('All columns visible');
   };
 
   return {

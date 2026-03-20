@@ -11,6 +11,9 @@ import FilterDropdown from '../components/FilterDropdown';
 import { Package, Tag, RotateCcw, Loader2, RefreshCw } from 'lucide-react';
 import DataLoadingOverlay from '../components/DataLoadingOverlay';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
+import { EXCLUDED_CATEGORIES } from '../lib/constants.js';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { arrayMove } from '@dnd-kit/sortable';
 import {
   DndContext,
@@ -363,15 +366,17 @@ const OrderingDashboard = () => {
     }
   };
 
+  const [confirmState, setConfirmState] = useState({ open: false, action: null, title: '', description: '' });
+
   const handleAddToOrder = async (product) => {
     try {
       await addToOrderWorksheet({
         productId: product.id,
         quantity: product.suggestedQty
       });
-      alert(`Added ${product.name} to order (${product.suggestedCases} cases)`);
+      toast.success(`Added ${product.name} to order (${product.suggestedCases} cases)`);
     } catch (error) {
-      alert('Error adding to order: ' + error.message);
+      toast.error('Error adding to order: ' + error.message);
     }
   };
 
@@ -386,19 +391,24 @@ const OrderingDashboard = () => {
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert('Error exporting order: ' + error.message);
+      toast.error('Error exporting order: ' + error.message);
     }
   };
 
-  const handleClearOrder = async () => {
-    if (confirm('Clear all items from order worksheet?')) {
-      try {
-        await clearOrderWorksheet();
-        alert('Order worksheet cleared');
-      } catch (error) {
-        alert('Error clearing order: ' + error.message);
-      }
-    }
+  const handleClearOrder = () => {
+    setConfirmState({
+      open: true,
+      action: async () => {
+        try {
+          await clearOrderWorksheet();
+          toast.success('Order worksheet cleared');
+        } catch (error) {
+          toast.error('Error clearing order: ' + error.message);
+        }
+      },
+      title: 'Confirm',
+      description: 'Clear all items from order worksheet?'
+    });
   };
 
   const handleRefreshData = async () => {
@@ -529,7 +539,7 @@ const OrderingDashboard = () => {
     const newVisible = new Set(visibleHiddenCategories);
     
     const isCurrentlyHidden = hiddenCategories.has(category);
-    const isAccessoryLike = ['Accessories', 'Accessory', 'VPT'].includes(category);
+    const isAccessoryLike = EXCLUDED_CATEGORIES.includes(category);
     
     if (isCurrentlyHidden) {
       newHidden.delete(category);
@@ -1057,6 +1067,13 @@ const OrderingDashboard = () => {
         onClose={handleCloseMovementModal}
         dateRange={dateRange}
         storeIds={selectedStoreIds}
+      />
+      <ConfirmDialog
+        open={confirmState.open}
+        onOpenChange={(open) => !open && setConfirmState({ ...confirmState, open: false })}
+        title={confirmState.title}
+        description={confirmState.description}
+        onConfirm={() => { confirmState.action?.(); setConfirmState({ ...confirmState, open: false }); }}
       />
     </div>
   );

@@ -8,10 +8,6 @@ import { enrichProductFormats } from './product.js';
 export const analyzeInventoryExport = async ({ csvData, autoCreateStores = true }, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  // Log file size for monitoring (no limit enforcement)
-  const csvSize = new Blob([csvData]).size;
-  console.log(`Analyzing inventory export CSV: ${(csvSize / 1024 / 1024).toFixed(2)}MB`);
-
   // Set a timeout for large file processing (5 minutes)
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => {
@@ -151,13 +147,11 @@ export const analyzeInventoryExport = async ({ csvData, autoCreateStores = true 
 async function syncCategoriesInBackground(context, updatedProducts) {
   const syncStartTime = Date.now();
   const syncStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.log(`[${syncStartTimestamp}] Background category sync: Processing ${updatedProducts.length} products...`);
 
   try {
     // Fetch all products that need category syncing
     const gtins = updatedProducts.map(p => p.gtin).filter(Boolean);
     if (gtins.length === 0) {
-      console.log(`[${syncStartTimestamp}] No products to sync (no GTINs)`);
       return;
     }
 
@@ -167,7 +161,6 @@ async function syncCategoriesInBackground(context, updatedProducts) {
     });
 
     if (productsToSync.length === 0) {
-      console.log(`[${syncStartTimestamp}] No products found in database to sync`);
       return;
     }
 
@@ -193,8 +186,6 @@ async function syncCategoriesInBackground(context, updatedProducts) {
       });
     });
 
-    const syncTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[${syncTimestamp}] Loaded ${allCategoryDefs.length} category definitions, processing ${productsToSync.length} products...`);
 
     // Process products in batches and collect updates
     const categoryUpdates = []; // { productId, categoryDefinitionId, subcategoryId }
@@ -233,17 +224,10 @@ async function syncCategoriesInBackground(context, updatedProducts) {
       }
 
       processed += batch.length;
-      if (processed % 500 === 0 || processed === productsToSync.length) {
-        const progressTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-        const percentage = ((processed / productsToSync.length) * 100).toFixed(1);
-        console.log(`[${progressTimestamp}] Category sync: Processed ${processed}/${productsToSync.length} products (${percentage}%) - ${categoryUpdates.length} matches found`);
-      }
     }
 
     // Bulk update products in batches
     if (categoryUpdates.length > 0) {
-      const updateTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-      console.log(`[${updateTimestamp}] Applying ${categoryUpdates.length} category updates in batches...`);
 
       const updateBatchSize = 50; // Reduced from 100 to prevent connection pool exhaustion
       for (let i = 0; i < categoryUpdates.length; i += updateBatchSize) {
@@ -260,18 +244,8 @@ async function syncCategoriesInBackground(context, updatedProducts) {
           });
         }
 
-        if ((i + updateBatchSize) % 500 === 0 || i + updateBatchSize >= categoryUpdates.length) {
-          const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-          const totalUpdated = Math.min(i + updateBatchSize, categoryUpdates.length);
-          const percentage = ((totalUpdated / categoryUpdates.length) * 100).toFixed(1);
-          console.log(`[${batchTimestamp}] Updated: ${totalUpdated}/${categoryUpdates.length} products (${percentage}%)`);
-        }
       }
     }
-
-    const syncDuration = ((Date.now() - syncStartTime) / 1000).toFixed(2);
-    const syncCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[${syncCompleteTimestamp}] Background category sync complete: ${categoryUpdates.length} products updated in ${syncDuration}s`);
 
   } catch (error) {
     const errorTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
@@ -282,13 +256,6 @@ async function syncCategoriesInBackground(context, updatedProducts) {
 
 export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }, context) => {
   if (!context.user) { throw new HttpError(401) }
-
-  // Log file size for monitoring (no limit enforcement)
-  const csvSize = new Blob([csvData]).size;
-  const startTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.log(`\n[${startTimestamp}] STARTING INVENTORY EXPORT UPLOAD`);
-  console.log(`[${startTimestamp}] File size: ${(csvSize / 1024 / 1024).toFixed(2)}MB`);
-  console.log(`[${startTimestamp}] Stage 1/4: Parsing CSV file...`);
 
   // Helper function to split category into parent and subcategory
   const splitCategory = (category) => {
@@ -494,9 +461,6 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   // Convert Map to array
   const products = Array.from(productsMap.values());
 
-  const parseTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.log(`[${parseTimestamp}] Stage 1 complete: Parsed ${products.length} products, detected ${locationColumns.length} locations`);
-  console.log(`[${parseTimestamp}] Stage 2/4: Creating/updating stores...`);
 
   // Create/update stores - always build storeMap, even if autoCreateStores is false
   // First, fetch all existing stores to match by name or reportName
@@ -535,14 +499,9 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   }
 
   if (unmatchedLocations.length > 0) {
-    const unmatchedTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.warn(`[${unmatchedTimestamp}] WARNING: ${unmatchedLocations.length} location(s) could not be matched to stores: ${unmatchedLocations.join(', ')}`);
-    console.warn(`[${unmatchedTimestamp}] Stock levels for these locations will be skipped. Enable autoCreateStores or ensure store names/reportNames match CSV column names.`);
+    // Unmatched locations - stock levels for these will be skipped
   }
 
-  const storeTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.log(`[${storeTimestamp}] Stage 2 complete: ${Object.keys(storeMap).length} stores ready (${locationColumns.length} locations in CSV)`);
-  console.log(`[${storeTimestamp}] Stage 3/4: Processing products (create/update/unchanged)...`);
 
   // Create inventory snapshot
   const snapshot = await context.entities.InventorySnapshot.create({
@@ -571,8 +530,6 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   const existingProductsToUpdate = [];
   const unchangedProducts = [];
 
-  const categorizeTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.log(`[${categorizeTimestamp}] Categorizing ${products.length} products...`);
 
   for (let i = 0; i < products.length; i++) {
     const product = products[i];
@@ -633,16 +590,8 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       }
     }
 
-    // Log progress every 1000 products
-    if ((i + 1) % 1000 === 0 || i === products.length - 1) {
-      const progressTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-      const percentage = (((i + 1) / products.length) * 100).toFixed(1);
-      console.log(`[${progressTimestamp}] Categorized ${i + 1}/${products.length} products (${percentage}%) - ${newProducts.length} new, ${existingProductsToUpdate.length} to update, ${unchangedProducts.length} unchanged`);
-    }
   }
 
-  const categorizeCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.log(`[${categorizeCompleteTimestamp}] Categorization complete: ${newProducts.length} new, ${existingProductsToUpdate.length} to update, ${unchangedProducts.length} unchanged`);
 
   // Helper to truncate long text fields
   const truncateField = (text, maxLength = 1000) => {
@@ -653,8 +602,6 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   // Batch create new products - PostgreSQL can handle much larger batches
   let createdProducts = [];
   if (newProducts.length > 0) {
-    const createStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[${createStartTimestamp}] Creating ${newProducts.length} new products in batches...`);
     const chunkSize = 1000; // Increased from 100 for PostgreSQL
     for (let i = 0; i < newProducts.length; i += chunkSize) {
       const chunk = newProducts.slice(i, i + chunkSize).map(p => ({
@@ -676,7 +623,6 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
         const totalProcessed = Math.min(i + chunkSize, newProducts.length);
         const percentage = ((totalProcessed / newProducts.length) * 100).toFixed(1);
-        console.log(`[${batchTimestamp}] Created batch: ${totalProcessed}/${newProducts.length} products (${percentage}%) - ${batchDuration}s`);
       } catch (error) {
         console.error(`Error in product creation batch: ${error.message}`);
         // If batch fails, try smaller chunks
@@ -695,16 +641,12 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       }
     }
 
-    const createCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[${createCompleteTimestamp}] Product creation complete, fetching IDs...`);
 
     // Fetch the created products to get their IDs
     createdProducts = await context.entities.ProductCatalog.findMany({
       where: { gtin: { in: newProducts.map(p => p.gtin) } }
     });
 
-    const fetchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[${fetchTimestamp}] Fetched ${createdProducts.length} product IDs`);
   }
 
   // Helper function for controlled parallel processing with progress tracking
@@ -731,9 +673,6 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   // Batch update existing products - Process in parallel with controlled concurrency
   // Preserve enriched fields (thc, cbd, cannabinoidProfile, strainType, classificationId, format, distributorId, description, imageUrl, categoryDefinitionId, subcategoryId)
   if (existingProductsToUpdate.length > 0) {
-    const updateStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[${updateStartTimestamp}] Updating ${existingProductsToUpdate.length} existing products in parallel (concurrency: 10)...`);
-    const batchStartTime = Date.now();
     const concurrency = 10; // Process 10 products in parallel at a time
 
     // Process all products with controlled concurrency
@@ -805,25 +744,9 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         });
       },
       // Progress callback
-      (processedCount, total) => {
-        if (processedCount % 100 === 0 || processedCount === total) {
-          const progressTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-          const elapsed = ((Date.now() - batchStartTime) / 1000).toFixed(1);
-          const percentage = ((processedCount / total) * 100).toFixed(1);
-          const rate = (processedCount / parseFloat(elapsed)).toFixed(1);
-          console.log(`[${progressTimestamp}] Updated: ${processedCount}/${total} products (${percentage}%) - ${elapsed}s elapsed - ${rate} products/sec`);
-        }
-      }
+      () => {}
     );
 
-    const batchEndTime = Date.now();
-    const batchDuration = ((batchEndTime - batchStartTime) / 1000).toFixed(2);
-    const batchTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    const avgRate = (existingProductsToUpdate.length / parseFloat(batchDuration)).toFixed(1);
-    console.log(`[${batchTimestamp}] Updated ${existingProductsToUpdate.length} products in ${batchDuration}s (avg: ${avgRate} products/sec)`);
-
-    const updateCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[${updateCompleteTimestamp}] Product updates complete`);
 
     // Category syncing will be done in background - don't block upload response
     const updatedProducts = existingProductsToUpdate.map(p => ({
@@ -834,9 +757,6 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
 
     // Fire-and-forget: Sync categories in background
     if (updatedProducts.length > 0) {
-      const syncStartTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-      console.log(`[${syncStartTimestamp}] Starting background category sync for ${updatedProducts.length} products...`);
-
       // Run in background (don't await)
       syncCategoriesInBackground(context, updatedProducts).catch(err => {
         const errorTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
@@ -847,20 +767,13 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
 
   // Update lastSeen for unchanged products
   if (unchangedProducts.length > 0) {
-    const unchangedTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[${unchangedTimestamp}] Updating lastSeen for ${unchangedProducts.length} unchanged products...`);
     const unchangedGtins = unchangedProducts.map(p => p.gtin);
     await context.entities.ProductCatalog.updateMany({
       where: { gtin: { in: unchangedGtins } },
       data: { lastSeen: new Date() }
     });
-    const unchangedCompleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[${unchangedCompleteTimestamp}] Updated lastSeen for ${unchangedProducts.length} products`);
   }
 
-  const productTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.log(`[${productTimestamp}] Stage 3 complete: ${newProducts.length} created, ${existingProductsToUpdate.length} updated, ${unchangedProducts.length} unchanged`);
-  console.log(`[${productTimestamp}] Stage 4/4: Updating stock levels...`);
 
   // Get all products (existing + new) for stock level updates
   const allProducts = await context.entities.ProductCatalog.findMany({
@@ -898,24 +811,8 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     }
   }
 
-  if (skippedStockLevels.length > 0) {
-    const skipTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.warn(`[${skipTimestamp}] Skipped ${skippedStockLevels.length} stock level(s) due to unmatched store locations`);
-    // Log first few examples
-    const examples = skippedStockLevels.slice(0, 5);
-    examples.forEach(sl => {
-      console.warn(`[${skipTimestamp}]   - Product: ${sl.productName} | Location: "${sl.location}" | Qty: ${sl.quantity}`);
-    });
-    if (skippedStockLevels.length > 5) {
-      console.warn(`[${skipTimestamp}]   ... and ${skippedStockLevels.length - 5} more`);
-    }
-  }
-
   // Batch update stock levels - DELETE old + BULK INSERT new (fastest approach)
   if (stockLevelUpdates.length > 0) {
-    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`\n[${timestamp}] UPDATING ${stockLevelUpdates.length} STOCK LEVELS...`);
-    console.log(`[${timestamp}] Using DELETE + BULK INSERT strategy for maximum speed`);
     const startTime = Date.now();
 
     try {
@@ -923,7 +820,6 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
       const storeIds = [...new Set(stockLevelUpdates.map(s => s.storeId))];
       const productIds = [...new Set(stockLevelUpdates.map(s => s.productId))];
 
-      console.log(`[${timestamp}] Step 1: Deleting existing stock levels for ${productIds.length} products across ${storeIds.length} stores...`);
 
       // Delete existing stock levels for these products in these stores
       // This ensures we replace old inventory data with fresh data from the CSV
@@ -937,8 +833,6 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
         }
       });
 
-      const deleteTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-      console.log(`[${deleteTimestamp}] Step 2: Deleted ${deleteResult.count} old records, now bulk inserting ${stockLevelUpdates.length} new records...`);
 
       // Step 2: Bulk insert all new stock levels in chunks
       const chunkSize = 1000; // PostgreSQL can handle large bulk inserts
@@ -959,18 +853,7 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
 
         totalInserted += chunk.length;
 
-        if (totalInserted % 5000 === 0 || totalInserted === stockLevelUpdates.length) {
-          const insertTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-          const percentage = ((totalInserted / stockLevelUpdates.length) * 100).toFixed(1);
-          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-          console.log(`[${insertTimestamp}] Inserted: ${totalInserted}/${stockLevelUpdates.length} (${percentage}%) - ${elapsed}s`);
-        }
       }
-
-      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-      const finalTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-      console.log(`[${finalTimestamp}] STOCK LEVELS COMPLETE: ${stockLevelUpdates.length} records in ${duration}s`);
-      console.log(`[${finalTimestamp}] Average: ${(stockLevelUpdates.length / parseFloat(duration)).toFixed(0)} records/second\n`);
 
     } catch (error) {
       const errorTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
@@ -987,8 +870,6 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   };
 
   // Invalidate cache after inventory export update (CRITICAL for fresh data)
-  const cacheTimestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.log(`[${cacheTimestamp}] Stage 4/4: Invalidating caches...`);
   await invalidateCachePattern('cache:base:*');
   await invalidateCachePattern('cache:recent_sales:*');
   await invalidateCachePattern('cache:recent_sales_movements:*');
@@ -999,7 +880,6 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
   await invalidateCachePattern('cache:products_paginated:*');
   await invalidateCachePattern('cache:purchase_orders:*');
   await invalidateCachePattern('cache:rankings:*');
-  console.log(`[${cacheTimestamp}] Cache invalidation complete\n`);
 
   // Warm cache after upload (fire-and-forget)
   const stores = await context.entities.Store.findMany({
@@ -1010,18 +890,12 @@ export const uploadInventoryExport = async ({ csvData, autoCreateStores = true }
     const storeIds = stores.map(s => s.id);
     const endDate = new Date();
     const startDate = new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
-    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(err =>
-      console.warn('Cache warming failed after export upload:', err.message)
-    );
+    warmOrderingAnalyticsCache(context, storeIds, startDate, endDate, false).catch(() => {});
   }
 
   // Post-upload: sync brands and enrich formats (fire-and-forget)
-  syncBrands(null, context).catch(err =>
-    console.warn('Post-upload brand sync failed:', err.message)
-  );
-  enrichProductFormats(null, context).catch(err =>
-    console.warn('Post-upload format enrichment failed:', err.message)
-  );
+  syncBrands(null, context).catch(() => {});
+  enrichProductFormats(null, context).catch(() => {});
 
   return {
     snapshot,

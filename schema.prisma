@@ -31,7 +31,7 @@ model Invitation {
     email     String   @unique
     token     String   @unique @default(uuid())
     invitedBy Int
-    inviter   User     @relation("InvitedBy", fields: [invitedBy], references: [id])
+    inviter   User     @relation("InvitedBy", fields: [invitedBy], references: [id], onDelete: Cascade)
     status    String   @default("PENDING") // PENDING, ACCEPTED, EXPIRED
     createdAt DateTime @default(now())
     expiresAt DateTime
@@ -74,7 +74,7 @@ model BrandDistributor {
 model POSAccount {
     id           Int      @id @default(autoincrement())
     userId       Int
-    user         User     @relation(fields: [userId], references: [id])
+    user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
     name         String   // e.g., "Main Greenline Account"
     posType      String   // GREENLINE, DUTCHIE, COVA
     username     String   // Encrypted
@@ -108,7 +108,7 @@ model Store {
     posAccount      POSAccount? @relation(fields: [posAccountId], references: [id])
     externalStoreId String? // Greenline's internal store ID for mapping
     
-    user          User    @relation(fields: [userId], references: [id])
+    user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
     userId        Int
     snapshots     InventorySnapshot[]
     stockLevels   StockLevel[]
@@ -216,7 +216,7 @@ model Category {
 model InventorySnapshot {
     id          Int      @id @default(autoincrement())
     storeId     Int
-    store       Store    @relation(fields: [storeId], references: [id])
+    store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
     snapshotDate DateTime @default(now())
     fileType    String   // EXPORT, LOG
     rawData     String
@@ -227,7 +227,7 @@ model InventorySnapshot {
 model StockLevel {
     id         Int             @id @default(autoincrement())
     storeId    Int
-    store      Store           @relation(fields: [storeId], references: [id])
+    store      Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
     productId  Int
     product    ProductCatalog  @relation(fields: [productId], references: [id])
     quantity   Int             @default(0)
@@ -243,7 +243,7 @@ model StockLevel {
 model InventoryMovement {
     id          Int            @id @default(autoincrement())
     storeId     Int
-    store       Store          @relation(fields: [storeId], references: [id])
+    store       Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
     productId   Int
     product     ProductCatalog @relation(fields: [productId], references: [id])
     date        DateTime
@@ -266,7 +266,7 @@ model InventoryMovement {
 model UnmatchedRecord {
     id              Int      @id @default(autoincrement())
     userId          Int
-    user            User     @relation(fields: [userId], references: [id])
+    user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
     recordType      String   // LOG, EXPORT, CATALOG
     productName     String?
     barcode         String?
@@ -291,7 +291,7 @@ model UnmatchedRecord {
 model OrderWorksheet {
     id         Int      @id @default(autoincrement())
     userId     Int
-    user       User     @relation(fields: [userId], references: [id])
+    user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
     name       String   @default("Current Order")
     createdAt  DateTime @default(now())
     updatedAt  DateTime @updatedAt
@@ -316,7 +316,7 @@ model OrderWorksheetItem {
 model Inventory {
     id       Int       @id @default(autoincrement())
     csvData  String
-    store    Store     @relation(fields: [storeId], references: [id])
+    store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
     storeId  Int
     products Product[]
 }
@@ -337,7 +337,7 @@ model WeeklySalesSummary {
   id          Int      @id @default(autoincrement())
   weekStart   DateTime // Monday of the week
   storeId     Int
-  store       Store    @relation(fields: [storeId], references: [id])
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   productId   Int
   product     ProductCatalog @relation(fields: [productId], references: [id])
   
@@ -376,7 +376,7 @@ model WeeklyCategorySummary {
   id          Int      @id @default(autoincrement())
   weekStart   DateTime
   storeId     Int
-  store       Store    @relation(fields: [storeId], references: [id])
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   category    String   // parentCategory
   
   grossSales  Float    @default(0)
@@ -396,7 +396,7 @@ model WeeklyBrandSummary {
   id          Int      @id @default(autoincrement())
   weekStart   DateTime
   storeId     Int
-  store       Store    @relation(fields: [storeId], references: [id])
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   brand       String
   
   grossSales  Float    @default(0)

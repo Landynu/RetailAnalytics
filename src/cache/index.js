@@ -18,6 +18,6 @@ export {
 } from './utils.js';
 
 export {
-  calculateWeekBoundaries,
+  calculateWeekBucketBoundaries,
   warmOrderingAnalyticsCache
 } from './warmCache.js';

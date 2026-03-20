@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from 'wasp/client/operations';
 import { getBrandDistributors, getDistributors } from 'wasp/client/operations';
 import { updateBrandDistributors, createDistributor, seedDistributors, syncBrands } from 'wasp/client/operations';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
@@ -25,6 +27,7 @@ const BrandMapping = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [isAutoSyncing, setIsAutoSyncing] = useState(false);
   const [hasAutoSynced, setHasAutoSynced] = useState(false);
+  const [confirmState, setConfirmState] = useState({ open: false, title: '', description: '', action: null });
 
   // Auto-sync brands on page load if no brands exist
   useEffect(() => {
@@ -143,48 +146,58 @@ const BrandMapping = () => {
       setSelectedDistributors([]);
       refetchMappings();
     } catch (error) {
-      alert('Error saving: ' + error.message);
+      toast.error('Error saving: ' + error.message);
     }
   };
 
   const handleCreateDistributor = async () => {
     if (!newDistributorName.trim()) return;
-    
+
     setIsCreating(true);
     try {
       await createDistributor({ name: newDistributorName.trim() });
       setNewDistributorName('');
       refetchDistributors();
-      alert(`Distributor "${newDistributorName}" created successfully!`);
+      toast.success(`Distributor "${newDistributorName}" created successfully!`);
     } catch (error) {
-      alert('Error creating distributor: ' + error.message);
+      toast.error('Error creating distributor: ' + error.message);
     } finally {
       setIsCreating(false);
     }
   };
 
-  const handleSeedDistributors = async () => {
-    if (confirm('Create default distributors (Direct, Open Fields, etc.)?')) {
-      try {
-        const result = await seedDistributors();
-        alert(`${result.created} distributors created!`);
-        refetchDistributors();
-      } catch (error) {
-        alert('Error: ' + error.message);
+  const handleSeedDistributors = () => {
+    setConfirmState({
+      open: true,
+      title: 'Seed Distributors',
+      description: 'Create default distributors (Direct, Open Fields, etc.)?',
+      action: async () => {
+        try {
+          const result = await seedDistributors();
+          toast.success(`${result.created} distributors created!`);
+          refetchDistributors();
+        } catch (error) {
+          toast.error('Error: ' + error.message);
+        }
       }
-    }
+    });
   };
 
-  const handleSyncBrands = async () => {
-    if (confirm('Sync all brands from product catalog?')) {
-      try {
-        const result = await syncBrands();
-        alert(`${result.created} new brands synced!\nTotal: ${result.totalBrands} brands`);
-        refetchMappings();
-      } catch (error) {
-        alert('Error: ' + error.message);
+  const handleSyncBrands = () => {
+    setConfirmState({
+      open: true,
+      title: 'Sync Brands',
+      description: 'Sync all brands from product catalog?',
+      action: async () => {
+        try {
+          const result = await syncBrands();
+          toast.success(`${result.created} new brands synced! Total: ${result.totalBrands} brands`);
+          refetchMappings();
+        } catch (error) {
+          toast.error('Error: ' + error.message);
+        }
       }
-    }
+    });
   };
 
   return (
@@ -540,6 +553,17 @@ const BrandMapping = () => {
             </div>
           )}
         </div>
+
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={(open) => setConfirmState({ ...confirmState, open })}
+          title={confirmState.title}
+          description={confirmState.description}
+          onConfirm={() => {
+            confirmState.action?.();
+            setConfirmState({ open: false, title: '', description: '', action: null });
+          }}
+        />
       </div>
     </div>
   );

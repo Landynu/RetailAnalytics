@@ -1,5 +1,6 @@
 import { HttpError } from 'wasp/server';
 import { invalidateCachePattern } from '../cache.js';
+import { computeSeasonality } from './seasonality.js';
 
 function getMonday(date) {
   const d = new Date(date);
@@ -18,9 +19,6 @@ function getTimeBucket(hour) {
 export const backfillWeeklySummaries = async (args, context) => {
   const { startDate, endDate } = args || {};
 
-  console.log('Starting weekly summary backfill...');
-  console.log(`Date range: ${startDate || 'earliest'} to ${endDate || 'now'}`);
-
   // Get earliest movement date if startDate not provided
   const earliest = await context.entities.InventoryMovement.findFirst({
     orderBy: { date: 'asc' },
@@ -38,16 +36,12 @@ export const backfillWeeklySummaries = async (args, context) => {
       : { isActive: true }
   });
 
-  console.log(`🏪 Processing ${stores.length} store(s)`);
-
   let currentWeek = getMonday(start);
   let weeksProcessed = 0;
 
   while (currentWeek <= end) {
     const weekEnd = new Date(currentWeek);
     weekEnd.setDate(weekEnd.getDate() + 7);
-
-    console.log(`📊 Processing week of ${currentWeek.toISOString().split('T')[0]}...`);
 
     for (const store of stores) {
       // Get all movements for this week and store
@@ -266,8 +260,6 @@ export const backfillWeeklySummaries = async (args, context) => {
     currentWeek.setDate(currentWeek.getDate() + 7);
   }
 
-  console.log(`✅ Backfill complete! Processed ${weeksProcessed} weeks for ${stores.length} stores`);
-
   // Invalidate cache after backfilling weekly summaries
   await invalidateCachePattern('cache:base:*');
   await invalidateCachePattern('cache:recent_sales:*');
@@ -278,10 +270,37 @@ export const backfillWeeklySummaries = async (args, context) => {
   await invalidateCachePattern('cache:sales_totals:*');
   await invalidateCachePattern('cache:products_paginated:*');
 
+  // Recalculate product seasonality after weekly summaries are updated
+  const allSummaries = await context.entities.WeeklySalesSummary.findMany({
+    select: { productId: true, weekStart: true, unitsSold: true, netRevenue: true },
+    orderBy: { weekStart: 'asc' }
+  });
+
+  const productMap = new Map();
+  for (const s of allSummaries) {
+    if (!productMap.has(s.productId)) {
+      productMap.set(s.productId, []);
+    }
+    productMap.get(s.productId).push(s);
+  }
+
+  const now = new Date();
+  let seasonalityCalculated = 0;
+  for (const [pid, weeks] of productMap) {
+    const seasonality = computeSeasonality(weeks, now);
+    await context.entities.ProductSeasonality.upsert({
+      where: { productId: pid },
+      create: { productId: pid, ...seasonality },
+      update: seasonality,
+    });
+    seasonalityCalculated++;
+  }
+
   return {
     success: true,
     weeksProcessed,
     storesProcessed: stores.length,
+    seasonalityCalculated,
     startDate: start.toISOString(),
     endDate: end.toISOString()
   };

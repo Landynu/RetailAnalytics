@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { Link } from 'wasp/client/router';
 import { useQuery } from 'wasp/client/operations';
-import { getProductById, getClassifications, getCategoryDefinitions } from 'wasp/client/operations';
+import { getProductById, getClassifications, getCategoryDefinitions, getProductSeasonality } from 'wasp/client/operations';
 import { updateProductEnrichment } from 'wasp/client/operations';
+import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { ArrowLeft, Edit2, Save, X } from 'lucide-react';
+import { ArrowLeft, Edit2, Save, X, TrendingUp, TrendingDown, Minus, Sparkles, Leaf } from 'lucide-react';
 import StrainTypeCell from '../components/StrainTypeCell';
 import CategoryCell from '../components/CategoryCell';
 import SubcategoryCell from '../components/SubcategoryCell';
@@ -23,6 +24,7 @@ const ProductDetail = () => {
   const { data: product, isLoading, refetch } = useQuery(getProductById, { productId: parseInt(productId) });
   const { data: classifications } = useQuery(getClassifications);
   const { data: categoryDefinitions } = useQuery(getCategoryDefinitions);
+  const { data: seasonality } = useQuery(getProductSeasonality, { productId: parseInt(productId) });
 
   if (isLoading) {
     return (
@@ -63,7 +65,7 @@ const ProductDetail = () => {
       setIsEditing(false);
       refetch();
     } catch (error) {
-      alert('Error saving: ' + error.message);
+      toast.error('Error saving: ' + error.message);
     }
   };
 
@@ -317,6 +319,77 @@ const ProductDetail = () => {
           </div>
         </Card>
       </div>
+
+      {/* Seasonality */}
+      {seasonality && (
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Seasonality & Trend</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <label className="text-sm font-medium text-gray-500">Trend</label>
+              <div className="mt-1">
+                <Badge className={
+                  seasonality.trend === 'GROWING' ? 'bg-emerald-500 text-white' :
+                  seasonality.trend === 'DECLINING' ? 'bg-red-500 text-white' :
+                  seasonality.trend === 'SEASONAL' ? 'bg-amber-500 text-white' :
+                  seasonality.trend === 'NEW' ? 'bg-blue-500 text-white' :
+                  'bg-gray-500 text-white'
+                }>
+                  {seasonality.trend === 'GROWING' && <TrendingUp className="h-3 w-3 mr-1 inline" />}
+                  {seasonality.trend === 'DECLINING' && <TrendingDown className="h-3 w-3 mr-1 inline" />}
+                  {seasonality.trend === 'STABLE' && <Minus className="h-3 w-3 mr-1 inline" />}
+                  {seasonality.trend === 'SEASONAL' && <Sparkles className="h-3 w-3 mr-1 inline" />}
+                  {seasonality.trend === 'NEW' && <Leaf className="h-3 w-3 mr-1 inline" />}
+                  {seasonality.trend}
+                </Badge>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-500">Seasonality Score</label>
+              <div className="mt-1 text-lg font-semibold">{seasonality.seasonalityScore}/100</div>
+            </div>
+
+            {seasonality.yoyGrowth !== null && (
+              <div>
+                <label className="text-sm font-medium text-gray-500">YoY Growth</label>
+                <div className={`mt-1 text-lg font-semibold ${seasonality.yoyGrowth >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {seasonality.yoyGrowth >= 0 ? '+' : ''}{seasonality.yoyGrowth.toFixed(1)}%
+                </div>
+              </div>
+            )}
+
+            {seasonality.peakMonth1 && (
+              <div>
+                <label className="text-sm font-medium text-gray-500">Peak Months</label>
+                <div className="mt-1 flex gap-1">
+                  {[seasonality.peakMonth1, seasonality.peakMonth2, seasonality.peakMonth3]
+                    .filter(Boolean)
+                    .map(m => (
+                      <Badge key={m} variant="outline">{['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]}</Badge>
+                    ))
+                  }
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t">
+            <div>
+              <label className="text-sm font-medium text-gray-500">4-Week Avg</label>
+              <div className="mt-1 text-lg font-semibold">{seasonality.last4WeeksAvg.toFixed(1)} units/wk</div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-500">12-Week Avg</label>
+              <div className="mt-1 text-lg font-semibold">{seasonality.last12WeeksAvg.toFixed(1)} units/wk</div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-500">52-Week Avg</label>
+              <div className="mt-1 text-lg font-semibold">{seasonality.last52WeeksAvg.toFixed(1)} units/wk</div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Enrichment History */}
       {product.enrichments && product.enrichments.length > 0 && (

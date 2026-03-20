@@ -20,13 +20,6 @@ export const getGlobalSalesAnalytics = async ({
       gte: new Date(filters.dateRange.start),
       lte: new Date(filters.dateRange.end)
     };
-    console.log('📅 Date filter applied:', {
-      start: filters.dateRange.start,
-      end: filters.dateRange.end,
-      whereClause: summaryWhere.weekStart
-    });
-  } else {
-    console.warn('⚠️ No date range filter - loading all data!');
   }
 
   // Build product filter for summary query
@@ -79,11 +72,7 @@ export const getGlobalSalesAnalytics = async ({
     orderBy: { weekStart: 'desc' }
   });
 
-  console.log('📊 Query results:', {
-    summariesFetched: weeklySummaries.length,
-    dateRange: filters.dateRange ? `${filters.dateRange.start} to ${filters.dateRange.end}` : 'ALL TIME',
-    storeFilter: storeIds ? `${storeIds.length} stores` : 'all stores'
-  });
+
 
   // Aggregate data from weekly summaries
   let grossSales = 0;
@@ -355,14 +344,6 @@ export const getGlobalSalesAnalytics = async ({
     totalTransactions: movementSummary.totalSales,
     hasData: weeklySummaries.length > 0
   };
-
-  console.log('💰 Sales analytics summary:', {
-    totalRevenue: result.totalRevenue,
-    unitsSold: result.totalUnitsSold,
-    avgTransaction: result.avgTransactionValue,
-    topProducts: result.topProductsByRevenue.length,
-    hasData: result.hasData
-  });
 
   return result;
 };

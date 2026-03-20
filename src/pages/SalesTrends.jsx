@@ -8,17 +8,11 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Package, DollarSign, Leaf, Upload, Filter } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-
-const STRAIN_COLORS = {
-  Sativa: '#10b981',
-  Hybrid: '#f59e0b',
-  Indica: '#8b5cf6',
-  'N/A': '#6b7280'
-};
+import { STRAIN_COLORS, EXCLUDED_CATEGORIES } from '../lib/constants.js';
 
 const SalesTrendsPage = () => {
   const { storeId } = useParams();
-  const [excludeCategories, setExcludeCategories] = useState(['Accessories', 'Accessory']);
+  const [excludeCategories, setExcludeCategories] = useState(EXCLUDED_CATEGORIES);
   const [showByRevenue, setShowByRevenue] = useState(true); // true = revenue, false = units
   
   const { data: analytics, isLoading, error } = useQuery(getStoreAnalytics, { 
