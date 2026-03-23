@@ -1,5 +1,5 @@
 import { HttpError } from 'wasp/server'
-import { calculateWeekBoundaries } from './helpers.js'
+import { calculateCompleteSummaryWeekRange } from './helpers.js'
 import { EXCLUDED_CATEGORIES } from '../lib/constants.js'
 
 // Lightweight query for out-of-stock products (products with sales but zero inventory)
@@ -35,25 +35,22 @@ export const getOutOfStockProducts = async ({
   const endDate = dateRange?.end ? new Date(dateRange.end) : new Date();
   const startDate = dateRange?.start ? new Date(dateRange.start) : new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
 
-  // Calculate week boundaries (Monday-Sunday) for WeeklySalesSummary queries
-  const weekBoundaries = calculateWeekBoundaries(startDate, endDate);
-
-  // Current week start (Monday at midnight) - sales from this week are in InventoryMovement, not WeeklySalesSummary
-  const now = new Date();
-  const currentDay = now.getDay();
-  const currentWeekStart = new Date(now);
-  currentWeekStart.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-  currentWeekStart.setHours(0, 0, 0, 0);
+  // Only use weekly summaries for full weeks fully inside the selected range.
+  const summaryWeekRange = calculateCompleteSummaryWeekRange(startDate, endDate);
+  const currentWeekStart = summaryWeekRange.currentWeekStart;
 
   // Query both data sources in parallel:
   // 1. WeeklySalesSummary for complete weeks
   // 2. InventoryMovement for exact date range (catches current incomplete week)
   const [weeklySalesData, movementSalesData] = await Promise.all([
     // WeeklySalesSummary: use week-aligned boundaries, exclude current incomplete week
-    context.entities.WeeklySalesSummary.findMany({
+    summaryWeekRange.start ? context.entities.WeeklySalesSummary.findMany({
       where: {
         storeId: { in: storeIdList },
-        weekStart: { gte: weekBoundaries.start, lt: currentWeekStart },
+        weekStart: {
+          gte: summaryWeekRange.start,
+          lt: summaryWeekRange.endExclusive
+        },
         unitsSold: { gt: 0 }
       },
       select: {
@@ -62,7 +59,7 @@ export const getOutOfStockProducts = async ({
         storeId: true,
         weekStart: true
       }
-    }),
+    }) : Promise.resolve([]),
     // InventoryMovement: exact date range for current/incomplete week data
     context.entities.InventoryMovement.findMany({
       where: {

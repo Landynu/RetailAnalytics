@@ -144,8 +144,16 @@ const InventoryMovementModal = ({ productId, productName, isOpen, onClose, dateR
             <div className="flex items-start justify-between gap-4 mb-3">
               <div className="flex items-center gap-6">
                 <div>
-                  <div className="text-xs text-gray-500 uppercase tracking-wide">Total Movements</div>
+                  <div className="text-xs text-gray-500 uppercase tracking-wide">Movement Rows</div>
                   <div className="text-2xl font-bold text-gray-900">{movementData.totalCount}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 uppercase tracking-wide">Sale Rows</div>
+                  <div className="text-2xl font-bold text-gray-900">{movementData.saleTransactionCount || 0}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 uppercase tracking-wide">Sale Units</div>
+                  <div className="text-2xl font-bold text-gray-900">{movementData.saleUnits || 0}</div>
                 </div>
                 {dateRange && (
                   <div>

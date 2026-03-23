@@ -262,6 +262,8 @@ export const getProductInventoryMovements = async ({ productId, dateRange = null
     take: 1000 // Limit to last 1000 movements for performance
   });
 
+  const saleMovements = movements.filter(movement => movement.type?.toLowerCase() === 'sale');
+
   return {
     product: movements[0]?.product || null,
     movements: movements.map(movement => ({
@@ -278,7 +280,9 @@ export const getProductInventoryMovements = async ({ productId, dateRange = null
       sku: movement.sku,
       barcode: movement.barcode
     })),
-    totalCount: movements.length
+    totalCount: movements.length,
+    saleTransactionCount: saleMovements.length,
+    saleUnits: saleMovements.reduce((sum, movement) => sum + Math.abs(movement.changeQty || 0), 0)
   };
 };
 

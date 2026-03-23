@@ -1,6 +1,6 @@
 import { HttpError } from 'wasp/server'
 import { getCached, getCachedBatch, setCached, generateCacheKey, timedQuery } from '../cache.js'
-import { calculateWeekBoundaries } from './helpers.js'
+import { calculateCompleteSummaryWeekRange } from './helpers.js'
 import { EXCLUDED_CATEGORIES } from '../lib/constants.js'
 import {
   calculateCategoryRankings,
@@ -131,8 +131,8 @@ export const getOrderingAnalytics = async ({
     ]
   };
 
-  // Calculate week boundaries for WeeklySalesSummary queries
-  const weekBoundaries = calculateWeekBoundaries(startDate, endDate);
+  // Only use weekly summaries for full weeks fully inside the selected range.
+  const summaryWeekRange = calculateCompleteSummaryWeekRange(startDate, endDate);
 
   // Base products and rankings products already loaded in parallel above
 
@@ -239,12 +239,7 @@ export const getOrderingAnalytics = async ({
   // Sales Data, Purchase Orders, and Last Sale Data
   // ============================================================================
 
-  // Calculate current week start (Monday) to exclude incomplete week from WeeklySalesSummary
-  const today = new Date();
-  const currentDay = today.getDay();
-  const currentWeekStart = new Date(today);
-  currentWeekStart.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-  currentWeekStart.setHours(0, 0, 0, 0);
+  const currentWeekStart = summaryWeekRange.currentWeekStart;
 
   // Cache key for sales totals
   const productIdsHash = productIds.length > 100
@@ -254,7 +249,8 @@ export const getOrderingAnalytics = async ({
     storeIds: storeIdList.sort().join(','),
     productIds: productIdsHash,
     dateRange: `${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}`,
-    weekStart: weekBoundaries.start.toISOString().split('T')[0],
+    summaryWeekStart: summaryWeekRange.start ? summaryWeekRange.start.toISOString().split('T')[0] : 'none',
+    summaryWeekEndExclusive: summaryWeekRange.endExclusive ? summaryWeekRange.endExclusive.toISOString().split('T')[0] : 'none',
     currentWeekStart: currentWeekStart.toISOString().split('T')[0]
   });
 
@@ -325,12 +321,15 @@ export const getOrderingAnalytics = async ({
       // Sales queries (weekly + movements)
       Promise.all([
         // Get sales totals from WeeklySalesSummary (complete weeks only, exclude current incomplete week)
-        allBaseProductIds.length > 0 ? timedQuery('weekly_sales_totals', () =>
+        allBaseProductIds.length > 0 && summaryWeekRange.start ? timedQuery('weekly_sales_totals', () =>
           context.entities.WeeklySalesSummary.findMany({
             where: {
               storeId: { in: storeIdList },
               productId: { in: allBaseProductIds },
-              weekStart: { gte: weekBoundaries.start, lt: currentWeekStart }
+              weekStart: {
+                gte: summaryWeekRange.start,
+                lt: summaryWeekRange.endExclusive
+              }
             },
             select: {
               productId: true,

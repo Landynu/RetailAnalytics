@@ -78,21 +78,26 @@ export const exportAnalyticsData = async ({ storeIds, filters }, context) => {
 };
 
 /**
- * Clear analytics-related caches to force fresh data on next query
- * This clears: rankings, sales totals, sparklines, and other computed metrics
- * Does NOT clear base product data or historical imports
+ * Clear ordering/analytics caches to force fresh data on next query.
+ * Keep this aligned with the broader invalidation used after inventory uploads
+ * so a manual refresh can recover from stale Redis state without a redeploy.
  */
 export const clearAnalyticsCache = async (_args, context) => {
   if (!context.user) { throw new HttpError(401) }
 
-  // Clear all analytics-related caches
+  // Clear all analytics-related caches, including base datasets used by Ordering.
   const patterns = [
-    'cache:base:rankings*',      // 14-day rankings data
-    'cache:base:sales_totals*',  // Sales aggregations
-    'cache:sparklines*',         // Trend sparklines
-    'cache:recent_sales*',       // Recent sales movements
-    'cache:older_sales*',        // Historical sales data
-    'cache:brands_distributors*' // Brand/distributor lists
+    'cache:base:*',                  // Base product, rankings, sales totals, purchase orders
+    'cache:recent_sales:*',          // Recent weekly summary activity cache
+    'cache:recent_sales_movements:*', // Recent raw movement cache
+    'cache:older_sales:*',           // Historical weekly summary cache
+    'cache:filter_options:*',        // Filter option cache
+    'cache:sparklines:*',            // Trend sparklines
+    'cache:sales_totals:*',          // Non-base sales aggregations
+    'cache:products_paginated:*',    // Paginated product result caches
+    'cache:purchase_orders:*',       // Purchase order caches
+    'cache:rankings:*',              // Legacy/general ranking caches
+    'cache:brands_distributors*'     // Brand/distributor lists
   ];
 
   let totalDeleted = 0;
