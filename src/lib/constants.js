@@ -20,3 +20,11 @@ export const LS_KEYS = {
 };
 
 export const CURRENT_FILTERS_VERSION = '2.0';
+
+// Transfer planner defaults
+export const TRANSFER_DEFAULTS = {
+  TARGET_WEEKS: 2,
+  TOP_SELLER_BONUS_WEEKS: 1,
+  STALE_DAYS_THRESHOLD: 30,
+  CATEGORY_GAP_THRESHOLD: 0.5,
+};

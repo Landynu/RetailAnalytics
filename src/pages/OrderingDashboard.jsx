@@ -37,6 +37,7 @@ import CategoryCell from '../components/CategoryCell';
 import SubcategoryCell from '../components/SubcategoryCell';
 import SalesMatrix from '../components/SalesMatrix';
 import ColumnVisibilityMenu from '../components/ColumnVisibilityMenu';
+import ExportDropdown from '../components/ExportDropdown';
 import InventoryMovementModal from '../components/InventoryMovementModal';
 
 const OrderingDashboard = () => {
@@ -970,6 +971,16 @@ const OrderingDashboard = () => {
                 <RotateCcw className="h-3 w-3 mr-1.5" />
                 Reset Widths
               </Button>
+              <ExportDropdown
+                sortedProducts={sortedProducts}
+                displayStores={displayStores}
+                allStores={stores}
+                hiddenColumns={hiddenColumns}
+                orderedColumns={orderedColumns}
+                categoryDefinitions={categoryDefinitions}
+                classifications={classifications}
+                periodDays={allAnalyticsData?.periodDays || 14}
+              />
               <div className="flex-1" />
               <Button
                 variant="outline"

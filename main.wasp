@@ -578,6 +578,12 @@ page OrderingPage {
   authRequired: true
 }
 
+route TransferPlannerRoute { path: "/transfers", to: TransferPlannerPage }
+page TransferPlannerPage {
+  component: import TransferPlanner from "@src/pages/TransferPlanner.jsx",
+  authRequired: true
+}
+
 route ActionsRoute { path: "/actions", to: ActionsPage }
 page ActionsPage {
   component: import ActionsPage from "@src/pages/ActionsPage.jsx",

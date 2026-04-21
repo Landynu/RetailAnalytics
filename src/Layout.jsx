@@ -36,6 +36,9 @@ export const Layout = () => {
                     <Link to="/ordering" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
                       Ordering
                     </Link>
+                    <Link to="/transfers" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                      Transfers
+                    </Link>
                     <Link to="/actions" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
                       Actions
                     </Link>
