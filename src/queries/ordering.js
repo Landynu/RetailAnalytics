@@ -1,6 +1,5 @@
 import { HttpError } from 'wasp/server'
 import { getCached, getCachedBatch, setCached, generateCacheKey, timedQuery } from '../cache.js'
-import { calculateCompleteSummaryWeekRange } from './helpers.js'
 import { EXCLUDED_CATEGORIES } from '../lib/constants.js'
 import {
   calculateCategoryRankings,
@@ -131,9 +130,6 @@ export const getOrderingAnalytics = async ({
     ]
   };
 
-  // Only use weekly summaries for full weeks fully inside the selected range.
-  const summaryWeekRange = calculateCompleteSummaryWeekRange(startDate, endDate);
-
   // Base products and rankings products already loaded in parallel above
 
   let allProductIdsForRankings = null;
@@ -239,22 +235,6 @@ export const getOrderingAnalytics = async ({
   // Sales Data, Purchase Orders, and Last Sale Data
   // ============================================================================
 
-  const currentWeekStart = summaryWeekRange.currentWeekStart;
-
-  // Cache key for sales totals
-  const productIdsHash = productIds.length > 100
-    ? `${productIds.length}_${productIds.slice(0, 10).join(',')}`
-    : productIds.sort((a, b) => a - b).join(',');
-  const salesTotalsCacheKey = generateCacheKey('sales_totals', {
-    storeIds: storeIdList.sort().join(','),
-    productIds: productIdsHash,
-    dateRange: `${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}`,
-    summaryWeekStart: summaryWeekRange.start ? summaryWeekRange.start.toISOString().split('T')[0] : 'none',
-    summaryWeekEndExclusive: summaryWeekRange.endExclusive ? summaryWeekRange.endExclusive.toISOString().split('T')[0] : 'none',
-    currentWeekStart: currentWeekStart.toISOString().split('T')[0]
-  });
-
-  // Prepare cache keys for parallel checks (base data, unfiltered)
   const dateRangeKey = `${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}`;
   const baseSalesTotalsKey = generateCacheKey('base:sales_totals', {
     storeIds: storeIdsKey,
@@ -264,45 +244,28 @@ export const getOrderingAnalytics = async ({
     storeIds: storeIdsKey
   });
 
-  // Parallelize cache checks for base sales_totals and purchase_orders
   const [cachedBaseSales, cachedBasePOs] = await getCachedBatch(
     [baseSalesTotalsKey, basePOsKey],
     ['base:sales_totals', 'base:purchase_orders']
   );
 
-  // If cached purchase orders exist but are empty, treat as cache miss to force refresh
   const hasValidPOCache = cachedBasePOs && cachedBasePOs.lastPOMap && Object.keys(cachedBasePOs.lastPOMap).length > 0;
-  let salesMap = null;
-  let completeWeeksSet = null;
-  let weeklySalesData = null;
-  let movementSalesTotals = null;
-  let allPOs = null;
-
-  if (cachedBaseSales) {
-    // Reconstruct base salesMap from cache, then filter to only include filtered products
-    const baseSalesMap = new Map();
-    if (cachedBaseSales.salesMap) {
-      Object.entries(cachedBaseSales.salesMap).forEach(([productId, sales]) => {
-        baseSalesMap.set(parseInt(productId), sales);
-      });
-    }
-    completeWeeksSet = new Set(cachedBaseSales.completeWeeks || []);
-
-    // Filter salesMap to only include products in filteredProductIds
-    salesMap = new Map();
-    allFilteredProductIds.forEach(productId => {
-      if (baseSalesMap.has(productId)) {
-        salesMap.set(productId, baseSalesMap.get(productId));
-      }
-    });
-  }
-
-  // Get all base product IDs (now that baseProducts is guaranteed to exist)
   const allBaseProductIds = baseProducts ? baseProducts.map(p => p.id) : [];
 
-  // Always fetch purchase orders if cache is invalid or missing
-  if (!hasValidPOCache && allBaseProductIds.length > 0) {
-    allPOs = await timedQuery('purchase_orders', () =>
+  // Fetch movements (sales) and purchase orders in parallel — only what's missing from cache
+  const [movementSales, freshPOs] = await Promise.all([
+    !cachedBaseSales && allBaseProductIds.length > 0 ? timedQuery('movement_sales', () =>
+      context.entities.InventoryMovement.findMany({
+        where: {
+          storeId: { in: storeIdList },
+          productId: { in: allBaseProductIds },
+          type: 'sale',
+          date: { gte: startDate, lte: endDate }
+        },
+        select: { productId: true, storeId: true, changeQty: true }
+      }), { productIds: allBaseProductIds.length, stores: storeIdList.length, dateRange: dateRangeKey }
+    ) : Promise.resolve(null),
+    !hasValidPOCache && allBaseProductIds.length > 0 ? timedQuery('purchase_orders', () =>
       context.entities.InventoryMovement.findMany({
         where: {
           storeId: { in: storeIdList },
@@ -312,126 +275,48 @@ export const getOrderingAnalytics = async ({
         select: { productId: true, date: true, changeQty: true },
         orderBy: { date: 'desc' }
       }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
-    );
-  }
+    ) : Promise.resolve(null)
+  ]);
 
-  if (!cachedBaseSales) {
-    // Need to fetch from database - but we need ALL products, not just filtered ones
-    const [salesQueryResults, freshPOs] = await Promise.all([
-      // Sales queries (weekly + movements)
-      Promise.all([
-        // Get sales totals from WeeklySalesSummary (complete weeks only, exclude current incomplete week)
-        allBaseProductIds.length > 0 && summaryWeekRange.start ? timedQuery('weekly_sales_totals', () =>
-          context.entities.WeeklySalesSummary.findMany({
-            where: {
-              storeId: { in: storeIdList },
-              productId: { in: allBaseProductIds },
-              weekStart: {
-                gte: summaryWeekRange.start,
-                lt: summaryWeekRange.endExclusive
-              }
-            },
-            select: {
-              productId: true,
-              storeId: true,
-              weekStart: true,
-              unitsSold: true
-            }
-          }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
-        ) : Promise.resolve([]),
-        // Get sales from InventoryMovement for the exact date range (includes incomplete week)
-        allBaseProductIds.length > 0 ? timedQuery('movement_sales', () =>
-          context.entities.InventoryMovement.findMany({
-            where: {
-              storeId: { in: storeIdList },
-              productId: { in: allBaseProductIds },
-              type: 'sale',
-              date: { gte: startDate, lte: endDate }
-            },
-            select: { productId: true, storeId: true, changeQty: true, date: true }
-          }), { productIds: allBaseProductIds.length, stores: storeIdList.length, dateRange: `${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}` }
-        ) : Promise.resolve([])
-      ]),
-      // Purchase orders (only fetch if not already fetched above)
-      hasValidPOCache || allPOs ? Promise.resolve(allPOs || []) : (allBaseProductIds.length > 0 ? timedQuery('purchase_orders', () =>
-        context.entities.InventoryMovement.findMany({
-          where: {
-            storeId: { in: storeIdList },
-            productId: { in: allBaseProductIds },
-            type: 'purchase order'
-          },
-          select: { productId: true, date: true, changeQty: true },
-          orderBy: { date: 'desc' }
-        }), { productIds: allBaseProductIds.length, stores: storeIdList.length }
-      ) : Promise.resolve([]))
-    ]);
+  const allPOs = freshPOs;
+  let salesMap = new Map();
 
-    // Destructure sales results
-    [weeklySalesData, movementSalesTotals] = salesQueryResults;
-
-    // Build salesMap from weekly summaries + movement data
-    salesMap = new Map();
-    completeWeeksSet = new Set();
-
-    const weeklySalesAggregated = new Map();
-    if (weeklySalesData && weeklySalesData.length > 0) {
-      weeklySalesData.forEach(item => {
-        const key = `${item.productId}_${item.storeId}`;
-        weeklySalesAggregated.set(key, (weeklySalesAggregated.get(key) || 0) + (item.unitsSold || 0));
-
-        const weekStart = item.weekStart instanceof Date ? item.weekStart : new Date(item.weekStart);
-        completeWeeksSet.add(weekStart.getTime());
-      });
-
-      weeklySalesAggregated.forEach((unitsSold, key) => {
-        const [productId, storeId] = key.split('_').map(Number);
-        if (!salesMap.has(productId)) {
-          salesMap.set(productId, { totalSales: 0, locationSales: {} });
-        }
-        const productSales = salesMap.get(productId);
-        productSales.totalSales += unitsSold;
-        productSales.locationSales[storeId] = (productSales.locationSales[storeId] || 0) + unitsSold;
+  if (cachedBaseSales) {
+    const baseSalesMap = new Map();
+    if (cachedBaseSales.salesMap) {
+      Object.entries(cachedBaseSales.salesMap).forEach(([productId, sales]) => {
+        baseSalesMap.set(parseInt(productId), sales);
       });
     }
-
-    // Add movement data for incomplete/current week only
-    (movementSalesTotals || []).forEach(movement => {
-      const movementDate = new Date(movement.date);
-      const movementDay = movementDate.getDay();
-      const movementWeekStart = new Date(movementDate);
-      movementWeekStart.setDate(movementDate.getDate() - (movementDay === 0 ? 6 : movementDay - 1));
-      movementWeekStart.setHours(0, 0, 0, 0);
-      const movementWeekStartTime = movementWeekStart.getTime();
-
-      const isCurrentIncompleteWeek = movementWeekStartTime >= currentWeekStart.getTime();
-      const isNotInCompleteWeeks = !completeWeeksSet.has(movementWeekStartTime);
-
-      if (isCurrentIncompleteWeek || isNotInCompleteWeeks) {
-        if (!salesMap.has(movement.productId)) {
-          salesMap.set(movement.productId, { totalSales: 0, locationSales: {} });
-        }
-        const productSales = salesMap.get(movement.productId);
-        const unitsSold = Math.abs(movement.changeQty);
-        productSales.totalSales += unitsSold;
-        productSales.locationSales[movement.storeId] = (productSales.locationSales[movement.storeId] || 0) + unitsSold;
-      }
-    });
-
-    // Cache the base salesMap (non-blocking)
-    const baseSalesMapToCache = {
-      salesMap: Object.fromEntries(salesMap),
-      completeWeeks: Array.from(completeWeeksSet)
-    };
-    setCached(baseSalesTotalsKey, baseSalesMapToCache, 3600, 'base:sales_totals').catch(() => {});
-
-    // Filter salesMap to only include filtered products
-    const filteredSalesMap = new Map();
     allFilteredProductIds.forEach(productId => {
-      if (salesMap.has(productId)) {
-        filteredSalesMap.set(productId, salesMap.get(productId));
+      if (baseSalesMap.has(productId)) {
+        salesMap.set(productId, baseSalesMap.get(productId));
       }
     });
-    salesMap = filteredSalesMap;
+  } else {
+    const baseSalesMap = new Map();
+    (movementSales || []).forEach(movement => {
+      if (!baseSalesMap.has(movement.productId)) {
+        baseSalesMap.set(movement.productId, { totalSales: 0, locationSales: {} });
+      }
+      const productSales = baseSalesMap.get(movement.productId);
+      const unitsSold = Math.abs(movement.changeQty);
+      productSales.totalSales += unitsSold;
+      productSales.locationSales[movement.storeId] = (productSales.locationSales[movement.storeId] || 0) + unitsSold;
+    });
+
+    setCached(
+      baseSalesTotalsKey,
+      { salesMap: Object.fromEntries(baseSalesMap) },
+      3600,
+      'base:sales_totals'
+    ).catch(() => {});
+
+    allFilteredProductIds.forEach(productId => {
+      if (baseSalesMap.has(productId)) {
+        salesMap.set(productId, baseSalesMap.get(productId));
+      }
+    });
   }
 
   // ============================================================================
@@ -536,7 +421,7 @@ export const getOrderingAnalytics = async ({
           type: 'sale',
           date: { gte: fourteenDaysAgo }
         },
-        select: { productId: true, date: true },
+        select: { productId: true, storeId: true, date: true },
         orderBy: { date: 'desc' }
       }), { productIds: productIds.length, stores: storeIdList.length }
     );
@@ -548,10 +433,16 @@ export const getOrderingAnalytics = async ({
 
   // Build map of product -> most recent sale date from movements
   const lastSaleMap = new Map();
+  // Also build per-store last sale map: key = "productId:storeId"
+  const lastSaleByStoreMap = new Map();
   recentSales.forEach(movement => {
+    const saleDate = movement.date instanceof Date ? movement.date : new Date(movement.date);
     if (!lastSaleMap.has(movement.productId)) {
-      const saleDate = movement.date instanceof Date ? movement.date : new Date(movement.date);
       lastSaleMap.set(movement.productId, saleDate);
+    }
+    const storeKey = `${movement.productId}:${movement.storeId}`;
+    if (!lastSaleByStoreMap.has(storeKey)) {
+      lastSaleByStoreMap.set(storeKey, saleDate);
     }
   });
 
@@ -573,6 +464,7 @@ export const getOrderingAnalytics = async ({
         },
         select: {
           productId: true,
+          storeId: true,
           weekStart: true
         },
         orderBy: { weekStart: 'desc' }
@@ -585,9 +477,13 @@ export const getOrderingAnalytics = async ({
   olderSaleData = olderSaleData || [];
 
   olderSaleData.forEach(summary => {
+    const weekStartDate = summary.weekStart instanceof Date ? summary.weekStart : new Date(summary.weekStart);
     if (!lastSaleMap.has(summary.productId)) {
-      const weekStartDate = summary.weekStart instanceof Date ? summary.weekStart : new Date(summary.weekStart);
       lastSaleMap.set(summary.productId, weekStartDate);
+    }
+    const storeKey = `${summary.productId}:${summary.storeId}`;
+    if (!lastSaleByStoreMap.has(storeKey)) {
+      lastSaleByStoreMap.set(storeKey, weekStartDate);
     }
   });
 
@@ -633,6 +529,16 @@ export const getOrderingAnalytics = async ({
       units: productSales.locationSales[storeId]
     }));
 
+    // Per-store last sale dates for CSV export
+    const locationLastSale = storeIdList.map(sId => {
+      const storeKey = `${product.id}:${sId}`;
+      const date = lastSaleByStoreMap.get(storeKey);
+      return {
+        storeId: sId,
+        daysSinceLastSale: date ? Math.floor((endDate - date) / (24 * 60 * 60 * 1000)) : null
+      };
+    });
+
     allProductMetrics.push({
       id: product.id,
       gtin: product.gtin,
@@ -640,6 +546,7 @@ export const getOrderingAnalytics = async ({
       brand: product.brand,
       parentCategory: product.parentCategory,
       subcategory: product.subcategory,
+      classificationId: product.classificationId,
       categoryDefinitionId: product.categoryDefinitionId,
       subcategoryId: product.subcategoryId,
       strainType: product.strainType,
@@ -654,6 +561,7 @@ export const getOrderingAnalytics = async ({
       totalInventory,
       locationInventory,
       locationSales,
+      locationLastSale,
       totalSales,
       velocity,
       weeksLeft,
