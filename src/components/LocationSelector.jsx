@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { MapPin, ChevronDown, Check, Star } from 'lucide-react';
+import DropdownPortal from './DropdownPortal';
 
 const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
+  const triggerRef = useRef(null);
 
   // Initialize with favourites if selectedIds is null and there are favourited stores
   useEffect(() => {
@@ -17,18 +18,6 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
       }
     }
   }, []); // Only run on mount
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Only count active stores
   const activeStores = stores.filter(store => store.isActive);
@@ -86,8 +75,9 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
   };
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative">
       <Button
+        ref={triggerRef}
         variant="outline"
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 min-w-[200px] justify-between"
@@ -99,8 +89,8 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
         <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </Button>
 
-      {isOpen && (
-        <div className="absolute z-50 mt-2 w-[300px] bg-background border rounded-lg shadow-lg">
+      <DropdownPortal anchorRef={triggerRef} open={isOpen} onClose={() => setIsOpen(false)} align="left">
+        <div className="w-[300px] bg-background border rounded-lg shadow-lg">
           <div className="p-2 border-b">
             <Button
               variant="ghost"
@@ -168,7 +158,7 @@ const LocationSelector = ({ stores = [], selectedIds, onChange }) => {
             </div>
           </div>
         </div>
-      )}
+      </DropdownPortal>
     </div>
   );
 };

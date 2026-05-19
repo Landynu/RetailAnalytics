@@ -45,7 +45,7 @@ const OrderingDashboard = () => {
   const { data: stores } = useQuery(getUserStores);
   const [selectedStoreIds, setSelectedStoreIds] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
-  const [hiddenCategories, setHiddenCategories] = useState(new Set(['Accessories', 'VPT']));
+  const [hiddenCategories, setHiddenCategories] = useState(new Set(['Accessories', 'VPT', 'VPT Vaping Accessories']));
   const [visibleHiddenCategories, setVisibleHiddenCategories] = useState(new Set());
   
   // Filter stores based on selection (null = favourites, array = specific stores)

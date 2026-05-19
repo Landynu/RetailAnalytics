@@ -1,6 +1,13 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Button } from './ui/button';
-import { Download, Trash2, Eye, EyeOff, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { Download, Trash2, Eye, EyeOff, ChevronUp, ChevronDown, X, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from 'lucide-react';
+
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 560;
+const DEFAULT_SIDEBAR_WIDTH = 288;
+const COLLAPSED_WIDTH = 44;
+const WIDTH_STORAGE_KEY = 'orderingFilters.width';
+const COLLAPSED_STORAGE_KEY = 'orderingFilters.collapsed';
 
 const OrderingFilters = ({
   analytics,
@@ -12,6 +19,60 @@ const OrderingFilters = ({
   onExportOrder,
   onClearOrder
 }) => {
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_SIDEBAR_WIDTH;
+    const stored = parseInt(window.localStorage.getItem(WIDTH_STORAGE_KEY), 10);
+    if (Number.isFinite(stored) && stored >= MIN_SIDEBAR_WIDTH && stored <= MAX_SIDEBAR_WIDTH) {
+      return stored;
+    }
+    return DEFAULT_SIDEBAR_WIDTH;
+  });
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === '1';
+  });
+  const isResizingRef = useRef(false);
+  const sidebarRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WIDTH_STORAGE_KEY, String(sidebarWidth));
+    } catch (e) { /* ignore */ }
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(COLLAPSED_STORAGE_KEY, isCollapsed ? '1' : '0');
+    } catch (e) { /* ignore */ }
+  }, [isCollapsed]);
+
+  const handleResizeMouseDown = useCallback((e) => {
+    e.preventDefault();
+    if (isCollapsed) return;
+    isResizingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    const handleMove = (ev) => {
+      if (!isResizingRef.current) return;
+      const delta = ev.clientX - startX;
+      const next = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, startWidth + delta));
+      setSidebarWidth(next);
+    };
+    const handleUp = () => {
+      isResizingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  }, [sidebarWidth, isCollapsed]);
+
   const brandScrollRef = useRef(null);
   const brandRefsMap = useRef({});
   const prevBrandsRef = useRef([]);
@@ -122,16 +183,61 @@ const OrderingFilters = ({
   const activeFilterCount = filters.brands.length + filters.categories.length +
     (filters.subcategories?.length || 0) + (filters.units?.length || 0) + (filters.sizes?.length || 0) + (filters.distributors?.length || 0);
 
+  if (isCollapsed) {
+    return (
+      <div
+        ref={sidebarRef}
+        style={{ width: `${COLLAPSED_WIDTH}px` }}
+        className="border-r bg-card flex-shrink-0 flex flex-col items-center py-3 gap-3"
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsCollapsed(false)}
+          className="h-8 w-8 p-0"
+          title="Expand filters"
+        >
+          <PanelLeftOpen className="h-4 w-4 text-emerald-700" />
+        </Button>
+        <div className="text-[10px] font-medium uppercase tracking-wider text-emerald-700 [writing-mode:vertical-rl] rotate-180 flex items-center gap-1">
+          <SlidersHorizontal className="h-3 w-3" />
+          Filters
+          {hasActiveFilters && (
+            <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[10px] font-semibold bg-blue-600 text-white">
+              {activeFilterCount}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-72 border-r bg-card overflow-y-auto flex-shrink-0">
+    <div
+      ref={sidebarRef}
+      style={{ width: `${sidebarWidth}px` }}
+      className="border-r bg-card flex-shrink-0 relative flex flex-col"
+    >
+      <div className="flex-1 overflow-y-auto">
       <div className="p-4 border-b bg-gradient-to-r from-emerald-50 to-teal-50 sticky top-0 z-10">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-emerald-800">Filters</h2>
-          {hasActiveFilters && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200">
-              {activeFilterCount} active
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {hasActiveFilters && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200">
+                {activeFilterCount} active
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsCollapsed(true)}
+              className="h-7 w-7 p-0 text-emerald-700 hover:text-emerald-900"
+              title="Collapse filters"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
         {hasActiveFilters && (
           <Button
@@ -336,6 +442,14 @@ const OrderingFilters = ({
           </div>
         </div>
       </div>
+      </div>
+
+      <div
+        onMouseDown={handleResizeMouseDown}
+        onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
+        title="Drag to resize • double-click to reset"
+        className="absolute top-0 right-0 h-full w-1.5 cursor-ew-resize hover:bg-emerald-400/40 active:bg-emerald-500/60 transition-colors z-20"
+      />
     </div>
   );
 };

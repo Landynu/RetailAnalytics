@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { ChevronDown, Check, X } from 'lucide-react';
+import DropdownPortal from './DropdownPortal';
 
 const FilterDropdown = ({
   label,
@@ -12,25 +13,12 @@ const FilterDropdown = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState(selectedValues);
-  const dropdownRef = useRef(null);
-  const handleApplyRef = useRef(null);
+  const triggerRef = useRef(null);
 
   // Sync pending values when selectedValues changes externally
   useEffect(() => {
     setPendingValues(selectedValues);
   }, [selectedValues]);
-
-  // Close dropdown when clicking outside - apply changes on close
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        handleApplyRef.current?.();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const handleToggleOption = (option) => {
     const newValues = pendingValues.includes(option)
@@ -54,9 +42,6 @@ const FilterDropdown = ({
     setIsOpen(false);
   }, [pendingValues, selectedValues, onChange]);
 
-  // Keep ref in sync so click-outside always uses latest version
-  handleApplyRef.current = handleApply;
-
   const handleCancel = () => {
     setPendingValues(selectedValues);
     setIsOpen(false);
@@ -77,8 +62,9 @@ const FilterDropdown = ({
   };
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative">
       <Button
+        ref={triggerRef}
         variant="outline"
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-2 min-w-[180px] justify-between ${hasPendingChanges ? 'ring-2 ring-orange-400' : ''}`}
@@ -103,8 +89,8 @@ const FilterDropdown = ({
         </div>
       </Button>
 
-      {isOpen && (
-        <div className="absolute z-50 mt-2 w-[280px] bg-background border rounded-lg shadow-lg max-h-[450px] flex flex-col">
+      <DropdownPortal anchorRef={triggerRef} open={isOpen} onClose={handleApply} align="left">
+        <div className="w-[280px] bg-background border rounded-lg shadow-lg max-h-[450px] flex flex-col">
           <div className="p-2 border-b flex items-center justify-between flex-shrink-0">
             <span className="text-sm font-semibold">{label}</span>
             {pendingValues.length > 0 && (
@@ -178,7 +164,7 @@ const FilterDropdown = ({
             </div>
           )}
         </div>
-      )}
+      </DropdownPortal>
     </div>
   );
 };

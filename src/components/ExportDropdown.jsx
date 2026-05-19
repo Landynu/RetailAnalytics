@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from './ui/button';
 import { Download, ChevronDown, Store, MapPin, Globe } from 'lucide-react';
 import { toast } from 'sonner';
+import DropdownPortal from './DropdownPortal';
 
 function escapeCsvCell(value) {
   if (value == null) return '';
@@ -234,6 +235,7 @@ const ExportDropdown = ({
   periodDays
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const triggerRef = useRef(null);
 
   const activeStores = (allStores || []).filter(s => s.isActive);
 
@@ -253,6 +255,7 @@ const ExportDropdown = ({
   return (
     <div className="relative">
       <Button
+        ref={triggerRef}
         variant="outline"
         size="sm"
         onClick={() => setIsOpen(!isOpen)}
@@ -264,13 +267,8 @@ const ExportDropdown = ({
         <ChevronDown className="h-3 w-3 ml-1" />
       </Button>
 
-      {isOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setIsOpen(false)}
-          />
-          <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border z-20 max-h-80 overflow-y-auto">
+      <DropdownPortal anchorRef={triggerRef} open={isOpen} onClose={() => setIsOpen(false)} align="left">
+        <div className="w-64 bg-white rounded-lg shadow-lg border max-h-80 overflow-y-auto">
             <div className="p-2 border-b bg-gray-50">
               <div className="font-semibold text-xs text-gray-500 uppercase tracking-wide px-2">Export Options</div>
             </div>
@@ -316,8 +314,7 @@ const ExportDropdown = ({
               )}
             </div>
           </div>
-        </>
-      )}
+      </DropdownPortal>
     </div>
   );
 };

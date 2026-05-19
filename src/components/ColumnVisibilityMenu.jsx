@@ -1,22 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from './ui/button';
 import { Eye, EyeOff, Columns3 } from 'lucide-react';
 import { Badge } from './ui/badge';
+import DropdownPortal from './DropdownPortal';
 
-const ColumnVisibilityMenu = ({ 
-  allColumns, 
-  hiddenColumns, 
-  onToggleColumn, 
-  onResetVisibility 
+const ColumnVisibilityMenu = ({
+  allColumns,
+  hiddenColumns,
+  onToggleColumn,
+  onResetVisibility
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  
+  const triggerRef = useRef(null);
+
   const visibleCount = allColumns.filter(col => !hiddenColumns.has(col.id)).length;
   const hiddenCount = hiddenColumns.size;
 
   return (
     <div className="relative">
       <Button
+        ref={triggerRef}
         variant="outline"
         size="sm"
         onClick={() => setIsOpen(!isOpen)}
@@ -31,13 +34,8 @@ const ColumnVisibilityMenu = ({
         )}
       </Button>
 
-      {isOpen && (
-        <>
-          <div 
-            className="fixed inset-0 z-10" 
-            onClick={() => setIsOpen(false)}
-          />
-          <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border z-20 max-h-96 overflow-y-auto">
+      <DropdownPortal anchorRef={triggerRef} open={isOpen} onClose={() => setIsOpen(false)} align="left">
+        <div className="w-72 bg-white rounded-lg shadow-lg border max-h-96 overflow-y-auto">
             <div className="p-3 border-b bg-gray-50 flex items-center justify-between sticky top-0">
               <div className="font-semibold text-sm">Column Visibility</div>
               {hiddenCount > 0 && (
@@ -89,15 +87,14 @@ const ColumnVisibilityMenu = ({
                 );
               })}
             </div>
-            <div className="p-3 border-t bg-gray-50 text-xs text-gray-600">
-              <div className="flex items-center gap-1">
-                <Eye className="h-3 w-3" />
-                {visibleCount} visible • {hiddenCount} hidden
-              </div>
+          <div className="p-3 border-t bg-gray-50 text-xs text-gray-600">
+            <div className="flex items-center gap-1">
+              <Eye className="h-3 w-3" />
+              {visibleCount} visible • {hiddenCount} hidden
             </div>
           </div>
-        </>
-      )}
+        </div>
+      </DropdownPortal>
     </div>
   );
 };

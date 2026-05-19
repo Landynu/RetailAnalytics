@@ -1,27 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { ChevronDown, Calendar, X } from 'lucide-react';
+import DropdownPortal from './DropdownPortal';
 
 const DateRangeFilter = ({ dateRange, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activePreset, setActivePreset] = useState(null);
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-  const dropdownRef = useRef(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const triggerRef = useRef(null);
 
   const getRelativeDateRange = (preset) => {
     // Get current time in Central Time (UTC-6)
@@ -147,8 +136,9 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
   ];
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative">
       <Button
+        ref={triggerRef}
         variant="outline"
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 min-w-[180px] justify-between"
@@ -168,8 +158,8 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
         </div>
       </Button>
 
-      {isOpen && (
-        <div className="absolute z-50 mt-2 w-[320px] bg-background border rounded-lg shadow-lg">
+      <DropdownPortal anchorRef={triggerRef} open={isOpen} onClose={() => setIsOpen(false)} align="left">
+        <div className="w-[320px] bg-background border rounded-lg shadow-lg">
           <div className="p-2 border-b flex items-center justify-between">
             <span className="text-sm font-semibold">Date Range</span>
             {dateRange && (
@@ -234,7 +224,7 @@ const DateRangeFilter = ({ dateRange, onChange }) => {
             </div>
           </div>
         </div>
-      )}
+      </DropdownPortal>
     </div>
   );
 };
